@@ -1,0 +1,70 @@
+// Presentation maps: domain value -> human label + badge tone.
+import type { Tone } from "@/components/Badge";
+import type {
+  Issue,
+  IssueCategory,
+  IssueDecision,
+  Severity,
+  Ticket,
+  TicketStatus,
+} from "./types";
+
+export const CATEGORY: Record<IssueCategory, string> = {
+  fod: "Debris / FOD",
+  pavement: "Pavement Damage",
+  marking: "Runway Marking",
+  lighting: "Lighting / Signage",
+};
+
+export const SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
+
+export const SEVERITY: Record<Severity, { label: string; tone: Tone }> = {
+  low: { label: "Low", tone: "gray" },
+  medium: { label: "Medium", tone: "amber" },
+  high: { label: "High", tone: "orange" },
+  critical: { label: "Critical", tone: "red" },
+};
+
+export const DECISION: Record<IssueDecision, { label: string; tone: Tone }> = {
+  pending: { label: "Pending review", tone: "amber" },
+  approved: { label: "Approved", tone: "green" },
+  rejected: { label: "Rejected", tone: "red" },
+  manual_review: { label: "Manual review", tone: "violet" },
+};
+
+export const TICKET_STATUS: Record<TicketStatus, { label: string; tone: Tone }> =
+  {
+    draft: { label: "Draft", tone: "gray" },
+    sent: { label: "Sent to maintenance", tone: "blue" },
+    in_progress: { label: "In progress", tone: "blue" },
+    repaired: { label: "Repaired · awaiting reinspection", tone: "violet" },
+    closed: { label: "Closed", tone: "green" },
+    rejected: { label: "Rejected", tone: "red" },
+  };
+
+/** PRD §10.4 confidence bands. */
+export function confidenceBand(c: number): { label: string; tone: Tone } {
+  if (c >= 0.85) return { label: "Likely issue", tone: "red" };
+  if (c >= 0.6) return { label: "Needs review", tone: "amber" };
+  return { label: "Low confidence", tone: "gray" };
+}
+
+export const pct = (c: number) => `${Math.round(c * 100)}%`;
+
+/** Derived per-runway status shown on the dashboard. */
+export function runwayStatus(
+  runwayId: string,
+  issues: Issue[],
+  tickets: Ticket[],
+): { label: string; tone: Tone } {
+  const mine = issues.filter((i) => i.runwayId === runwayId);
+  if (mine.length === 0) return { label: "No issues found", tone: "green" };
+  if (mine.some((i) => i.decision === "pending" || i.decision === "manual_review"))
+    return { label: "Issues need review", tone: "amber" };
+  const myTickets = tickets.filter((t) => t.runwayId === runwayId);
+  if (myTickets.length === 0)
+    return { label: "Reviewed · no tickets", tone: "green" };
+  if (myTickets.every((t) => t.status === "closed"))
+    return { label: "Completed", tone: "green" };
+  return { label: "Tickets open", tone: "blue" };
+}

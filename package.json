@@ -1,0 +1,12 @@
+{
+  "name": "strvx-airport-inspection",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-assisted drone runway inspection — autonomous capture, human-in-the-loop review, maintenance tickets, and a self-improving feedback loop.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "setup": "npm --prefix frontend install"
+  }
+}

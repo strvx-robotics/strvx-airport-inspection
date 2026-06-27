@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+# next.js
+.next/
+out/
+# data / secrets
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+# misc
+.DS_Store
+*.log
+coverage/
+dist/
