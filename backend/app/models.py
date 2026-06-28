@@ -15,3 +15,21 @@ class Drone(_Camel):
     assignment: str | None = None
     last_seen: str | None = None
     created_at: str
+
+
+class Ticket(_Camel):
+    id: str
+    issue_id: str
+    runway_id: str
+    zone_id: str | None = None
+    zone: str
+    category: str
+    severity: str
+    description: str
+    status: str
+    created_by: str
+    assigned_to: str
+    maintenance_notes: str
+    created_at: str
+    repaired_at: str | None = None
+    closed_at: str | None = None
