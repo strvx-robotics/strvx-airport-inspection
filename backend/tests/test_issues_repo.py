@@ -1,6 +1,8 @@
 import pytest
 
 from app import db
+from app.deps import Actor
+from app.errors import AppError
 from app.repo import runways
 from app.repo import issues as issues_repo
 
@@ -44,6 +46,48 @@ async def test_get_issue_parity(seed):
         assert d["draft"] == "Repair the spall."
         assert "zoneId" not in d and "gps" not in d and "ticketId" not in d
         assert d["inspectorNotes"] == ""
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_approve_creates_ticket_and_history(seed):
+    await seed_issue(seed, draft="Reseal the centerline.", ai="Reseal centerline marking.")
+    await db.connect()
+    try:
+        issue, ticket = await issues_repo.approve_issue("ic1", Actor(role="inspector"))
+        assert issue.status == "approved" and issue.ticket_id == ticket.id
+        assert ticket.id.startswith("WO-") and ticket.status == "sent"
+        assert ticket.description == "Reseal the centerline."  # final draft, not ai
+        assert issue.draft_edit_distance is not None and issue.draft_edit_distance >= 0
+        ih = await db.one("SELECT action, to_status FROM issue_status_history WHERE issue_id='ic1' AND action='approve'")
+        assert ih["to_status"] == "approved"
+        th = await db.one("SELECT action FROM ticket_status_history WHERE ticket_id=$1", ticket.id)
+        assert th["action"] == "create"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_approve_is_idempotent(seed):
+    await seed_issue(seed)
+    await db.connect()
+    try:
+        _, t1 = await issues_repo.approve_issue("ic1", Actor(role="inspector"))
+        _, t2 = await issues_repo.approve_issue("ic1", Actor(role="inspector"))
+        assert t1.id == t2.id  # no second ticket
+        n = await db.one("SELECT count(*) AS c FROM tickets WHERE issue_id='ic1'")
+        assert n["c"] == 1
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_approve_missing_raises(seed):
+    await db.connect()
+    try:
+        with pytest.raises(AppError, match="Issue not found"):
+            await issues_repo.approve_issue("nope", None)
     finally:
         await db.disconnect()
 

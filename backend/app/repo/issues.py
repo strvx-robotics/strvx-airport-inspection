@@ -1,7 +1,13 @@
 import json
 
+import asyncpg
+
 from app import db
-from app.models import BBox, IssueCandidate, LngLat
+from app.deps import Actor
+from app.errors import AppError
+from app.models import BBox, IssueCandidate, LngLat, Ticket
+from app.repo.helpers import actor_name, actor_role, gid, now
+from app.difftext import compute_draft_edit_distance
 
 # Mirrors lib/repo.ts ISSUE_SELECT (joins zone name + image url).
 ISSUE_SELECT = (
@@ -60,3 +66,70 @@ async def get_issue(id: str) -> IssueCandidate | None:
 async def list_issues_by_inspection(inspection_id: str) -> list[IssueCandidate]:
     rows = await db.all(f"{ISSUE_SELECT} WHERE ic.inspection_id = $1 ORDER BY ic.confidence DESC", inspection_id)
     return [_to_issue(r) for r in rows]
+
+
+async def _append_issue_history(issue_id, action, *, from_status=None, to_status=None,
+                                from_category=None, to_category=None, reason=None,
+                                reason_note=None, note=None, actor=None):
+    await db.run(
+        "INSERT INTO issue_status_history "
+        "(id, issue_id, action, from_status, to_status, from_category, to_category, "
+        " reason, reason_note, note, actor, actor_role, ts) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+        gid("ish"), issue_id, action, from_status, to_status, from_category, to_category,
+        reason, reason_note, note, await actor_name(actor), actor_role(actor), now(),
+    )
+
+
+async def _user_name_by_role(role: str) -> str | None:
+    r = await db.one("SELECT name FROM users WHERE role = $1 LIMIT 1", role)
+    return r["name"] if r else None
+
+
+async def approve_issue(id: str, actor: Actor | None) -> tuple[IssueCandidate, Ticket]:
+    from app.repo.tickets import _append_ticket_history, get_ticket
+
+    issue = await get_issue(id)
+    if issue is None:
+        raise AppError(f"Issue not found: {id}")
+    if issue.status == "approved" and issue.ticket_id:
+        existing = await get_ticket(issue.ticket_id)
+        if existing:
+            return issue, existing
+
+    edit_distance = compute_draft_edit_distance(issue.ai_draft_text or "", issue.draft or "")
+    assigned_to = (await _user_name_by_role("maintenance")) or "Field Maintenance"
+    created_by = await actor_name(actor)
+    ts = now()
+    try:
+        async with db.tx():
+            seq = await db.one("SELECT 'WO-' || nextval('ticket_seq') AS id")
+            tid = seq["id"]
+            await db.run(
+                "INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, "
+                " description, severity, assigned_to, created_by, maintenance_notes, created_at) "
+                "VALUES ($1,$2,$3,$4,$5,$6,'sent',$7,$8,$9,$10,'',$11)",
+                tid, issue.id, issue.runway_id, issue.zone_id, issue.zone or "",
+                issue.category, issue.draft, issue.severity, assigned_to, created_by, ts,
+            )
+            await db.run(
+                "UPDATE issue_candidates SET status = 'approved', ticket_id = $1, draft_edit_distance = $2 WHERE id = $3",
+                tid, edit_distance, id,
+            )
+            await _append_issue_history(
+                id, "approve", from_status=issue.status, to_status="approved",
+                note=f"Created ticket {tid} (edit distance {edit_distance})", actor=actor,
+            )
+            await _append_ticket_history(tid, "create", None, "sent", "Approved & sent to maintenance", actor)
+    except asyncpg.UniqueViolationError:
+        fresh = await get_issue(id)
+        ticket = await get_ticket(fresh.ticket_id) if fresh and fresh.ticket_id else None
+        if fresh and ticket:
+            return fresh, ticket
+        raise
+
+    issue2 = await get_issue(id)
+    ticket2 = await get_ticket(tid)
+    if issue2 is None or ticket2 is None:
+        raise AppError(f"Issue or ticket not found after approve: {id}")
+    return issue2, ticket2
