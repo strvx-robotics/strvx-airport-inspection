@@ -58,7 +58,7 @@ export default function UploadPage() {
         <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
           <Upload size={17} strokeWidth={2} /> Upload imagery
         </h1>
-        <div className={cn("mt-4 rounded-md px-4 py-3 text-[13px] text-[#9aa1a6]", CARD)}>
+        <div className={cn("mt-4 rounded-md px-4 py-3 text-[13px] text-[#5b6166]", CARD)}>
           Switch to the Inspector or Admin role to upload inspection imagery.
         </div>
       </div>
@@ -92,7 +92,7 @@ export default function UploadPage() {
         <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
           <Upload size={17} strokeWidth={2} /> Upload imagery
         </h1>
-        <p className="mt-1 text-[13px] text-[#737a7f]">
+        <p className="mt-1 text-[13px] text-[#6b7176]">
           Drop a runway photo — the detector runs and produces issue candidates
           for review.
         </p>
@@ -102,13 +102,13 @@ export default function UploadPage() {
         {/* capture form */}
         <section className={cn("overflow-hidden rounded-md", CARD)}>
           <div className={cn("px-4 py-3", BAR)}>
-            <h2 className="text-[13px] font-semibold text-[#e7eaec]">Capture details</h2>
-            <p className="mt-1 text-[12px] text-[#737a7f]">Target runway, zone, and source image.</p>
+            <h2 className="text-[13px] font-semibold text-[#181b1e]">Capture details</h2>
+            <p className="mt-1 text-[12px] text-[#6b7176]">Target runway, zone, and source image.</p>
           </div>
 
           <div className="space-y-4 p-4">
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+              <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 Runway
               </label>
               <select
@@ -125,7 +125,7 @@ export default function UploadPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+              <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 Zone (optional)
               </label>
               <select
@@ -144,7 +144,7 @@ export default function UploadPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+              <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 Image
               </label>
               <div
@@ -163,24 +163,24 @@ export default function UploadPage() {
                 className={cn(
                   "grid h-40 cursor-pointer place-items-center rounded-md border border-dashed text-center text-[13px] transition-colors",
                   dragOver
-                    ? "border-[#5b6166] bg-[#16191c] text-[#e7eaec]"
-                    : "border-[#343a3f] bg-[#0f1214] text-[#737a7f] hover:border-[#5b6166]",
+                    ? "border-[#9aa1a6] bg-[#eef1f4] text-[#181b1e]"
+                    : "border-[#c7cdd2] bg-[#f3f5f7] text-[#6b7176] hover:border-[#9aa1a6]",
                 )}
               >
                 {file ? (
                   <span className="px-3">
-                    <span className="font-medium text-[#e7eaec]">{file.name}</span>
+                    <span className="font-medium text-[#181b1e]">{file.name}</span>
                     <br />
-                    <span className="font-mono text-[11px] text-[#737a7f]">
+                    <span className="font-mono text-[11px] text-[#6b7176]">
                       Click to replace · {(file.size / 1024).toFixed(0)} KB
                     </span>
                   </span>
                 ) : (
                   <span className="flex flex-col items-center gap-2">
-                    <ImagePlus size={22} strokeWidth={1.6} className="text-[#5b6166]" />
+                    <ImagePlus size={22} strokeWidth={1.6} className="text-[#9aa1a6]" />
                     <span>
                       Drop an image here, or{" "}
-                      <span className="text-[#e7eaec] underline underline-offset-2">browse</span>
+                      <span className="text-[#181b1e] underline underline-offset-2">browse</span>
                     </span>
                   </span>
                 )}
@@ -195,7 +195,7 @@ export default function UploadPage() {
             </div>
 
             {error && (
-              <p className="rounded-md border border-[#5b6166] bg-[#16191c] px-3 py-2 text-[13px] font-medium text-[#e7eaec]">
+              <p className="rounded-md border border-[#9aa1a6] bg-[#eef1f4] px-3 py-2 text-[13px] font-medium text-[#181b1e]">
                 {error}
               </p>
             )}
@@ -214,22 +214,22 @@ export default function UploadPage() {
         {/* detections */}
         <section className={cn("overflow-hidden rounded-md", CARD)}>
           <div className={cn("px-4 py-3", BAR)}>
-            <h2 className="text-[13px] font-semibold text-[#e7eaec]">Detections</h2>
-            <p className="mt-1 text-[12px] text-[#737a7f]">Issue candidates from your upload.</p>
+            <h2 className="text-[13px] font-semibold text-[#181b1e]">Detections</h2>
+            <p className="mt-1 text-[12px] text-[#6b7176]">Issue candidates from your upload.</p>
           </div>
 
           <div className="p-4">
             {!result ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[#262b2f] p-12 text-center">
-                <ImagePlus size={22} strokeWidth={1.6} className="text-[#5b6166]" />
-                <p className="text-[13px] text-[#737a7f]">
+              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[#dbdfe3] p-12 text-center">
+                <ImagePlus size={22} strokeWidth={1.6} className="text-[#9aa1a6]" />
+                <p className="text-[13px] text-[#6b7176]">
                   Candidates from your upload will appear here.
                 </p>
               </div>
             ) : result.candidates.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#121517] p-10 text-center">
-                <CheckCircle2 size={22} strokeWidth={1.8} className="text-[#737a7f]" />
-                <p className="text-[13px] font-medium text-[#e7eaec]">
+              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-10 text-center">
+                <CheckCircle2 size={22} strokeWidth={1.8} className="text-[#6b7176]" />
+                <p className="text-[13px] font-medium text-[#181b1e]">
                   No issues detected in this image.
                 </p>
               </div>
@@ -249,13 +249,13 @@ export default function UploadPage() {
                     <Link
                       key={c.id}
                       href={`/issue/${c.id}`}
-                      className="flex items-center justify-between rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2.5 transition-colors hover:bg-[#16191c]"
+                      className="flex items-center justify-between rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2.5 transition-colors hover:bg-[#eef1f4]"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-[13px] font-medium text-[#e7eaec]">
+                        <p className="truncate text-[13px] font-medium text-[#181b1e]">
                           {CATEGORY[c.category]}
                         </p>
-                        <p className="mt-0.5 font-mono text-[11px] text-[#737a7f]">
+                        <p className="mt-0.5 font-mono text-[11px] text-[#6b7176]">
                           {pct(c.confidence)} confidence
                         </p>
                       </div>

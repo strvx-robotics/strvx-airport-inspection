@@ -26,12 +26,12 @@ function DistBar({
     <div className="flex items-center gap-2.5">
       <div className="flex w-[92px] shrink-0 items-center gap-1.5">
         {dot && <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dot)} />}
-        <span className="truncate text-[12px] text-[#c2c8cc]">{label}</span>
+        <span className="truncate text-[12px] text-[#3f4448]">{label}</span>
       </div>
-      <div className="h-2 flex-1 overflow-hidden rounded-sm bg-[#16191c]">
-        <div className="h-full rounded-sm bg-[#9aa1a6]" style={{ width: `${pct}%` }} />
+      <div className="h-2 flex-1 overflow-hidden rounded-sm bg-[#eef1f4]">
+        <div className="h-full rounded-sm bg-[#5b6166]" style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-6 shrink-0 text-right font-mono text-[12px] tabular-nums text-[#9aa1a6]">
+      <span className="w-6 shrink-0 text-right font-mono text-[12px] tabular-nums text-[#5b6166]">
         {value}
       </span>
     </div>
@@ -40,7 +40,7 @@ function DistBar({
 
 function Panel({ caption, children }: { caption: string; children: ReactNode }) {
   return (
-    <div className="bg-[#121517] px-4 py-3.5">
+    <div className="bg-[#fbfcfd] px-4 py-3.5">
       <p className={cn("mb-2.5", EYEBROW)}>{caption}</p>
       <div className="space-y-2">{children}</div>
     </div>
@@ -57,14 +57,14 @@ export default function DistributionBand({
   return (
     <section className={cn("overflow-hidden rounded-md", CARD)}>
       <div className={cn("px-4 py-3", BAR)}>
-        <h3 className="text-[13px] font-semibold text-[#e7eaec]">Issue distribution</h3>
+        <h3 className="text-[13px] font-semibold text-[#181b1e]">Issue distribution</h3>
       </div>
       {total === 0 ? (
         <p className={cn("px-4 py-6 text-center text-[12px]", MUTED)}>
           No issues detected this pass.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-px bg-[#262b2f] sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-px bg-[#dbdfe3] sm:grid-cols-2">
           <Panel caption="By severity">
             {SEVERITY_ORDER.map((s) => (
               <DistBar

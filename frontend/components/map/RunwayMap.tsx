@@ -126,19 +126,19 @@ export default function RunwayMap({
       map.addSource("centerline", { type: "geojson", data: centerlineFC });
       map.addSource("pins", { type: "geojson", data: pinsFC });
 
-      map.addLayer({ id: "surface-fill", type: "fill", source: "surface", paint: { "fill-color": "#e7eaec", "fill-opacity": 0.06 } });
-      map.addLayer({ id: "surface-line", type: "line", source: "surface", paint: { "line-color": "#e7eaec", "line-opacity": 0.35, "line-width": 1 } });
-      map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#9aa1a6", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#c2c8cc", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [3, 2] } });
-      map.addLayer({ id: "centerline", type: "line", source: "centerline", paint: { "line-color": "#e7eaec", "line-opacity": 0.7, "line-width": 1.5, "line-dasharray": [4, 3] } });
+      map.addLayer({ id: "surface-fill", type: "fill", source: "surface", paint: { "fill-color": "#181b1e", "fill-opacity": 0.06 } });
+      map.addLayer({ id: "surface-line", type: "line", source: "surface", paint: { "line-color": "#181b1e", "line-opacity": 0.35, "line-width": 1 } });
+      map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#5b6166", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#3f4448", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [3, 2] } });
+      map.addLayer({ id: "centerline", type: "line", source: "centerline", paint: { "line-color": "#181b1e", "line-opacity": 0.7, "line-width": 1.5, "line-dasharray": [4, 3] } });
       map.addLayer({
         id: "pins",
         type: "circle",
         source: "pins",
         paint: {
           "circle-radius": ["get", "radius"],
-          "circle-color": "#e7eaec",
-          "circle-stroke-color": "#0b0d0e",
+          "circle-color": "#181b1e",
+          "circle-stroke-color": "#e9ecef",
           "circle-stroke-width": 1.5,
           "circle-opacity": 0.95,
         },
@@ -169,8 +169,8 @@ export default function RunwayMap({
 
   if (!anchor) {
     return (
-      <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#262b2f] bg-[#0f1214] text-center`}>
-        <p className="px-6 text-[12px] text-[#737a7f]">
+      <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#dbdfe3] bg-[#f3f5f7] text-center`}>
+        <p className="px-6 text-[12px] text-[#6b7176]">
           No map geometry for this runway yet — add a threshold anchor to place it.
         </p>
       </div>
@@ -178,10 +178,10 @@ export default function RunwayMap({
   }
   if (failed) {
     return (
-      <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#262b2f] bg-[#0f1214] text-center`}>
-        <p className="px-6 text-[12px] text-[#737a7f]">Map unavailable (WebGL not supported in this browser).</p>
+      <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#dbdfe3] bg-[#f3f5f7] text-center`}>
+        <p className="px-6 text-[12px] text-[#6b7176]">Map unavailable (WebGL not supported in this browser).</p>
       </div>
     );
   }
-  return <div ref={containerRef} className={`${heightClass} w-full overflow-hidden rounded-md border border-[#262b2f]`} />;
+  return <div ref={containerRef} className={`${heightClass} w-full overflow-hidden rounded-md border border-[#dbdfe3]`} />;
 }

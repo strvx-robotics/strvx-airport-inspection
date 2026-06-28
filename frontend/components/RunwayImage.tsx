@@ -21,11 +21,11 @@ export default function RunwayImage({
   const real = Boolean(src);
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-md border border-[#262b2f] ${real ? "" : heightClass}`}
+      className={`relative w-full overflow-hidden rounded-md border border-[#dbdfe3] ${real ? "" : heightClass}`}
       style={
         real
           ? undefined
-          : { background: "repeating-linear-gradient(180deg, #16191c 0 38px, #1b1f22 38px 40px)" }
+          : { background: "repeating-linear-gradient(180deg, #eef1f4 0 38px, #e4e8ec 38px 40px)" }
       }
     >
       {real ? (
@@ -36,14 +36,14 @@ export default function RunwayImage({
         <div
           className="pointer-events-none absolute inset-y-0 left-1/2 w-1.5 -translate-x-1/2"
           style={{
-            background: "repeating-linear-gradient(#c2c8cc 0 26px, transparent 26px 52px)",
+            background: "repeating-linear-gradient(#3f4448 0 26px, transparent 26px 52px)",
             opacity: 0.7,
           }}
         />
       )}
       {bbox && (
         <div
-          className="absolute border-2 border-[#e7eaec] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+          className="absolute border-2 border-[#181b1e] shadow-[0_0_0_9999px_rgba(11,13,14,0.55)]"
           style={{
             left: `${bbox.x}%`,
             top: `${bbox.y}%`,
@@ -52,7 +52,7 @@ export default function RunwayImage({
           }}
         >
           {label && (
-            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-[#e7eaec] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-[#0b0d0e]">
+            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-[#181b1e] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-[#e9ecef]">
               {label}
             </span>
           )}

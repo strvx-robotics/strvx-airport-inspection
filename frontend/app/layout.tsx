@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import StatusBar from "@/components/StatusBar";
 import { StoreProvider } from "@/lib/store";
 
 const sans = IBM_Plex_Sans({
@@ -16,8 +17,9 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Valanor — Airport Runway Inspection",
-  description: "AI-assisted drone runway inspection, review, and work orders",
+  title: "Valanor Airfield Inspection Console",
+  description:
+    "Autonomous drone runway inspection: detection review, work-order lifecycle, and audit trail for airport operations.",
 };
 
 export default function RootLayout({
@@ -29,9 +31,10 @@ export default function RootLayout({
         <StoreProvider>
           <div className="flex h-screen flex-col bg-void text-ink">
             <Header />
-            <main className="min-h-0 flex-1 overflow-auto bg-[#0b0d0e]">
+            <main className="min-h-0 flex-1 overflow-auto bg-[#e9ecef]">
               {children}
             </main>
+            <StatusBar />
           </div>
         </StoreProvider>
       </body>

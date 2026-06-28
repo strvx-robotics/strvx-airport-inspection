@@ -18,39 +18,39 @@ export default function DiffView({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#737a7f]">
+        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b7176]">
           AI draft vs. edited
         </span>
         {!changed && (
-          <span className="text-[11px] text-[#5b6166]">unedited — matches AI draft</span>
+          <span className="text-[11px] text-[#9aa1a6]">unedited — matches AI draft</span>
         )}
       </div>
-      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2 font-mono text-xs leading-relaxed text-[#9aa1a6]">
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2 font-mono text-xs leading-relaxed text-[#5b6166]">
         {parts.map((part, idx) => {
           if (part.added)
             return (
               <span
                 key={idx}
-                className="rounded-sm bg-[#16191c] text-[#e7eaec] underline decoration-dotted underline-offset-2"
+                className="rounded-sm bg-[#eef1f4] text-[#181b1e] underline decoration-dotted underline-offset-2"
               >
                 {part.value}
               </span>
             );
           if (part.removed)
             return (
-              <span key={idx} className="rounded-sm text-[#5b6166] line-through">
+              <span key={idx} className="rounded-sm text-[#9aa1a6] line-through">
                 {part.value}
               </span>
             );
           return <span key={idx}>{part.value}</span>;
         })}
       </pre>
-      <div className="flex items-center gap-3 font-mono text-[11px] text-[#737a7f]">
+      <div className="flex items-center gap-3 font-mono text-[11px] text-[#6b7176]">
         <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-sm ring-1 ring-inset ring-[#343a3f]" /> removed
+          <span className="h-2 w-2 rounded-sm ring-1 ring-inset ring-[#c7cdd2]" /> removed
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-sm bg-[#16191c] ring-1 ring-inset ring-[#5b6166]" /> added
+          <span className="h-2 w-2 rounded-sm bg-[#eef1f4] ring-1 ring-inset ring-[#9aa1a6]" /> added
         </span>
       </div>
     </div>

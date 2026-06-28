@@ -22,7 +22,7 @@ export default function RejectModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 grid place-items-center bg-[#181b1e]/55 p-4"
       onClick={onCancel}
     >
       <div
@@ -30,14 +30,14 @@ export default function RejectModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-[18px] font-semibold text-[#e7eaec]">Reject candidate</h2>
-          <p className="mt-1 text-[13px] text-[#737a7f]">
+          <h2 className="text-[18px] font-semibold text-[#181b1e]">Reject candidate</h2>
+          <p className="mt-1 text-[13px] text-[#6b7176]">
             A reason is required — it trains the detector.
           </p>
         </div>
 
         <div className="space-y-1">
-          <label className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#737a7f]">
+          <label className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b7176]">
             Reason
           </label>
           <select
@@ -57,7 +57,7 @@ export default function RejectModal({
         </div>
 
         <div className="space-y-1">
-          <label className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#737a7f]">
+          <label className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#6b7176]">
             Note (optional)
           </label>
           <textarea

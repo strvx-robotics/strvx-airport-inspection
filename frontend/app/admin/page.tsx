@@ -116,7 +116,7 @@ function RunAndExport({
   return (
     <section className={cn("overflow-hidden rounded-md", CARD)}>
       <div className={cn("flex items-center px-4 py-3", BAR)}>
-        <h2 className="text-[13px] font-semibold text-[#e7eaec]">Run &amp; export</h2>
+        <h2 className="text-[13px] font-semibold text-[#181b1e]">Run &amp; export</h2>
       </div>
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -293,7 +293,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   return (
     <section className={cn("overflow-hidden rounded-md", CARD)}>
       <div className={cn("flex items-center px-4 py-3", BAR)}>
-        <h2 className="text-[13px] font-semibold text-[#e7eaec]">{title}</h2>
+        <h2 className="text-[13px] font-semibold text-[#181b1e]">{title}</h2>
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -338,8 +338,8 @@ function FormShell({
         >
           {busy ? "Saving…" : "Create"}
         </button>
-        {ok && <span className="font-mono text-[11px] text-[#9aa1a6]">Saved.</span>}
-        {err && <span className="font-mono text-[11px] font-semibold text-[#e7eaec]">Failed.</span>}
+        {ok && <span className="font-mono text-[11px] text-[#5b6166]">Saved.</span>}
+        {err && <span className="font-mono text-[11px] font-semibold text-[#181b1e]">Failed.</span>}
       </div>
     </div>
   );

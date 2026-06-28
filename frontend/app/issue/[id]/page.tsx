@@ -59,12 +59,12 @@ export default function IssueDetail() {
     if (loading)
       return (
         <div className="mx-auto max-w-6xl px-6 py-6">
-          <p className="text-[13px] text-[#737a7f]">Loading issue…</p>
+          <p className="text-[13px] text-[#6b7176]">Loading issue…</p>
         </div>
       );
     return (
       <div className="mx-auto max-w-6xl space-y-3 px-6 py-6">
-        <p className="text-[13px] text-[#9aa1a6]">Issue not found.</p>
+        <p className="text-[13px] text-[#5b6166]">Issue not found.</p>
         <Link href="/" className={LINK}>
           ‹ Back to overview
         </Link>
@@ -77,6 +77,9 @@ export default function IssueDetail() {
   const decided = issue.status !== "pending";
   const canReview = role === "inspector" || role === "admin";
   const editable = !decided && canReview;
+  // Only surface the AI-vs-edited diff once the inspector has actually changed
+  // the draft — when unedited it just shows the same text twice (pure noise).
+  const edited = draft.trim() !== (issue.aiDraftText ?? "").trim();
 
   const persist = (patch: {
     category?: IssueCategory;
@@ -123,7 +126,7 @@ export default function IssueDetail() {
           <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
             <ScanSearch size={17} strokeWidth={2} /> {CATEGORY[issue.category]}
           </h1>
-          <p className="mt-1 font-mono text-[12px] text-[#737a7f]">
+          <p className="mt-1 font-mono text-[12px] text-[#6b7176]">
             {runway?.name} · {issue.zone} · {issue.id.toUpperCase()}
           </p>
         </div>
@@ -132,17 +135,22 @@ export default function IssueDetail() {
         </Badge>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-6 md:grid-cols-[1.7fr_1fr] md:items-start">
         {/* left — the evidence */}
-        <div className="space-y-3">
-          <RunwayImage bbox={issue.bbox} label={CATEGORY[issue.category]} src={issue.imageUrl} />
+        <div className="space-y-3 md:sticky md:top-6">
+          <RunwayImage
+            bbox={issue.bbox}
+            label={CATEGORY[issue.category]}
+            src={issue.imageUrl}
+            heightClass="h-[460px]"
+          />
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={band.tone}>{band.label}</Badge>
-            <span className="font-mono text-[12px] text-[#9aa1a6]">
+            <span className="font-mono text-[12px] text-[#5b6166]">
               {pct(issue.confidence)} model confidence
             </span>
             {issue.gps && (
-              <span className="ml-auto font-mono text-[11px] text-[#737a7f]">
+              <span className="ml-auto font-mono text-[11px] text-[#6b7176]">
                 {issue.gps.lat.toFixed(4)}, {issue.gps.lng.toFixed(4)}
               </span>
             )}
@@ -151,57 +159,63 @@ export default function IssueDetail() {
 
         {/* right — the review card */}
         <div className={cn("space-y-4 rounded-md p-4", CARD)}>
-          <Field label="Category">
-            <select
-              value={category}
-              disabled={!editable}
-              onChange={(e) => {
-                const next = e.target.value as IssueCategory;
-                setCategory(next);
-                persist({ category: next });
-              }}
-              className={selectClass}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Category">
+              <select
+                value={category}
+                disabled={!editable}
+                onChange={(e) => {
+                  const next = e.target.value as IssueCategory;
+                  setCategory(next);
+                  persist({ category: next });
+                }}
+                className={selectClass}
+              >
+                {ISSUE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY[c]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field
+              label={
+                <span className="flex items-center gap-1.5">
+                  <span className={cn("inline-block h-2 w-2 rounded-full", DOT[severity])} />
+                  Severity
+                </span>
+              }
             >
-              {ISSUE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {CATEGORY[c]}
-                </option>
-              ))}
-            </select>
-          </Field>
+              <select
+                value={severity}
+                disabled={!editable}
+                onChange={(e) => {
+                  const next = e.target.value as Severity;
+                  setSeverity(next);
+                  persist({ severity: next });
+                }}
+                className={selectClass}
+              >
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {SEVERITY[s].label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
 
           <Field
             label={
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "inline-block h-2 w-2 rounded-full",
-                    DOT[severity],
-                  )}
-                />
-                Severity
+              <span className="flex items-center justify-between gap-2">
+                Ticket draft
+                <span className="font-mono text-[10px] normal-case tracking-normal text-[#9aa1a6]">
+                  {editable ? (edited ? "edited" : "AI-generated · editable") : "AI-generated"}
+                </span>
               </span>
             }
           >
-            <select
-              value={severity}
-              disabled={!editable}
-              onChange={(e) => {
-                const next = e.target.value as Severity;
-                setSeverity(next);
-                persist({ severity: next });
-              }}
-              className={selectClass}
-            >
-              {SEVERITIES.map((s) => (
-                <option key={s} value={s}>
-                  {SEVERITY[s].label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Suggested ticket — AI draft">
             <textarea
               value={draft}
               disabled={!editable}
@@ -216,8 +230,9 @@ export default function IssueDetail() {
             />
           </Field>
 
-          {/* Self-improvement: immutable AI draft vs. edited text (design §13). */}
-          <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />
+          {/* Self-improvement: immutable AI draft vs. edited text (design §13) —
+              shown only once the inspector diverges from the draft. */}
+          {edited && <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />}
 
           <Field label="Inspector notes">
             <textarea
@@ -235,40 +250,42 @@ export default function IssueDetail() {
             />
           </Field>
 
-          {decided ? (
-            <Resolved
-              status={issue.status}
-              ticketId={issue.ticketId}
-              label={DECISION[issue.status].label}
-            />
-          ) : !canReview ? (
-            <p className="rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2 text-center text-[12px] text-[#9aa1a6]">
-              Switch to the Inspector role to review this candidate.
-            </p>
-          ) : (
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={handleApprove}
-                className={cn("h-9 w-full px-3 text-[12px]", BTN_PRIMARY)}
-              >
-                <Check size={14} strokeWidth={2} /> Approve &amp; create ticket
-              </button>
-              <div className="grid grid-cols-2 gap-2">
+          <div className="border-t border-[#dbdfe3] pt-4">
+            {decided ? (
+              <Resolved
+                status={issue.status}
+                ticketId={issue.ticketId}
+                label={DECISION[issue.status].label}
+              />
+            ) : !canReview ? (
+              <p className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2 text-center text-[12px] text-[#5b6166]">
+                Switch to the Inspector role to review this candidate.
+              </p>
+            ) : (
+              <div className="space-y-2">
                 <button
-                  onClick={() => setShowReject(true)}
-                  className={cn("h-9 px-3 text-[12px]", BTN_DANGER)}
+                  onClick={handleApprove}
+                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
                 >
-                  <X size={14} strokeWidth={2} /> Reject
+                  <Check size={15} strokeWidth={2} /> Approve &amp; create ticket
                 </button>
-                <button
-                  onClick={() => void manualReview(issue.id).catch(() => undefined)}
-                  className={cn("h-9 px-3 text-[12px]", BTN)}
-                >
-                  <Flag size={14} strokeWidth={2} /> Manual review
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowReject(true)}
+                    className={cn("h-9 px-3 text-[12px]", BTN_DANGER)}
+                  >
+                    <X size={14} strokeWidth={2} /> Reject
+                  </button>
+                  <button
+                    onClick={() => void manualReview(issue.id).catch(() => undefined)}
+                    className={cn("h-9 px-3 text-[12px]", BTN)}
+                  >
+                    <Flag size={14} strokeWidth={2} /> Manual review
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -293,16 +310,18 @@ function Resolved({
 }) {
   if (status === "approved" && ticketId) {
     return (
-      <Link
-        href={`/ticket/${ticketId}`}
-        className={cn("h-9 w-full px-3 text-[12px]", BTN)}
-      >
-        View ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
-      </Link>
+      <div className="space-y-2">
+        <p className="flex items-center justify-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[#5b6166]">
+          <Check size={13} strokeWidth={2.5} /> Approved · this review is closed
+        </p>
+        <Link href={`/ticket/${ticketId}`} className={cn("h-9 w-full px-3 text-[12px]", BTN)}>
+          View ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
+        </Link>
+      </div>
     );
   }
   return (
-    <p className="rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2 text-center text-[12px] text-[#9aa1a6]">
+    <p className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2 text-center text-[12px] text-[#5b6166]">
       {label} — no ticket created.
     </p>
   );

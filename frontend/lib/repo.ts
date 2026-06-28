@@ -828,8 +828,8 @@ export function renderReportHtml(report: InspectionReport): string {
     })
     .join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Inspection report — ${esc(report.airport.code)}</title>
-<style>body{font:14px/1.5 system-ui,sans-serif;max-width:760px;margin:2rem auto;color:#18181b;padding:0 1rem}
-h1{margin-bottom:.25rem}.muted{color:#71717a}section{border-top:1px solid #e4e4e7;padding:.75rem 0}ul{margin:.25rem 0}</style>
+<style>body{font:14px/1.5 system-ui,sans-serif;max-width:760px;margin:2rem auto;color:#eef0f2;padding:0 1rem}
+h1{margin-bottom:.25rem}.muted{color:#6b7176}section{border-top:1px solid #e3e5e8;padding:.75rem 0}ul{margin:.25rem 0}</style>
 </head><body>
 <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
 <p class="muted">Inspection ${esc(report.inspection.scheduledTime)} · status ${esc(report.inspection.status)} · generated ${esc(report.generatedAt)}</p>

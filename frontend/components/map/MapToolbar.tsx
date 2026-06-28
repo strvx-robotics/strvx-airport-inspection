@@ -62,7 +62,7 @@ export function MapToolbar({
         ))}
 
         <Divider />
-        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#5b6166]">
+        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#9aa1a6]">
           Severity filter
         </p>
         {SEVERITIES.map((s) => (
@@ -72,7 +72,7 @@ export function MapToolbar({
             disabled={!layers.issues}
             className={cn(
               "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors disabled:opacity-35",
-              severities.has(s) ? "text-[#e7eaec]" : "text-[#737a7f] hover:text-[#c2c8cc]",
+              severities.has(s) ? "text-[#181b1e]" : "text-[#6b7176] hover:text-[#3f4448]",
             )}
           >
             <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[s])} />
@@ -84,9 +84,9 @@ export function MapToolbar({
         <Divider />
         <button
           onClick={onRecenter}
-          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[#c2c8cc] transition-colors hover:bg-white/5 hover:text-[#e7eaec]"
+          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[#3f4448] transition-colors hover:bg-white/5 hover:text-[#181b1e]"
         >
-          <Crosshair size={15} strokeWidth={1.9} className="text-[#9aa1a6]" />
+          <Crosshair size={15} strokeWidth={1.9} className="text-[#5b6166]" />
           <span className="font-mono text-[11px] tracking-wide">Recenter</span>
         </button>
       </div>
@@ -110,10 +110,10 @@ function Toggle({
       onClick={onClick}
       className={cn(
         "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
-        on ? "text-[#e7eaec]" : "text-[#737a7f] hover:text-[#c2c8cc]",
+        on ? "text-[#181b1e]" : "text-[#6b7176] hover:text-[#3f4448]",
       )}
     >
-      <Icon size={15} strokeWidth={1.9} className={on ? "text-[#e7eaec]" : "text-[#5b6166]"} />
+      <Icon size={15} strokeWidth={1.9} className={on ? "text-[#181b1e]" : "text-[#9aa1a6]"} />
       <span className="flex-1 font-mono text-[11px] tracking-wide">{label}</span>
       {on && <Check size={13} strokeWidth={2.4} />}
     </button>

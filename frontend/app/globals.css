@@ -1,40 +1,56 @@
 @import "tailwindcss";
 
 /* ============================================================ Valanor theme ==
-   Mirrors strvx-robotics-product/frontend/src/index.css. Monochrome operator UI;
-   color is signal only (good green, warning amber, critical red). The tabular
-   screens use the "internal-ops workspace" palette (see lib/vstyle.ts).
+   Instrument-grade light operations console. The workspace is a high-legibility
+   off-white panel ladder (never pure #fff); it is bracketed top and bottom by
+   two matte slate frame rails (header + system status bar) so the whole console
+   reads as one fixed, accountable instrument. Color is strictly monochrome —
+   meaning is carried by weight, fill, and ring, never by hue.
    ========================================================================== */
 @theme {
   --font-display: var(--font-ibm-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-ibm-mono), ui-monospace, "SF Mono", monospace;
 
-  /* surfaces */
-  --color-void: #070809;
-  --color-abyss: #030404;
-  --color-panel: #0e1012;
-  --color-panel-2: #141719;
-  --color-line: #262a2d;
-  --color-line-bright: #393f43;
+  /* Tighter instrument radius — one notch down from the framework defaults so
+     panels read machined, not soft. Every rounded-* utility inherits this. */
+  --radius-sm: 0.125rem; /* 2px */
+  --radius-md: 0.25rem;  /* 4px */
+  --radius-lg: 0.375rem; /* 6px */
+  --radius-xl: 0.5rem;   /* 8px */
 
-  /* workspace surfaces (LogsView palette) */
-  --color-surface: #121517;
-  --color-surface-2: #16191c;
-  --color-content: #0b0d0e;
-  --color-edge: #262b2f;
-  --color-edge-2: #343a3f;
+  /* workspace surfaces — the off-white panel ladder (recede → paper) */
+  --color-void: #e9ecef;     /* app background; sits behind every panel */
+  --color-abyss: #e3e6ea;
+  --color-panel: #e9ecef;
+  --color-panel-2: #fbfcfd;
+  --color-surface: #fbfcfd;  /* panel "paper" — lifted, the lightest tone */
+  --color-surface-2: #eef1f4;/* panel strip / hover */
+  --color-content: #e9ecef;
+  --color-line: #dbdfe3;     /* hairline frame */
+  --color-line-bright: #c7cdd2;
+  --color-edge: #dbdfe3;
+  --color-edge-2: #c7cdd2;
+
+  /* frame rails — the matte slate header + status bar that bracket the console */
+  --color-frame: #181b1e;
+  --color-frame-edge: #0c0e10;       /* machined edge against the light body */
+  --color-frame-line: #2b3035;       /* separators on the dark rail */
+  --color-frame-active: #262b30;     /* active nav inset */
+  --color-frame-ink: #c6cbcf;        /* primary text on the rail */
+  --color-frame-ink-dim: #888f95;    /* secondary text on the rail */
+  --color-frame-ink-bright: #eef1f4; /* active / emphasis on the rail */
 
   /* ink */
-  --color-ink: #e7eaec;
-  --color-ink-dim: #9aa1a6;
-  --color-ink-faint: #737a7f;
-  --color-ink-ghost: #5b6166;
+  --color-ink: #181b1e;
+  --color-ink-dim: #5b6166;
+  --color-ink-faint: #6b7176;
+  --color-ink-ghost: #9aa1a6;
 
-  /* signal — strictly monochrome: emphasis carries meaning, not hue.
-     critical = loudest ink, good = neutral mid-ink (no green). */
-  --color-accent: #ffffff;
-  --color-critical: #e7eaec;
-  --color-good: #9aa1a6;
+  /* signal — strictly monochrome: emphasis carries meaning, not hue. accent is
+     ink (a deliberate legible mark), never the old invisible white. */
+  --color-accent: #181b1e;
+  --color-critical: #181b1e;
+  --color-good: #5b6166;
 }
 
 @layer base {
@@ -53,15 +69,18 @@
     text-rendering: optimizeLegibility;
   }
   ::selection {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(24, 27, 30, 0.12);
   }
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: 4px;
+    background: rgba(24, 27, 30, 0.22);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(24, 27, 30, 0.34);
   }
 }
 
@@ -78,21 +97,5 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
-  }
-  .glass {
-    background: rgba(20, 23, 26, 0.42);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow:
-      0 6px 22px rgba(0, 0, 0, 0.45),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  .glass-dark {
-    background: rgba(7, 9, 11, 0.72);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
 }

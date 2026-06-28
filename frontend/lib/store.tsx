@@ -38,6 +38,11 @@ interface Store {
   tickets: Record<string, Ticket>;
   runways: Record<string, Runway>;
 
+  // system telemetry — drives the header lamp + the status bar. online is
+  // undefined until the first overview attempt resolves.
+  online: boolean | undefined;
+  lastSyncAt: number | undefined;
+
   // loaders (stable refs)
   loadOverview: () => Promise<Maybe<Overview>>;
   loadRunway: (id: string) => Promise<Maybe<api.RunwayWithIssues>>;
@@ -67,6 +72,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState<Record<string, IssueCandidate>>({});
   const [tickets, setTickets] = useState<Record<string, Ticket>>({});
   const [runways, setRunways] = useState<Record<string, Runway>>({});
+  const [online, setOnline] = useState<boolean | undefined>(undefined);
+  const [lastSyncAt, setLastSyncAt] = useState<number | undefined>(undefined);
 
   // Hydrate role from localStorage once (keeps the chosen role across reloads).
   useEffect(() => {
@@ -103,14 +110,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const loadOverview = useCallback(async () => {
-    const data = await api.getOverview();
-    setOverview(data);
-    setRunways((p) => {
-      const next = { ...p };
-      for (const r of data.runways) next[r.runway.id] = r.runway;
-      return next;
-    });
-    return data;
+    try {
+      const data = await api.getOverview();
+      setOverview(data);
+      setRunways((p) => {
+        const next = { ...p };
+        for (const r of data.runways) next[r.runway.id] = r.runway;
+        return next;
+      });
+      setOnline(true);
+      setLastSyncAt(Date.now());
+      return data;
+    } catch (err) {
+      // Record the outage for the status bar, then preserve the throw contract
+      // so callers' optimistic rollbacks still fire.
+      setOnline(false);
+      throw err;
+    }
   }, []);
 
   const loadRunway = useCallback(
@@ -263,6 +279,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     issues,
     tickets,
     runways,
+    online,
+    lastSyncAt,
     loadOverview,
     loadRunway,
     loadIssue,

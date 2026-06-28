@@ -11,7 +11,7 @@ import { EYEBROW, MUTED } from "@/lib/vstyle";
 // MapLibre touches window/WebGL at construction, so load it client-only.
 const AirportMap = dynamic(() => import("@/components/map/AirportMap"), {
   ssr: false,
-  loading: () => <div className="h-full w-full animate-pulse rounded-md bg-[#0f1214]" />,
+  loading: () => <div className="h-full w-full animate-pulse rounded-md bg-[#f3f5f7]" />,
 });
 
 export default function MapPage() {
@@ -43,20 +43,20 @@ export default function MapPage() {
     <div className="flex h-full flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <MapIcon size={16} strokeWidth={2} className="text-[#9aa1a6]" />
-          <h1 className="text-[14px] font-semibold text-[#e7eaec]">Airport map</h1>
+          <MapIcon size={16} strokeWidth={2} className="text-[#5b6166]" />
+          <h1 className="text-[14px] font-semibold text-[#181b1e]">Airport map</h1>
           <span className={cn("ml-1", EYEBROW)}>{airportLabel}</span>
         </div>
         <p className={cn("flex items-center gap-3 text-[12px]", MUTED)}>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#e7eaec]" /> issue
+            <span className="h-2 w-2 rounded-full bg-[#181b1e]" /> issue
           </span>
           <span>{located} located</span>
         </p>
       </div>
       <div className="min-h-0 flex-1">
         {layers === null ? (
-          <div className="h-full w-full animate-pulse rounded-md bg-[#0f1214]" />
+          <div className="h-full w-full animate-pulse rounded-md bg-[#f3f5f7]" />
         ) : (
           <AirportMap layers={layers} />
         )}

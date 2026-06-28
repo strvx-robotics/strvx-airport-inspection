@@ -4,8 +4,6 @@ import type { ReactNode } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayTable from "@/components/dashboard/RunwayTable";
-import DistributionBand from "@/components/dashboard/DistributionBand";
-import { RecentPasses, RecentWorkOrders, ZoningMapSlot } from "@/components/dashboard/RightRail";
 import type { Overview } from "@/lib/api";
 import { useOverview, useStore } from "@/lib/store";
 import MaintenanceTracker from "@/components/MaintenanceTracker";
@@ -41,10 +39,10 @@ function Dashboard() {
   ].filter(Boolean);
 
   return (
-    <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-3 px-6 py-5">
+    <div className="mx-auto flex h-full max-w-6xl flex-col gap-4 px-6 py-6">
       <CommandStrip overview={overview} onRefresh={() => void refresh()} />
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#dbdfe3] lg:grid-cols-4">
         <Stat
           label="Needs review"
           value={needsReview}
@@ -59,21 +57,7 @@ function Dashboard() {
         />
       </div>
 
-      {/* Two-column ops view that fills the viewport: work queue + distribution
-          on the left, glanceable context rail on the right. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[1.7fr_minmax(330px,1fr)]">
-        <div className="flex min-h-0 flex-col gap-3">
-          <div className="min-h-0 flex-1">
-            <RunwayTable rows={overview.runways} />
-          </div>
-          <DistributionBand breakdown={bd} total={t.issues} />
-        </div>
-        <aside className="flex min-h-0 flex-col gap-3 overflow-auto pb-1">
-          <RecentWorkOrders tickets={overview.recentTickets} />
-          <ZoningMapSlot runways={overview.runways} />
-          <RecentPasses inspections={overview.inspections} currentId={overview.inspection?.id} />
-        </aside>
-      </div>
+      <RunwayTable rows={overview.runways} />
     </div>
   );
 }
@@ -112,7 +96,7 @@ function CommandStrip({ overview, onRefresh }: { overview: Overview; onRefresh: 
         <div className="flex items-center gap-3">
           {status && (
             <span className="inline-flex items-center gap-1.5">
-              {live && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e7eaec]" />}
+              {live && <span className="h-1.5 w-1.5 rounded-full bg-[#181b1e] ring-2 ring-[#181b1e]/15" />}
               <Badge tone={status.tone}>{status.label}</Badge>
             </span>
           )}
@@ -136,10 +120,10 @@ function Stat({
 }) {
   return (
     <div className={METRIC_CELL}>
-      <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">{label}</div>
-      <div className="mt-1 font-mono text-[22px] font-semibold leading-none text-[#e7eaec]">{value}</div>
+      <div className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">{label}</div>
+      <div className="mt-1 font-mono text-[22px] font-semibold leading-none text-[#181b1e]">{value}</div>
       {secondary != null && (
-        <div className="mt-1.5 font-mono text-[10px] text-[#737a7f]">{secondary}</div>
+        <div className="mt-1.5 font-mono text-[10px] text-[#6b7176]">{secondary}</div>
       )}
     </div>
   );
@@ -149,9 +133,9 @@ function Skeleton() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
       <div className={cn("h-[72px] animate-pulse rounded-md", CARD)} />
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#dbdfe3] lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[68px] animate-pulse bg-[#121517]" />
+          <div key={i} className="h-[68px] animate-pulse bg-[#fbfcfd]" />
         ))}
       </div>
       <div className={cn("h-64 animate-pulse rounded-md", CARD)} />

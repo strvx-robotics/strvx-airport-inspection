@@ -87,7 +87,7 @@ export default function DroneFeed({
   }, [src, attempt]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-md border border-[#262b2f] bg-black">
+    <div className="relative h-full w-full overflow-hidden rounded-md border border-[#dbdfe3] bg-[#0b0d0e]">
       <video
         ref={videoRef}
         className="h-full w-full object-cover"
@@ -101,10 +101,10 @@ export default function DroneFeed({
 
       {/* top bar: LIVE state + airport label */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
-        <span className="inline-flex items-center gap-1.5 rounded-sm bg-black/50 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-[#e7eaec] backdrop-blur-sm">
+        <span className="inline-flex items-center gap-1.5 rounded-sm bg-[#181b1e]/75 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-[#eef1f4]">
           {status === "live" ? (
             <>
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e7eaec]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[#c6cbcf]" />
               Live
             </>
           ) : (
@@ -113,29 +113,29 @@ export default function DroneFeed({
             </span>
           )}
         </span>
-        <span className="rounded-sm bg-black/50 px-2 py-1 text-right font-mono text-[11px] text-[#c2c8cc] backdrop-blur-sm">
+        <span className="rounded-sm bg-[#181b1e]/75 px-2 py-1 text-right font-mono text-[11px] text-[#c6cbcf]">
           {label}
-          {sublabel && <span className="block text-[10px] text-[#737a7f]">{sublabel}</span>}
+          {sublabel && <span className="block text-[10px] text-[#888f95]">{sublabel}</span>}
         </span>
       </div>
 
       {/* center overlay for non-live states */}
       {status !== "live" && (
-        <div className="absolute inset-0 grid place-items-center bg-black/40">
+        <div className="absolute inset-0 grid place-items-center bg-[#0b0d0e]/55">
           <div className="flex flex-col items-center gap-2 text-center">
             {status === "connecting" ? (
               <Loader2 size={26} strokeWidth={1.6} className="animate-spin text-[#9aa1a6]" />
             ) : (
-              <VideoOff size={26} strokeWidth={1.6} className="text-[#5b6166]" />
+              <VideoOff size={26} strokeWidth={1.6} className="text-[#888f95]" />
             )}
-            <p className="font-mono text-[13px] text-[#e7eaec]">
+            <p className="font-mono text-[13px] text-[#eef1f4]">
               {status === "connecting"
                 ? "Acquiring drone feed…"
                 : status === "unsupported"
                   ? "This browser can't play the stream"
                   : "No signal"}
             </p>
-            <p className="max-w-xs font-mono text-[11px] text-[#737a7f]">
+            <p className="max-w-xs font-mono text-[11px] text-[#888f95]">
               {status === "offline" && !src
                 ? "Set NEXT_PUBLIC_DRONE_STREAM_URL to the media server's HLS URL."
                 : status === "offline"
@@ -152,15 +152,15 @@ export default function DroneFeed({
 }
 
 function Reticle() {
-  const corner = "pointer-events-none absolute h-6 w-6 border-[#e7eaec]/25";
+  const corner = "pointer-events-none absolute h-6 w-6 border-[#eef1f4]/30";
   return (
     <div className="pointer-events-none absolute inset-0">
       <div className={`${corner} left-3 top-3 border-l border-t`} />
       <div className={`${corner} right-3 top-3 border-r border-t`} />
       <div className={`${corner} bottom-3 left-3 border-b border-l`} />
       <div className={`${corner} bottom-3 right-3 border-b border-r`} />
-      <div className="absolute left-1/2 top-1/2 h-4 w-px -translate-x-1/2 -translate-y-1/2 bg-[#e7eaec]/20" />
-      <div className="absolute left-1/2 top-1/2 h-px w-4 -translate-x-1/2 -translate-y-1/2 bg-[#e7eaec]/20" />
+      <div className="absolute left-1/2 top-1/2 h-4 w-px -translate-x-1/2 -translate-y-1/2 bg-[#eef1f4]/25" />
+      <div className="absolute left-1/2 top-1/2 h-px w-4 -translate-x-1/2 -translate-y-1/2 bg-[#eef1f4]/25" />
     </div>
   );
 }

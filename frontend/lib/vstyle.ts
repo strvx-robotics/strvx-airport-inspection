@@ -1,20 +1,22 @@
-// Valanor "internal-ops workspace" style vocabulary — mirrors verbatim the dark
-// palette in strvx-robotics-product/frontend/src/features/logs/LogsView.tsx so
-// these screens match the product exactly. Hex is intentionally literal.
+// Valanor instrument-console style vocabulary. The workspace is an off-white
+// panel ladder (paper #fbfcfd lifted over a recessed #e9ecef field) framed by
+// hairline rules — never pure white, never a soft SaaS card. Hex is intentionally
+// literal so every tone decision lives in one place.
 
-export const PAGE = "bg-[#0b0d0e] text-[#e7eaec]";
-export const CARD = "border border-[#262b2f] bg-[#121517]";
-export const BAR = "border-b border-[#262b2f] bg-[#16191c]";
+export const PAGE = "bg-[#e9ecef] text-[#181b1e]";
+export const CARD = "border border-[#dbdfe3] bg-[#fbfcfd]";
+export const BAR = "border-b border-[#dbdfe3] bg-[#eef1f4]";
 export const INPUT =
-  "rounded-md border border-[#343a3f] bg-[#0f1214] text-[12px] text-[#e7eaec] placeholder:text-[#5b6166] focus:border-[#5b6166] focus:outline-none";
+  "rounded-md border border-[#c7cdd2] bg-[#f3f5f7] text-[12px] text-[#181b1e] placeholder:text-[#9aa1a6] focus:border-[#888f95] focus:outline-none";
 export const BTN =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#343a3f] bg-[#121517] font-medium text-[#9aa1a6] transition-colors hover:bg-[#1b1f22] hover:text-[#e7eaec] disabled:cursor-not-allowed disabled:opacity-40";
-// Primary = inverted, matching LogsView's active filter tab.
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#c7cdd2] bg-[#fbfcfd] font-medium text-[#5b6166] transition-colors hover:bg-[#eef1f4] hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-40";
+// Primary = solid ink. Hover lifts the slate a notch (never to white, which would
+// strand the light label) so the affordance stays legible.
 export const BTN_PRIMARY =
-  "inline-flex items-center justify-center gap-1.5 rounded-md bg-[#e7eaec] font-medium text-[#0b0d0e] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md bg-[#181b1e] font-medium text-[#eef1f4] transition-colors hover:bg-[#2b3035] disabled:cursor-not-allowed disabled:opacity-40";
 // Destructive action — signalled by the verb/icon + heavier weight, not red.
 export const BTN_DANGER =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#5b6166] bg-[#16191c] font-semibold text-[#e7eaec] transition-colors hover:bg-[#1b1f22] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#9aa1a6] bg-[#eef1f4] font-semibold text-[#181b1e] transition-colors hover:bg-[#e4e8ec] disabled:cursor-not-allowed disabled:opacity-40";
 
 export const CHIP =
   "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide font-mono";
@@ -25,35 +27,35 @@ export const CHIP =
 //   blue   → S3 active, solid edge  (in-flight: sent/in_progress)
 //   purple → S3 active, dashed edge (needs human: manual_review/repaired)
 //   amber  → S3 active, bright outline (loud: pending/high/needs_review)
-//   black / red → S4 alert, solid white fill (loudest: critical/rejected/failed)
+//   black / red → S4 alert, solid ink fill (loudest: critical/rejected/failed)
 export const CHIP_TONE = {
-  green: "border-[#343a3f] bg-[#121517] text-[#868d92]",
-  gray: "border-[#343a3f] bg-[#1a1e21] text-[#c2c8cc]",
-  black: "border-[#e7eaec] bg-[#e7eaec] text-[#0b0d0e]",
-  blue: "border-[#5b6166] bg-[#16191c] text-[#c2c8cc]",
-  purple: "border-dashed border-[#5b6166] bg-[#1a1e21] text-[#e7eaec]",
-  amber: "border-[#9aa1a6] bg-[#1a1e21] text-[#e7eaec]",
-  red: "border-[#e7eaec] bg-[#e7eaec] text-[#0b0d0e]",
+  green: "border-[#c7cdd2] bg-[#fbfcfd] text-[#6b7176]",
+  gray: "border-[#c7cdd2] bg-[#e4e8ec] text-[#3f4448]",
+  black: "border-[#181b1e] bg-[#181b1e] text-[#eef1f4]",
+  blue: "border-[#9aa1a6] bg-[#eef1f4] text-[#3f4448]",
+  purple: "border-dashed border-[#9aa1a6] bg-[#e4e8ec] text-[#181b1e]",
+  amber: "border-[#5b6166] bg-[#e4e8ec] text-[#181b1e]",
+  red: "border-[#181b1e] bg-[#181b1e] text-[#eef1f4]",
 } as const;
 export type ChipTone = keyof typeof CHIP_TONE;
 
 // severity / status dots — monotonic brightness ramp; critical adds weight (ring),
-// not a brighter shade, since high+critical both sit near white.
+// not a brighter shade, since high+critical both sit near ink.
 export const DOT: Record<string, string> = {
-  low: "bg-[#6b7378]",
-  medium: "bg-[#9aa1a6]",
-  high: "bg-[#c2c8cc]",
-  critical: "bg-[#e7eaec] ring-2 ring-[#e7eaec]/30",
+  low: "bg-[#b4b9bd]",
+  medium: "bg-[#5b6166]",
+  high: "bg-[#3f4448]",
+  critical: "bg-[#181b1e] ring-2 ring-[#181b1e]/30",
 };
 
 export const EYEBROW =
-  "font-mono text-[11px] uppercase tracking-[0.16em] text-[#737a7f]";
-export const H2 = "text-[18px] font-semibold text-[#e7eaec]";
-export const MUTED = "text-[#737a7f]";
+  "font-mono text-[11px] uppercase tracking-[0.18em] text-[#6b7176]";
+export const H2 = "text-[18px] font-semibold text-[#181b1e]";
+export const MUTED = "text-[#6b7176]";
 // Monochrome link affordance — brighten on hover (no blue, no underline noise on
 // the icon nav links these are used for).
 export const LINK =
-  "font-mono text-[11px] text-[#9aa1a6] transition-colors hover:text-[#e7eaec]";
+  "font-mono text-[11px] text-[#5b6166] transition-colors hover:text-[#181b1e]";
 
-// metric-strip cell (use inside a `grid gap-px bg-[#262b2f] rounded-md overflow-hidden`)
-export const METRIC_CELL = "bg-[#121517] px-4 py-3";
+// metric-strip cell (use inside a `grid gap-px bg-[#dbdfe3] rounded-md overflow-hidden`)
+export const METRIC_CELL = "bg-[#fbfcfd] px-4 py-3";

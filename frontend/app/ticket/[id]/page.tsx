@@ -99,15 +99,15 @@ export default function TicketPage() {
       {/* work order — derived airfield fields (see lib/workOrder.ts) */}
       <section className={cn("overflow-hidden rounded-md", CARD)}>
         <div className={cn("px-4 py-3", BAR)}>
-          <h3 className="text-[13px] font-semibold text-[#e7eaec]">Work order</h3>
+          <h3 className="text-[13px] font-semibold text-[#181b1e]">Work order</h3>
         </div>
-        <dl className="grid grid-cols-1 gap-px bg-[#262b2f] sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-px bg-[#dbdfe3] sm:grid-cols-2">
           {workOrder.map((f) => (
-            <div key={f.label} className="bg-[#121517] px-4 py-2.5">
-              <dt className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+            <div key={f.label} className="bg-[#fbfcfd] px-4 py-2.5">
+              <dt className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 {f.label}
               </dt>
-              <dd className="mt-1 text-[13px] leading-relaxed text-[#c2c8cc]">
+              <dd className="mt-1 text-[13px] leading-relaxed text-[#3f4448]">
                 {f.value}
               </dd>
             </div>
@@ -120,7 +120,7 @@ export default function TicketPage() {
         {issue && (
           <section className={cn("overflow-hidden rounded-md", CARD)}>
             <div className={cn("px-4 py-3", BAR)}>
-              <h3 className="text-[13px] font-semibold text-[#e7eaec]">
+              <h3 className="text-[13px] font-semibold text-[#181b1e]">
                 Evidence
               </h3>
             </div>
@@ -134,11 +134,11 @@ export default function TicketPage() {
           {/* description */}
           <section className={cn("overflow-hidden rounded-md", CARD)}>
             <div className={cn("px-4 py-3", BAR)}>
-              <h3 className="text-[13px] font-semibold text-[#e7eaec]">
+              <h3 className="text-[13px] font-semibold text-[#181b1e]">
                 Description
               </h3>
             </div>
-            <p className="px-4 py-3 text-[13px] leading-relaxed text-[#c2c8cc]">
+            <p className="px-4 py-3 text-[13px] leading-relaxed text-[#3f4448]">
               {ticket.description}
             </p>
           </section>
@@ -162,7 +162,7 @@ export default function TicketPage() {
           {!canWork && ticket.status !== "closed" ? (
             <p
               className={cn(
-                "flex items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#16191c] px-3 py-2 text-center text-[12px]",
+                "flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#eef1f4] px-3 py-2 text-center text-[12px]",
                 MUTED,
               )}
             >
@@ -178,7 +178,7 @@ export default function TicketPage() {
             </button>
           ) : ticket.status === "repaired" ? (
             <div className="space-y-2">
-              <p className="flex items-center justify-center gap-2 rounded-md border border-dashed border-[#5b6166] bg-[#1a1e21] px-3 py-2 text-center text-[12px] text-[#e7eaec]">
+              <p className="flex items-center justify-center gap-2 rounded-md border border-dashed border-[#9aa1a6] bg-[#e4e8ec] px-3 py-2 text-center text-[12px] text-[#181b1e]">
                 <ClipboardCheck size={13} strokeWidth={2} />
                 Repaired — awaiting inspector reinspection.
               </p>
@@ -190,7 +190,7 @@ export default function TicketPage() {
               </button>
             </div>
           ) : (
-            <p className="flex items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#121517] px-3 py-2 text-center text-[12px] text-[#737a7f]">
+            <p className="flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] px-3 py-2 text-center text-[12px] text-[#6b7176]">
               <CheckCircle2 size={13} strokeWidth={2} /> Ticket closed.
             </p>
           )}

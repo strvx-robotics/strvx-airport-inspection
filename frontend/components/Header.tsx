@@ -3,33 +3,34 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gauge, Radio, Cog, Wrench, Map as MapIcon, User, ChevronDown, Check, type LucideIcon } from "lucide-react";
+import { Gauge, Radio, Cog, Wrench, Map as MapIcon, ScrollText, PlaneTakeoff, User, ChevronDown, Check, type LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ROLE } from "@/lib/ui";
 import { USER_ROLES } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-/** Persistent navigable top bar — mirrors the Valanor console Header. */
+/** The upper instrument rail — a fixed matte-slate band that, with the status
+ *  bar below, brackets the light workspace into one accountable console. */
 export default function Header() {
-  const { role, setRole } = useStore();
+  const { role, setRole, online } = useStore();
   const pathname = usePathname();
   const showLive = role === "inspector" || role === "admin";
   const showAdmin = role === "admin";
   const isMaintenance = role === "maintenance";
 
   return (
-    <header className="relative z-30 flex h-[52px] shrink-0 items-center border-b border-black/10 bg-panel/95 px-4 backdrop-blur">
+    <header className="relative z-30 flex h-[52px] shrink-0 items-center gap-4 border-b border-[#0c0e10] bg-[#181b1e] px-4">
       {/* brand */}
-      <Link href="/" className="flex items-center gap-2.5">
-        {/* wordmark art is white; invert it to read on the light header */}
-        <img src="/valanor-wordmark.png" alt="Valanor" className="h-[30px] w-auto invert" />
-        <span className="label hidden text-[9px] text-ink-faint sm:inline">
-          Airport Inspection
+      <Link href="/" className="flex items-center gap-3">
+        <img src="/valanor-wordmark.png" alt="Valanor" className="h-[26px] w-auto" />
+        <span className="hidden h-4 w-px bg-[#2b3035] sm:block" />
+        <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-[#888f95] sm:inline">
+          Airfield Inspection
         </span>
       </Link>
 
       {/* view nav — centered. Maintenance's home is the work-order tracker. */}
-      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-black/10 bg-black/20 p-0.5">
+      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-[#121517] p-0.5 ring-1 ring-inset ring-[#2b3035]">
         {isMaintenance ? (
           <NavTab href="/" active={pathname === "/"} icon={Wrench} label="Work orders" />
         ) : (
@@ -39,16 +40,41 @@ export default function Header() {
           <NavTab href="/live" active={pathname === "/live"} icon={Radio} label="Live" />
         )}
         <NavTab href="/map" active={pathname === "/map"} icon={MapIcon} label="Map" />
+        <NavTab href="/fleet" active={pathname === "/fleet"} icon={PlaneTakeoff} label="Fleet" />
+        {!isMaintenance && (
+          <NavTab href="/logs" active={pathname === "/logs"} icon={ScrollText} label="Logs" />
+        )}
         {showAdmin && (
           <NavTab href="/admin" active={pathname === "/admin"} icon={Cog} label="Admin" />
         )}
       </div>
 
-      {/* profile — circular avatar opens a role switcher */}
-      <div className="ml-auto">
+      {/* right cluster — system lamp + role */}
+      <div className="ml-auto flex items-center gap-3">
+        <SystemLamp online={online} />
+        <span className="hidden h-4 w-px bg-[#2b3035] md:block" />
         <ProfileMenu role={role} setRole={setRole} />
       </div>
     </header>
+  );
+}
+
+/** Steady (never pulsing) master-status lamp. Monochrome: state reads from
+ *  fill vs. ring vs. dimness, not hue. */
+function SystemLamp({ online }: { online: boolean | undefined }) {
+  const { dot, label } =
+    online === undefined
+      ? { dot: "bg-[#5b6166]", label: "Initializing" }
+      : online
+        ? { dot: "bg-[#c6cbcf]", label: "System nominal" }
+        : { dot: "border border-[#888f95] bg-transparent", label: "Reconnecting" };
+  return (
+    <span className="hidden items-center gap-1.5 md:inline-flex">
+      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#888f95]">
+        {label}
+      </span>
+    </span>
   );
 }
 
@@ -65,11 +91,11 @@ function ProfileMenu({
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-full p-0.5 text-ink-dim transition-colors hover:text-ink"
+        className="flex items-center gap-1.5 text-[#888f95] transition-colors hover:text-[#eef1f4]"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-black/15 bg-black/30 text-ink-dim">
+        <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#2b3035] bg-[#121517] text-current">
           <User size={16} strokeWidth={1.8} />
         </span>
         <ChevronDown size={14} strokeWidth={2} className={cn("transition-transform", open && "rotate-180")} />
@@ -86,9 +112,11 @@ function ProfileMenu({
           />
           <div
             role="menu"
-            className="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-lg border border-black/10 bg-panel/95 p-1 shadow-xl backdrop-blur"
+            className="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-md border border-[#2b3035] bg-[#1c2024] p-1 shadow-xl"
           >
-            <p className="label px-2.5 py-1.5 text-[8px] text-ink-faint">Switch role</p>
+            <p className="px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[#6b7176]">
+              Switch role
+            </p>
             {USER_ROLES.map((r) => (
               <button
                 key={r}
@@ -99,11 +127,15 @@ function ProfileMenu({
                   setOpen(false);
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 transition-colors",
-                  role === r ? "bg-accent/15 text-accent" : "text-ink-dim hover:bg-black/5 hover:text-ink",
+                  "flex w-full items-center justify-between rounded px-2.5 py-1.5 transition-colors",
+                  role === r
+                    ? "bg-[#262b30] text-[#eef1f4]"
+                    : "text-[#9aa1a6] hover:bg-[#202428] hover:text-[#eef1f4]",
                 )}
               >
-                <span className="label text-[9px] text-current">{ROLE[r]}</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-current">
+                  {ROLE[r]}
+                </span>
                 {role === r && <Check size={13} strokeWidth={2.2} />}
               </button>
             ))}
@@ -129,12 +161,16 @@ function NavTab({
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors",
-        active ? "bg-accent/15 text-accent" : "text-ink-dim hover:text-ink",
+        "flex items-center gap-1.5 rounded px-3 py-1.5 transition-colors",
+        active
+          ? "bg-[#262b30] text-[#eef1f4] ring-1 ring-inset ring-[#3a4046]"
+          : "text-[#888f95] hover:bg-[#202428] hover:text-[#eef1f4]",
       )}
     >
       <Icon size={14} strokeWidth={1.8} />
-      <span className="label text-[9px] text-current">{label}</span>
+      <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-current">
+        {label}
+      </span>
     </Link>
   );
 }
