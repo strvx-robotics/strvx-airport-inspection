@@ -17,15 +17,17 @@ TABLES = [
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def _schema():
-    """Apply the schema once per test session."""
+    """Apply the schema once per session. No-op when the DB is unreachable so
+    pure (DB-less) unit tests still run; schema-file or SQL errors surface."""
     try:
         conn = await asyncpg.connect(TEST_DB)
+    except (asyncpg.exceptions.InvalidCatalogNameError, asyncpg.exceptions.CannotConnectNowError, OSError):
+        return
+    try:
         schema = (Path(__file__).parent / "schema.sql").read_text()
         await conn.execute(schema)
+    finally:
         await conn.close()
-    except (asyncpg.exceptions.InvalidCatalogNameError, asyncpg.exceptions.CannotConnectNowError, OSError):
-        # Skip if database doesn't exist (for pure unit tests that don't need DB)
-        pass
 
 
 @pytest_asyncio.fixture

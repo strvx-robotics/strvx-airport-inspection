@@ -1,4 +1,3 @@
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -63,3 +62,8 @@ def test_actor_from_header_role():
 
 def test_actor_from_none_when_invalid():
     assert actor_from(_Req({"x-actor-role": "bogus"}), {"actor": {"role": "nope"}}) is None
+
+
+def test_actor_from_body_beats_header():
+    a = actor_from(_Req({"x-actor-role": "admin"}), {"actor": {"role": "inspector"}})
+    assert a == Actor(role="inspector", name=None, id=None)
