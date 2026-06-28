@@ -6,11 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { Upload, ImagePlus, ChevronRight, CheckCircle2 } from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
+import Select from "@/components/Select";
 import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
 import { CATEGORY, confidenceBand, pct } from "@/lib/ui";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, INPUT, BTN, BTN_PRIMARY, EYEBROW, H2 } from "@/lib/vstyle";
+import { CARD, BAR, BTN, BTN_PRIMARY, EYEBROW, H2 } from "@/lib/vstyle";
 import type { UploadResult } from "@/lib/api";
 import type { Zone } from "@/lib/types";
 
@@ -111,36 +112,25 @@ export default function UploadPage() {
               <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 Runway
               </label>
-              <select
+              <Select
                 value={selectedRunway}
-                onChange={(e) => setRunwayId(e.target.value)}
-                className={cn("h-9 w-full px-2", INPUT)}
-              >
-                {runways.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} · {r.designation}
-                  </option>
-                ))}
-              </select>
+                options={runways.map((r) => ({ value: r.id, label: `${r.name} · ${r.designation}` }))}
+                onChange={setRunwayId}
+                ariaLabel="Runway"
+              />
             </div>
 
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
                 Zone (optional)
               </label>
-              <select
+              <Select
                 value={zoneId}
-                onChange={(e) => setZoneId(e.target.value)}
-                className={cn("h-9 w-full px-2 disabled:opacity-40", INPUT)}
+                options={[{ value: "", label: "Whole runway" }, ...zones.map((z) => ({ value: z.id, label: z.name }))]}
+                onChange={setZoneId}
+                ariaLabel="Zone"
                 disabled={zones.length === 0}
-              >
-                <option value="">Whole runway</option>
-                {zones.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -79,27 +79,30 @@ export default function InspectionPage() {
         </a>
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className={EYEBROW}>
-            {airport.name} · {airport.code}
-          </p>
-          <h1 className={cn("mt-1.5 flex items-center gap-2", H2)}>
-            <ScrollText size={17} strokeWidth={2} className="text-[#5b6166]" />
-            {fmtInTz(inspection.scheduledTime, tz, {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </h1>
-          <p className={cn("mt-1.5 text-[13px]", MUTED)}>
-            {INSPECTION_WINDOW[inspection.window]} ·{" "}
-            {fmtInTz(inspection.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
-          </p>
+      {/* header box — matches the issue / ticket / dashboard command strip */}
+      <section className={cn("overflow-hidden rounded-md", CARD)}>
+        <div className={cn("flex flex-wrap items-end justify-between gap-3 px-4 py-3", BAR)}>
+          <div className="min-w-0">
+            <p className={EYEBROW}>
+              {airport.name} · {airport.code}
+            </p>
+            <h2 className={cn("mt-1 flex items-center gap-2", H2)}>
+              <ScrollText size={17} strokeWidth={2} className="text-[#5b6166]" />
+              {fmtInTz(inspection.scheduledTime, tz, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </h2>
+            <p className={cn("mt-1 text-[13px]", MUTED)}>
+              {INSPECTION_WINDOW[inspection.window]} ·{" "}
+              {fmtInTz(inspection.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
+          <Badge tone={status.tone}>{status.label}</Badge>
         </div>
-        <Badge tone={status.tone}>{status.label}</Badge>
-      </div>
+      </section>
 
       {/* totals strip */}
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[#dbdfe3] bg-[#dbdfe3] sm:grid-cols-4">

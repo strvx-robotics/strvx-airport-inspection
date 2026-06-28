@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -346,7 +347,13 @@ export function useRunwayDetail(id: string) {
     };
   }, [id, loadRunway]);
   const runway = runways[id];
-  const runwayIssues = Object.values(issues).filter((i) => i.runwayId === id);
+  // Stable reference: recompute only when the issues map or runway id changes.
+  // Returning a fresh array every render sends TanStack Table (on the runway
+  // detail page) into a re-render loop that freezes the page mid-navigation.
+  const runwayIssues = useMemo(
+    () => Object.values(issues).filter((i) => i.runwayId === id),
+    [issues, id],
+  );
   return { runway, issues: runwayIssues, loading };
 }
 
