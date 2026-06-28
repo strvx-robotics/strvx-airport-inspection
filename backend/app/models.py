@@ -57,3 +57,46 @@ class Ticket(_Camel):
     created_at: str
     repaired_at: str | None = None
     closed_at: str | None = None
+
+
+class BBox(_Camel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class LngLat(_Camel):
+    lat: float
+    lng: float
+
+
+class IssueCandidate(_Camel):
+    id: str
+    inspection_id: str
+    runway_id: str
+    zone_id: str | None = None
+    image_id: str | None = None
+    image_url: str | None = None
+    category: str            # DB column issue_type
+    zone: str | None = None
+    confidence: float
+    confidence_band: str
+    severity: str
+    severity_model: str | None = None
+    status: str
+    bbox: BBox
+    gps: LngLat | None = None
+    station_m: float | None = None
+    lateral_offset_m: float | None = None
+    size_m: float | None = None
+    ai_draft_text: str
+    draft: str
+    inspector_notes: str
+    model_notes: str | None = None
+    rejection_reason: str | None = None
+    rejection_note: str | None = None
+    draft_edit_distance: int | None = None
+    ticket_id: str | None = None
+    created_by: str | None = None
+    created_at: str
