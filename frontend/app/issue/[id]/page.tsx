@@ -3,56 +3,69 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Flag, ScanSearch, X } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Flag, Printer, ScanSearch, X } from "lucide-react";
 import Badge from "@/components/Badge";
 import DiffView from "@/components/DiffView";
 import RejectModal from "@/components/RejectModal";
 import RunwayImage from "@/components/RunwayImage";
+import Select, { type SelectOption } from "@/components/Select";
 import { useIssueDetail, useStore } from "@/lib/store";
-import {
-  CATEGORY,
-  DECISION,
-  SEVERITIES,
-  SEVERITY,
-  confidenceBand,
-  pct,
-} from "@/lib/ui";
+import { buildWorkOrder } from "@/lib/workOrder";
+import { CATEGORY, DECISION, SEVERITIES, SEVERITY, confidenceBand, pct } from "@/lib/ui";
 import { ISSUE_CATEGORIES } from "@/lib/types";
-import type { IssueCategory, RejectionReason, Severity } from "@/lib/types";
-import {
-  BTN,
-  BTN_DANGER,
-  BTN_PRIMARY,
-  CARD,
-  DOT,
-  EYEBROW,
-  H2,
-  INPUT,
-  LINK,
-} from "@/lib/vstyle";
+import type { IssueCandidate, IssueCategory, RejectionReason, Runway, Severity, Ticket } from "@/lib/types";
+import { BAR, BTN, BTN_DANGER, BTN_PRIMARY, CARD, DOT, EYEBROW, H2, INPUT, LINK, MUTED } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
+
+type Step = 1 | 2 | 3;
+const STEP_META: Record<Step, { title: string; hint: string }> = {
+  1: { title: "Detection", hint: "confirm the AI found a real defect" },
+  2: { title: "Ticket", hint: "verify the work-order write-up" },
+  3: { title: "Preview", hint: "confirm before dispatch to maintenance" },
+};
+
+const CATEGORY_OPTIONS: SelectOption<IssueCategory>[] = ISSUE_CATEGORIES.map((c) => ({ value: c, label: CATEGORY[c] }));
+const SEVERITY_OPTIONS: SelectOption<Severity>[] = SEVERITIES.map((s) => ({ value: s, label: SEVERITY[s].label }));
+
+/** Provisional ticket built from the current (edited) issue state, so the work
+ *  order can be derived/previewed before the real ticket exists. */
+function previewTicket(issue: IssueCandidate, category: IssueCategory, severity: Severity, draft: string): Ticket {
+  return {
+    id: "PENDING",
+    issueId: issue.id,
+    runwayId: issue.runwayId,
+    zone: issue.zone ?? "",
+    category,
+    severity,
+    description: draft,
+    status: "sent",
+    createdBy: issue.createdBy ?? "Valanor Inspector",
+    assignedTo: "Field Maintenance",
+    maintenanceNotes: "",
+    createdAt: issue.createdAt,
+  };
+}
 
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { issue, loading } = useIssueDetail(id);
-  const { role, approveIssue, rejectIssue, manualReview, editIssue, runways } =
-    useStore();
+  const { role, approveIssue, rejectIssue, manualReview, editIssue, runways } = useStore();
 
-  // Local editable state — instant typing; persisted to the API on blur/change.
   const [category, setCategory] = useState<IssueCategory>("fod");
   const [severity, setSeverity] = useState<Severity>("medium");
   const [draft, setDraft] = useState("");
   const [notes, setNotes] = useState("");
   const [showReject, setShowReject] = useState(false);
+  const [step, setStep] = useState<Step>(1);
 
-  // Sync local state when the issue first loads (or the id changes).
   useEffect(() => {
     if (!issue) return;
     setCategory(issue.category);
     setSeverity(issue.severity);
     setDraft(issue.draft);
     setNotes(issue.inspectorNotes);
+    setStep(1);
   }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!issue) {
@@ -76,17 +89,10 @@ export default function IssueDetail() {
   const band = confidenceBand(issue.confidence);
   const decided = issue.status !== "pending";
   const canReview = role === "inspector" || role === "admin";
-  const editable = !decided && canReview;
-  // Only surface the AI-vs-edited diff once the inspector has actually changed
-  // the draft — when unedited it just shows the same text twice (pure noise).
   const edited = draft.trim() !== (issue.aiDraftText ?? "").trim();
+  const woFields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, runway);
 
-  const persist = (patch: {
-    category?: IssueCategory;
-    severity?: Severity;
-    draft?: string;
-    notes?: string;
-  }) => {
+  const persist = (patch: { category?: IssueCategory; severity?: Severity; draft?: string; notes?: string }) => {
     void editIssue(issue.id, patch).catch(() => undefined);
   };
 
@@ -105,235 +111,334 @@ export default function IssueDetail() {
     void rejectIssue(issue.id, reason, note).catch(() => undefined);
   };
 
-  const selectClass = cn(
-    "w-full px-2 py-2",
-    INPUT,
-    "disabled:cursor-not-allowed disabled:opacity-60",
-  );
-
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
-      <Link
-        href={`/runway/${issue.runwayId}`}
-        className={cn("h-8 px-2.5 text-[12px]", BTN)}
-      >
+    <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
+      <Link href={`/runway/${issue.runwayId}`} className={cn("h-8 w-fit px-2.5 text-[12px]", BTN)}>
         <ChevronLeft size={14} strokeWidth={2} /> {runway?.name ?? "Runway"}
       </Link>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className={EYEBROW}>Valanor · Issue review</p>
-          <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
-            <ScanSearch size={17} strokeWidth={2} /> {CATEGORY[issue.category]}
-          </h1>
-          <p className="mt-1 font-mono text-[12px] text-[#6b7176]">
-            {runway?.name} · {issue.zone} · {issue.id.toUpperCase()}
-          </p>
+      {/* header box — matches the dashboard command strip */}
+      <section className={cn("overflow-hidden rounded-md", CARD)}>
+        <div className={cn("flex flex-wrap items-end justify-between gap-3 px-4 py-3", BAR)}>
+          <div className="min-w-0">
+            <p className={EYEBROW}>Valanor · Issue review</p>
+            <h2 className={cn("mt-1 flex items-center gap-2", H2)}>
+              <ScanSearch size={17} strokeWidth={2} /> {CATEGORY[issue.category]}
+            </h2>
+            <p className="mt-1 font-mono text-[12px] text-[#6b7176]">
+              {[runway?.name, issue.zone, issue.id.toUpperCase()].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
         </div>
-        <Badge tone={DECISION[issue.status].tone}>
-          {DECISION[issue.status].label}
-        </Badge>
-      </div>
+      </section>
 
-      <div className="grid gap-6 md:grid-cols-[1.7fr_1fr] md:items-start">
-        {/* left — the evidence */}
-        <div className="space-y-3 md:sticky md:top-6">
-          <RunwayImage
-            bbox={issue.bbox}
-            label={CATEGORY[issue.category]}
-            src={issue.imageUrl}
-            heightClass="h-[460px]"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={band.tone}>{band.label}</Badge>
-            <span className="font-mono text-[12px] text-[#5b6166]">
-              {pct(issue.confidence)} model confidence
-            </span>
-            {issue.gps && (
-              <span className="ml-auto font-mono text-[11px] text-[#6b7176]">
-                {issue.gps.lat.toFixed(4)}, {issue.gps.lng.toFixed(4)}
-              </span>
+      {decided ? (
+        <DecidedView issue={issue} runway={runway} ticketId={issue.ticketId} />
+      ) : !canReview ? (
+        <p className={cn("rounded-md border-[#dbdfe3] bg-[#f3f5f7] px-4 py-3 text-center text-[13px] text-[#5b6166]", CARD)}>
+          Switch to the Inspector role to review this candidate.
+        </p>
+      ) : (
+        <section className={cn("overflow-hidden rounded-md", CARD)}>
+          <div className={cn("flex items-center justify-between gap-3 px-4 py-2.5", BAR)}>
+            <h3 className="flex flex-wrap items-baseline gap-x-2 text-[13px] font-semibold text-[#181b1e]">
+              {STEP_META[step].title}
+              <span className={cn("text-[12px] font-normal", MUTED)}>{STEP_META[step].hint}</span>
+            </h3>
+            <StepDots step={step} />
+          </div>
+
+          <div className="p-4">
+            {step === 1 ? (
+              <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
+                <RunwayImage
+                  bbox={issue.bbox}
+                  label={CATEGORY[category]}
+                  src={issue.imageUrl}
+                  fit="contain"
+                  heightClass="h-[300px] md:h-[440px]"
+                />
+                <div className="space-y-4">
+                  <Field label="Category">
+                    <Select
+                      value={category}
+                      options={CATEGORY_OPTIONS}
+                      ariaLabel="Category"
+                      onChange={(v) => {
+                        setCategory(v);
+                        persist({ category: v });
+                      }}
+                    />
+                  </Field>
+                  <Field
+                    label={
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("inline-block h-2 w-2 rounded-full", DOT[severity])} /> Severity
+                      </span>
+                    }
+                  >
+                    <Select
+                      value={severity}
+                      options={SEVERITY_OPTIONS}
+                      ariaLabel="Severity"
+                      onChange={(v) => {
+                        setSeverity(v);
+                        persist({ severity: v });
+                      }}
+                    />
+                  </Field>
+
+                  <div className="space-y-1.5">
+                    <span className={EYEBROW}>Model confidence</span>
+                    <div className="flex items-center gap-2">
+                      <Badge tone={band.tone}>{band.label}</Badge>
+                      <span className="font-mono text-[13px] tabular-nums text-[#181b1e]">{pct(issue.confidence)}</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#e4e8ec]">
+                      <div
+                        className="h-full rounded-full bg-[#181b1e]"
+                        style={{ width: `${Math.round(issue.confidence * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {issue.gps && (
+                    <p className="font-mono text-[11px] text-[#6b7176]">
+                      {issue.gps.lat.toFixed(4)}, {issue.gps.lng.toFixed(4)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : step === 2 ? (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className={cn("flex items-center justify-between", EYEBROW)}>
+                    Ticket draft
+                    <span className="font-mono text-[10px] normal-case tracking-normal text-[#9aa1a6]">
+                      {edited ? "edited" : "AI-generated · editable"}
+                    </span>
+                  </label>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => persist({ draft })}
+                    rows={5}
+                    className={cn("w-full resize-y px-3 py-2 leading-relaxed", INPUT)}
+                  />
+                </div>
+
+                {edited && <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />}
+
+                <Field label="Inspector notes">
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={() => persist({ notes })}
+                    rows={2}
+                    placeholder="Optional — immediate action taken, context…"
+                    className={cn("w-full resize-y px-3 py-2", INPUT)}
+                  />
+                </Field>
+
+                {/* the full work order this draft becomes — auto-derived, for review */}
+                <div className="space-y-2">
+                  <p className={cn("flex flex-wrap items-baseline gap-x-2", EYEBROW)}>
+                    Work order fields
+                    <span className="text-[11px] font-normal normal-case tracking-normal text-[#9aa1a6]">
+                      auto-derived from category &amp; severity
+                    </span>
+                  </p>
+                  <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[#e3e5e8] bg-[#e3e5e8] sm:grid-cols-2">
+                    {woFields.map((f) => (
+                      <div key={f.label} className="bg-white px-3 py-2.5">
+                        <dt className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">{f.label}</dt>
+                        <dd className="mt-0.5 text-[13px] leading-relaxed text-[#3f4448]">{f.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </div>
+            ) : (
+              <WorkOrderSheet issue={issue} runway={runway} category={category} severity={severity} draft={draft} notes={notes} />
             )}
           </div>
-        </div>
 
-        {/* right — the review card */}
-        <div className={cn("space-y-4 rounded-md p-4", CARD)}>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Category">
-              <select
-                value={category}
-                disabled={!editable}
-                onChange={(e) => {
-                  const next = e.target.value as IssueCategory;
-                  setCategory(next);
-                  persist({ category: next });
-                }}
-                className={selectClass}
-              >
-                {ISSUE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {CATEGORY[c]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field
-              label={
-                <span className="flex items-center gap-1.5">
-                  <span className={cn("inline-block h-2 w-2 rounded-full", DOT[severity])} />
-                  Severity
-                </span>
-              }
-            >
-              <select
-                value={severity}
-                disabled={!editable}
-                onChange={(e) => {
-                  const next = e.target.value as Severity;
-                  setSeverity(next);
-                  persist({ severity: next });
-                }}
-                className={selectClass}
-              >
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {SEVERITY[s].label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <Field
-            label={
-              <span className="flex items-center justify-between gap-2">
-                Ticket draft
-                <span className="font-mono text-[10px] normal-case tracking-normal text-[#9aa1a6]">
-                  {editable ? (edited ? "edited" : "AI-generated · editable") : "AI-generated"}
-                </span>
-              </span>
-            }
-          >
-            <textarea
-              value={draft}
-              disabled={!editable}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => editable && persist({ draft })}
-              rows={5}
-              className={cn(
-                "w-full px-3 py-2 leading-relaxed",
-                INPUT,
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              )}
-            />
-          </Field>
-
-          {/* Self-improvement: immutable AI draft vs. edited text (design §13) —
-              shown only once the inspector diverges from the draft. */}
-          {edited && <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />}
-
-          <Field label="Inspector notes">
-            <textarea
-              value={notes}
-              disabled={!editable}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => editable && persist({ notes })}
-              rows={2}
-              placeholder="Optional…"
-              className={cn(
-                "w-full px-3 py-2",
-                INPUT,
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              )}
-            />
-          </Field>
-
-          <div className="border-t border-[#dbdfe3] pt-4">
-            {decided ? (
-              <Resolved
-                status={issue.status}
-                ticketId={issue.ticketId}
-                label={DECISION[issue.status].label}
-              />
-            ) : !canReview ? (
-              <p className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2 text-center text-[12px] text-[#5b6166]">
-                Switch to the Inspector role to review this candidate.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                <button
-                  onClick={handleApprove}
-                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
-                >
-                  <Check size={15} strokeWidth={2} /> Approve &amp; create ticket
+          {/* step actions */}
+          <div className="flex items-center justify-between gap-2 border-t border-[#dbdfe3] px-4 py-3">
+            {step === 1 ? (
+              <>
+                <button onClick={() => setShowReject(true)} className={cn("h-9 px-3 text-[12px]", BTN_DANGER)}>
+                  <X size={14} strokeWidth={2} /> False positive
                 </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setShowReject(true)}
-                    className={cn("h-9 px-3 text-[12px]", BTN_DANGER)}
-                  >
-                    <X size={14} strokeWidth={2} /> Reject
-                  </button>
+                <button onClick={() => setStep(2)} className={cn("h-9 px-4 text-[13px]", BTN_PRIMARY)}>
+                  Confirm detection <ArrowRight size={15} strokeWidth={2} />
+                </button>
+              </>
+            ) : step === 2 ? (
+              <>
+                <button onClick={() => setStep(1)} className={cn("h-9 px-3 text-[12px]", BTN)}>
+                  <ChevronLeft size={14} strokeWidth={2} /> Back
+                </button>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => void manualReview(issue.id).catch(() => undefined)}
                     className={cn("h-9 px-3 text-[12px]", BTN)}
                   >
                     <Flag size={14} strokeWidth={2} /> Manual review
                   </button>
+                  <button onClick={() => setStep(3)} className={cn("h-9 px-4 text-[13px]", BTN_PRIMARY)}>
+                    Preview ticket <ArrowRight size={15} strokeWidth={2} />
+                  </button>
                 </div>
-              </div>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setStep(2)} className={cn("h-9 px-3 text-[12px]", BTN)}>
+                  <ChevronLeft size={14} strokeWidth={2} /> Back
+                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => window.print()} className={cn("h-9 px-3 text-[12px]", BTN)}>
+                    <Printer size={14} strokeWidth={2} /> Save PDF
+                  </button>
+                  <button onClick={handleApprove} className={cn("h-10 px-4 text-[13px]", BTN_PRIMARY)}>
+                    <Check size={15} strokeWidth={2} /> Approve &amp; send to maintenance
+                  </button>
+                </div>
+              </>
             )}
           </div>
-        </div>
-      </div>
-
-      {showReject && (
-        <RejectModal
-          onCancel={() => setShowReject(false)}
-          onConfirm={handleReject}
-        />
+        </section>
       )}
+
+      {showReject && <RejectModal onCancel={() => setShowReject(false)} onConfirm={handleReject} />}
     </div>
   );
 }
 
-function Resolved({
-  status,
-  ticketId,
-  label,
+function StepDots({ step }: { step: Step }) {
+  return (
+    <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
+      <span className="hidden sm:inline">Step {step} of 3</span>
+      <span className="flex gap-1">
+        {([1, 2, 3] as Step[]).map((n) => (
+          <span
+            key={n}
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              n === step ? "bg-[#181b1e]" : n < step ? "bg-[#9aa1a6]" : "bg-[#d3d7da]",
+            )}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/** Print-styled work-order sheet — what maintenance receives. */
+function WorkOrderSheet({
+  issue,
+  runway,
+  category,
+  severity,
+  draft,
+  notes,
 }: {
-  status: string;
-  ticketId?: string;
-  label: string;
+  issue: IssueCandidate;
+  runway?: Runway;
+  category: IssueCategory;
+  severity: Severity;
+  draft: string;
+  notes: string;
 }) {
-  if (status === "approved" && ticketId) {
-    return (
-      <div className="space-y-2">
-        <p className="flex items-center justify-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[#5b6166]">
-          <Check size={13} strokeWidth={2.5} /> Approved · this review is closed
+  const fields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, runway);
+  const sev = SEVERITY[severity];
+
+  return (
+    <div
+      data-wo-sheet
+      className="mx-auto max-w-[720px] overflow-hidden rounded-md border border-[#dbdfe3] bg-white shadow-[0_2px_10px_rgba(11,13,14,0.08)]"
+    >
+      <div className="flex items-start justify-between border-b-2 border-[#181b1e] px-6 py-5">
+        <div>
+          <p className="text-[18px] font-bold tracking-[0.22em] text-[#181b1e]">VALANOR</p>
+          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#6b7176]">Airfield Inspection</p>
+        </div>
+        <div className="text-right">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#6b7176]">Maintenance work order</p>
+          <p className="mt-1 font-mono text-[13px] font-semibold text-[#181b1e]">PENDING DISPATCH</p>
+          <p className="font-mono text-[11px] text-[#9aa1a6]">{issue.id.toUpperCase()}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
+        <div>
+          <h2 className="text-[20px] font-semibold text-[#181b1e]">{CATEGORY[category]}</h2>
+          <p className="mt-1 text-[13px] text-[#5b6166]">{[runway?.name, issue.zone].filter(Boolean).join(" · ") || "—"}</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#181b1e] px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wide text-[#181b1e]">
+          <span className={cn("h-2 w-2 rounded-full", DOT[severity])} /> {sev.label} severity
+        </span>
+      </div>
+
+      <div className="px-6 pb-4">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#6b7176]">Description</p>
+        <p className="mt-1 text-[14px] leading-relaxed text-[#181b1e]">{draft || "—"}</p>
+      </div>
+
+      <dl className="grid grid-cols-1 gap-px border-t border-[#e3e5e8] bg-[#e3e5e8] sm:grid-cols-2">
+        {fields.map((f) => (
+          <div key={f.label} className="bg-white px-6 py-3">
+            <dt className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">{f.label}</dt>
+            <dd className="mt-1 text-[13px] leading-relaxed text-[#181b1e]">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="border-t border-[#e3e5e8] px-6 py-4">
+        <p className="font-mono text-[10px] leading-relaxed text-[#9aa1a6]">
+          Generated by Valanor Airfield Inspection · Not yet dispatched — pending inspector approval.
         </p>
-        <Link href={`/ticket/${ticketId}`} className={cn("h-9 w-full px-3 text-[12px]", BTN)}>
-          View ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
-        </Link>
+      </div>
+    </div>
+  );
+}
+
+/** Read-only view once a candidate is decided. */
+function DecidedView({ issue, runway, ticketId }: { issue: IssueCandidate; runway?: Runway; ticketId?: string }) {
+  if (issue.status === "approved") {
+    return (
+      <div className="space-y-4">
+        <WorkOrderSheet
+          issue={issue}
+          runway={runway}
+          category={issue.category}
+          severity={issue.severity}
+          draft={issue.draft}
+          notes={issue.inspectorNotes}
+        />
+        {ticketId && (
+          <Link
+            href={`/ticket/${ticketId}`}
+            className={cn("mx-auto flex h-10 max-w-[720px] items-center justify-center px-4 text-[13px]", BTN)}
+          >
+            View dispatched ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
+          </Link>
+        )}
       </div>
     );
   }
   return (
-    <p className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2 text-center text-[12px] text-[#5b6166]">
-      {label} — no ticket created.
-    </p>
+    <section className={cn("flex flex-col items-center gap-2 rounded-md p-8 text-center", CARD)}>
+      <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
+      <p className="text-[13px] text-[#5b6166]">
+        This candidate was {DECISION[issue.status].label.toLowerCase()} — no ticket was dispatched.
+      </p>
+    </section>
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
       <label className={cn("block", EYEBROW)}>{label}</label>

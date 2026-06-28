@@ -99,3 +99,24 @@
     font-feature-settings: "tnum";
   }
 }
+
+/* Print only the work-order sheet ("Save PDF" on the issue-review preview). */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  [data-wo-sheet],
+  [data-wo-sheet] * {
+    visibility: visible !important;
+  }
+  [data-wo-sheet] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+}
