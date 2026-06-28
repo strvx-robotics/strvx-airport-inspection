@@ -36,7 +36,17 @@ async def connect() -> None:
         return
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is not set")
-    _pool = await asyncpg.create_pool(settings.database_url, ssl=_ssl_for(settings.database_url), min_size=1, max_size=5)
+    # statement_cache_size=0: the deployment Postgres sits behind PgBouncer in
+    # transaction mode (Supabase pooler :6543), which rejects server-side prepared
+    # statements. Disabling asyncpg's cache keeps us pooler-compatible; harmless
+    # against a direct connection.
+    _pool = await asyncpg.create_pool(
+        settings.database_url,
+        ssl=_ssl_for(settings.database_url),
+        min_size=1,
+        max_size=5,
+        statement_cache_size=0,
+    )
 
 
 async def disconnect() -> None:
