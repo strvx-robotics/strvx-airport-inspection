@@ -1,4 +1,3 @@
-import asyncpg
 import pytest
 
 from app import db

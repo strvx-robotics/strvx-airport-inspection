@@ -35,8 +35,10 @@ async def test_repair_transitions_and_writes_history(seed):
         assert t.maintenance_notes == "fixed it"
         assert t.repaired_at is not None
         # history row recorded with the resolved actor name from users table
-        h = await db.one("SELECT action, actor, actor_role FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
+        h = await db.one("SELECT action, from_status, to_status, actor, actor_role FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
         assert h["action"] == "repair"
+        assert h["from_status"] == "sent"
+        assert h["to_status"] == "repaired"
         assert h["actor"] == "Field Maintenance"
         assert h["actor_role"] == "maintenance"
     finally:
@@ -100,5 +102,19 @@ async def test_close_repaired_ticket(seed):
         assert t.closed_at is not None
         h = await db.one("SELECT action FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
         assert h is not None and h["action"] == "close"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_to_ticket_falls_back_to_zone_name(seed):
+    await seed.execute("INSERT INTO runways (id, airport_id, name, designation, created_at) VALUES ('r1','ags','Runway 1','17 - 35','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO zones (id, runway_id, name, created_at) VALUES ('z1','r1','Zone X','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO issue_candidates (id, runway_id, issue_type, confidence, confidence_band, severity, status, bbox_json, ai_draft_text, draft, created_at) VALUES ('ic1','r1','pavement',0.9,'high','high','approved','{}','d','d','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, maintenance_notes, created_at) VALUES ('WO-1042','ic1','r1','z1',NULL,'pavement','sent','desc','high','','2026-06-22T06:30:00.000Z')")
+    await db.connect()
+    try:
+        t = await repo.get_ticket("WO-1042")
+        assert t.zone == "Zone X"
     finally:
         await db.disconnect()

@@ -1,7 +1,10 @@
+import logging
 import re
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("app.errors")
 
 _NOT_FOUND = re.compile(r"not found", re.IGNORECASE)
 
@@ -21,4 +24,5 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _unhandled(_req: Request, exc: Exception):
         # Never leak DB/internal details (mirrors http.ts isInternalError → 500).
+        logger.exception("[api] unhandled error: %r", exc)
         return JSONResponse({"error": "Internal error"}, status_code=500)

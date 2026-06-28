@@ -13,7 +13,9 @@ class Actor(BaseModel):
 def actor_from(request: Request, body: dict | None = None) -> Actor | None:
     """Port of http.ts actorFrom: role from x-actor-role header or body.actor.role.
     Advisory only — no verification."""
-    body_actor = (body or {}).get("actor") or {}
+    body_actor = (body or {}).get("actor")
+    if not isinstance(body_actor, dict):
+        body_actor = {}
     body_role = body_actor.get("role")
     header_role = request.headers.get("x-actor-role")
     role = body_role if body_role in USER_ROLES else (header_role if header_role in USER_ROLES else None)

@@ -1,11 +1,29 @@
 from __future__ import annotations
 
 import contextlib
+import re
+import ssl as ssl_module
 from contextvars import ContextVar
 
 import asyncpg
 
 from app.config import settings
+
+
+def _ssl_for(dsn: str):
+    """Mirror frontend lib/db.ts sslConfig: localhost = no SSL; DATABASE_CA_CERT =
+    verify-full against the pinned CA; DATABASE_SSL_NO_VERIFY = no verification;
+    otherwise verify-full against the system trust store."""
+    if re.search(r"@(localhost|127\.0\.0\.1)[:/]", dsn):
+        return False
+    if settings.database_ca_cert:
+        return ssl_module.create_default_context(cadata=settings.database_ca_cert)
+    if settings.database_ssl_no_verify:
+        ctx = ssl_module.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl_module.CERT_NONE
+        return ctx
+    return ssl_module.create_default_context()
 
 _pool: asyncpg.Pool | None = None
 _current_conn: ContextVar[asyncpg.Connection | None] = ContextVar("current_conn", default=None)
@@ -18,7 +36,7 @@ async def connect() -> None:
         return
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is not set")
-    _pool = await asyncpg.create_pool(settings.database_url, min_size=1, max_size=5)
+    _pool = await asyncpg.create_pool(settings.database_url, ssl=_ssl_for(settings.database_url), min_size=1, max_size=5)
 
 
 async def disconnect() -> None:
