@@ -1,6 +1,18 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-app = FastAPI(title="STRVX Airport Inspection Backend")
+from app import db
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await db.connect()
+    yield
+    await db.disconnect()
+
+
+app = FastAPI(title="STRVX Airport Inspection Backend", lifespan=lifespan)
 
 
 @app.get("/health")
