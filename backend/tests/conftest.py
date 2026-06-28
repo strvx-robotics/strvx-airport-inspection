@@ -18,10 +18,14 @@ TABLES = [
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def _schema():
     """Apply the schema once per test session."""
-    conn = await asyncpg.connect(TEST_DB)
-    schema = (Path(__file__).parent / "schema.sql").read_text()
-    await conn.execute(schema)
-    await conn.close()
+    try:
+        conn = await asyncpg.connect(TEST_DB)
+        schema = (Path(__file__).parent / "schema.sql").read_text()
+        await conn.execute(schema)
+        await conn.close()
+    except (asyncpg.exceptions.InvalidCatalogNameError, asyncpg.exceptions.CannotConnectNowError, OSError):
+        # Skip if database doesn't exist (for pure unit tests that don't need DB)
+        pass
 
 
 @pytest_asyncio.fixture
