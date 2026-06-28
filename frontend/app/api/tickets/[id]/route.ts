@@ -1,14 +1,17 @@
-// GET /api/tickets/[id] — a ticket with its originating issue and runway.
-
-import { getTicketDetail } from "@/lib/repo";
-import { json, notFound, route, type RouteContext } from "@/lib/http";
-
+// GET /api/tickets/[id] — proxied to the Python backend.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const BACKEND_URL = process.env.BACKEND_URL;
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
-export const GET = route<{ id: string }>(async (_req, { params }: RouteContext<{ id: string }>) => {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-  const detail = await getTicketDetail(id);
-  if (!detail) return notFound(`Ticket not found: ${id}`);
-  return json(detail);
-});
+  const res = await fetch(`${BACKEND_URL}/tickets/${id}`, { cache: "no-store" });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}

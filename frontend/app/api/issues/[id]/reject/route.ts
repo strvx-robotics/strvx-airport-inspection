@@ -1,26 +1,24 @@
-// POST /api/issues/[id]/reject — reject a candidate. A RejectionReason is
-// REQUIRED (design §13.1); the reason + optional note are persisted to the
-// immutable issue_status_history.
-
-import { rejectIssue } from "@/lib/repo";
-import { actorFrom, json, readJson, route, type RouteContext } from "@/lib/http";
-import { REJECTION_REASONS, type RejectionReason } from "@/lib/types";
-
+// POST /api/issues/[id]/reject — proxied to the Python backend.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const BACKEND_URL = process.env.BACKEND_URL;
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
-interface Body {
-  reason?: string;
-  note?: string;
-  actor?: { role?: string; name?: string; id?: string };
-}
-
-export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-  const body = await readJson<Body>(req);
-  if (!body.reason || !(REJECTION_REASONS as string[]).includes(body.reason)) {
-    throw new Error("A valid rejection reason is required");
-  }
-  const issue = await rejectIssue(id, { reason: body.reason as RejectionReason, note: body.note }, actorFrom(req, body));
-  return json({ issue });
-});
+  const res = await fetch(`${BACKEND_URL}/issues/${id}/reject`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-actor-role": req.headers.get("x-strvx-role") ?? "",
+    },
+    body: await req.text(),
+  });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}
