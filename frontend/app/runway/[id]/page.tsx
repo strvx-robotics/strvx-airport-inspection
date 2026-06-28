@@ -4,15 +4,23 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
+import { ChevronLeft, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
+import {
+  createColumnHelper,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type SortingState,
+} from "@tanstack/react-table";
 import Badge from "@/components/Badge";
+import DataTable from "@/components/DataTable";
 import RunwayImage from "@/components/RunwayImage";
 import { useRunwayDetail } from "@/lib/store";
 import * as api from "@/lib/api";
-import type { Zone } from "@/lib/types";
+import type { IssueCandidate, Zone } from "@/lib/types";
 import { CATEGORY, DECISION, confidenceBand, pct } from "@/lib/ui";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, BTN, EYEBROW, H2, MUTED, LINK } from "@/lib/vstyle";
+import { CARD, BAR, BTN, H2, MUTED, LINK } from "@/lib/vstyle";
 
 // MapLibre touches window/WebGL at construction, so load it client-only.
 const RunwayMap = dynamic(() => import("@/components/map/RunwayMap"), {
@@ -20,17 +28,70 @@ const RunwayMap = dynamic(() => import("@/components/map/RunwayMap"), {
   loading: () => <div className="h-[420px] w-full animate-pulse rounded-md bg-[#f3f5f7]" />,
 });
 
-// Issue table cells: shared padding + a left rule on the data columns. A real
-// <table> lines header/body columns up and stretches the rule full-height for
-// free — no fixed-width tracks to keep in sync.
-const CELL = "px-4 py-3 text-left align-middle";
-const RULE = "border-l border-[#dbdfe3]";
+// Detected-issues table: same shared DataTable as the overview Runways grid.
+// First cell is the evidence thumbnail; the Type cell carries the real <Link>
+// (keyboard/AT target) while the whole row is a pointer shortcut to the issue.
+const col = createColumnHelper<IssueCandidate>();
+const columns = [
+  col.display({
+    id: "thumb",
+    header: "",
+    cell: ({ row }) => (
+      <div className="w-16">
+        {/* No label badge — the Type column already names it; it'd clip at this size. */}
+        <RunwayImage bbox={row.original.bbox} src={row.original.imageUrl} heightClass="h-12" />
+      </div>
+    ),
+    meta: { thClass: "w-[88px]" },
+  }),
+  col.accessor((i) => CATEGORY[i.category], {
+    id: "type",
+    header: "Type",
+    sortingFn: "alphanumeric",
+    cell: ({ row, getValue }) => (
+      <>
+        <Link
+          href={`/issue/${row.original.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="block truncate text-[13px] font-semibold leading-tight text-[#181b1e] hover:underline focus-visible:underline focus-visible:outline-none"
+        >
+          {getValue()}
+        </Link>
+        <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>{row.original.zone}</p>
+      </>
+    ),
+    meta: { thClass: "w-full", tdClass: "min-w-0" },
+  }),
+  col.accessor((i) => i.confidence, {
+    id: "confidence",
+    header: "Confidence",
+    cell: ({ row }) => {
+      const band = confidenceBand(row.original.confidence);
+      return (
+        <div className="flex items-center gap-2">
+          <Badge tone={band.tone}>{band.label}</Badge>
+          <span className={cn("font-mono text-[12px] tabular-nums", MUTED)}>{pct(row.original.confidence)}</span>
+        </div>
+      );
+    },
+    meta: { tdClass: "whitespace-nowrap" },
+  }),
+  col.accessor((i) => DECISION[i.status].label, {
+    id: "status",
+    header: "Status",
+    sortingFn: "alphanumeric",
+    cell: ({ row }) => <Badge tone={DECISION[row.original.status].tone}>{DECISION[row.original.status].label}</Badge>,
+    meta: { tdClass: "whitespace-nowrap" },
+  }),
+];
 
 export default function RunwayDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { runway, issues, loading } = useRunwayDetail(id);
   const [zones, setZones] = useState<Zone[]>([]);
+  // Default view: highest confidence first — every header is click-to-sort.
+  const [sorting, setSorting] = useState<SortingState>([{ id: "confidence", desc: true }]);
 
   useEffect(() => {
     let live = true;
@@ -40,10 +101,17 @@ export default function RunwayDetail() {
     };
   }, [id]);
 
-  if (!runway) return loading ? <Loading /> : <NotFound />;
+  const table = useReactTable({
+    data: issues,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getRowId: (i) => i.id,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
-  // Sort by confidence desc to match the server ordering.
-  const mine = [...issues].sort((a, b) => b.confidence - a.confidence);
+  if (!runway) return loading ? <Loading /> : <NotFound />;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
@@ -67,7 +135,7 @@ export default function RunwayDetail() {
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-[#181b1e]" /> issue
             </span>
-            <span>{mine.length} located</span>
+            <span>{issues.length} located</span>
           </p>
         </div>
         <div className="p-3">
@@ -75,7 +143,7 @@ export default function RunwayDetail() {
         </div>
       </section>
 
-      {mine.length === 0 ? (
+      {issues.length === 0 ? (
         <div
           className={cn(
             "mt-6 flex flex-col items-center justify-center gap-2 rounded-md p-12 text-center",
@@ -93,73 +161,15 @@ export default function RunwayDetail() {
           <div className={cn("flex items-center justify-between px-4 py-3", BAR)}>
             <h3 className="text-[13px] font-semibold text-[#181b1e]">Detected issues</h3>
             <p className={cn("text-[12px]", MUTED)}>
-              {mine.length} record{mine.length === 1 ? "" : "s"}
+              {issues.length} record{issues.length === 1 ? "" : "s"}
             </p>
           </div>
-
-          <table className="w-full border-collapse">
-            <colgroup>
-              <col className="w-[88px]" />
-              <col className="w-full" />
-              <col />
-              <col />
-              <col className="w-[44px]" />
-            </colgroup>
-            <thead>
-              <tr className="border-b border-[#dbdfe3]">
-                <th className={CELL} />
-                <th className={cn(CELL, "py-2", EYEBROW)}>Type</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Confidence</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Status</th>
-                <th className={cn(CELL, "py-2")} />
-              </tr>
-            </thead>
-            <tbody>
-              {mine.map((issue) => {
-                const band = confidenceBand(issue.confidence);
-                const href = `/issue/${issue.id}`;
-                return (
-                  <tr
-                    key={issue.id}
-                    onClick={() => router.push(href)}
-                    className="cursor-pointer border-b border-[#dbdfe3] last:border-b-0 hover:bg-[#eef1f4]"
-                  >
-                    <td className={CELL}>
-                      <div className="w-16">
-                        <RunwayImage bbox={issue.bbox} src={issue.imageUrl} heightClass="h-12" />
-                      </div>
-                    </td>
-                    <td className={cn(CELL, "min-w-0")}>
-                      <Link
-                        href={href}
-                        onClick={(e) => e.stopPropagation()}
-                        className="block truncate text-[13px] font-semibold leading-tight text-[#181b1e] hover:underline"
-                      >
-                        {CATEGORY[issue.category]}
-                      </Link>
-                      <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>
-                        {issue.zone}
-                      </p>
-                    </td>
-                    <td className={cn(CELL, RULE, "whitespace-nowrap")}>
-                      <div className="flex items-center gap-2">
-                        <Badge tone={band.tone}>{band.label}</Badge>
-                        <span className={cn("font-mono text-[12px] tabular-nums", MUTED)}>
-                          {pct(issue.confidence)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={cn(CELL, RULE, "whitespace-nowrap")}>
-                      <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
-                    </td>
-                    <td className={cn(CELL, "text-right")}>
-                      <ChevronRight size={15} strokeWidth={2} className="text-[#9aa1a6]" />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable
+            table={table}
+            label="Detected issues"
+            minWidth={640}
+            onRowClick={(i) => router.push(`/issue/${i.id}`)}
+          />
         </section>
       )}
     </div>

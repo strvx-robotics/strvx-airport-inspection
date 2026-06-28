@@ -22,6 +22,7 @@ import {
   type BadgeTone,
   type BBox,
   type ConfidenceBand,
+  type Drone,
   type GeomConfidence,
   type Image,
   type Inspection,
@@ -338,6 +339,16 @@ export async function createRunway(input: { airportId: string; name: string; des
 
 export async function listZones(runwayId: string): Promise<Zone[]> {
   return (await all<ZoneRow>("SELECT * FROM zones WHERE runway_id = ? ORDER BY station_start_m", [runwayId])).map(toZone);
+}
+
+// ── Fleet ─────────────────────────────────────────────────────────────────────
+
+interface DroneRow { id: string; airport_id: string; model: string; status: string; battery: number | null; assignment: Str; last_seen: Str; created_at: string }
+function toDrone(r: DroneRow): Drone {
+  return { id: r.id, airportId: r.airport_id, model: r.model, status: r.status as Drone["status"], battery: r.battery ?? undefined, assignment: u(r.assignment), lastSeen: u(r.last_seen), createdAt: r.created_at };
+}
+export async function listDrones(): Promise<Drone[]> {
+  return (await all<DroneRow>("SELECT * FROM drones ORDER BY id")).map(toDrone);
 }
 export async function getZone(id: string): Promise<Zone | undefined> {
   const r = await one<ZoneRow>("SELECT * FROM zones WHERE id = ?", [id]);
@@ -815,26 +826,76 @@ export async function getInspectionReport(id: string): Promise<InspectionReport 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** Minimal self-contained HTML inspection report (PRD §14). */
+// Printable-report label maps (kept local so this server module stays free of
+// the client presentation layer; mirror lib/ui.ts).
+const REPORT_CATEGORY: Record<string, string> = {
+  fod: "Debris / FOD",
+  pavement: "Pavement damage",
+  marking: "Runway marking",
+  lighting: "Lighting / signage",
+};
+const titleCase = (s: string): string =>
+  s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+/** Clean, light, print-ready HTML inspection report (PRD §14). Dark ink on
+ *  white with a no-print toolbar — Cmd/Ctrl-P saves a legible PDF. */
 export function renderReportHtml(report: InspectionReport): string {
-  const rows = report.runways
+  const fmt = (iso: string): string => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: report.airport.timezone || "UTC",
+      }).format(new Date(iso));
+    } catch {
+      return iso;
+    }
+  };
+
+  const sections = report.runways
     .map((r) => {
-      const issues = r.issues
-        .map((i) => `<li><strong>${esc(i.category)}</strong> — ${esc(i.zone ?? "")} · ${(i.confidence * 100).toFixed(0)}% · ${esc(i.severity)} · ${esc(i.status)}</li>`)
-        .join("");
-      return `<section><h3>${esc(r.runway.name)} (${esc(r.runway.designation)})</h3>${
-        r.issues.length ? `<ul>${issues}</ul>` : "<p>No issues found.</p>"
-      }</section>`;
+      const body = r.issues.length
+        ? `<table><thead><tr><th>Category</th><th>Zone</th><th>Confidence</th><th>Severity</th><th>Status</th></tr></thead><tbody>${r.issues
+            .map(
+              (i) =>
+                `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td></tr>`,
+            )
+            .join("")}</tbody></table>`
+        : `<p class="none">No issues found.</p>`;
+      return `<section><h3>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h3>${body}</section>`;
     })
     .join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Inspection report — ${esc(report.airport.code)}</title>
-<style>body{font:14px/1.5 system-ui,sans-serif;max-width:760px;margin:2rem auto;color:#eef0f2;padding:0 1rem}
-h1{margin-bottom:.25rem}.muted{color:#6b7176}section{border-top:1px solid #e3e5e8;padding:.75rem 0}ul{margin:.25rem 0}</style>
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inspection report — ${esc(report.airport.code)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;max-width:800px;margin:2.5rem auto;color:#181b1e;background:#fff;padding:0 1.5rem}
+  .toolbar{display:flex;justify-content:flex-end;margin-bottom:1.25rem}
+  button{font:inherit;font-weight:600;padding:.45rem .9rem;border:1px solid #c7cdd2;border-radius:6px;background:#f3f5f7;color:#181b1e;cursor:pointer}
+  button:hover{background:#eef1f4}
+  header{border-bottom:2px solid #181b1e;padding-bottom:.85rem;margin-bottom:.5rem}
+  h1{font-size:22px;margin:0 0 .3rem}
+  .meta{color:#5b6166;font-size:13px;margin:.1rem 0}
+  .totals{margin:.7rem 0 0;font-weight:600}
+  section{border-top:1px solid #dbdfe3;padding:1.1rem 0;break-inside:avoid}
+  h3{font-size:15px;margin:0 0 .6rem}
+  .desig{color:#6b7176;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7176;border-bottom:1px solid #c7cdd2;padding:.35rem .5rem}
+  td{padding:.4rem .5rem;border-bottom:1px solid #eef1f4;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .none{color:#6b7176;margin:.25rem 0}
+  @media print{body{margin:0;max-width:none;padding:0}.toolbar{display:none}}
+</style>
 </head><body>
-<h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
-<p class="muted">Inspection ${esc(report.inspection.scheduledTime)} · status ${esc(report.inspection.status)} · generated ${esc(report.generatedAt)}</p>
-<p>${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
-${rows}
+<div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
+<header>
+  <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
+  <p class="meta">Inspection ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
+  <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
+  <p class="totals">${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
+</header>
+${sections}
 </body></html>`;
 }
 

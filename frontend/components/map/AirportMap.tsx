@@ -11,6 +11,7 @@ import {
   centerline,
   issuePosition,
   isMappable,
+  runwayAnchor,
   runwayRect,
   zoneRect,
 } from "@/lib/runwayGeom";
@@ -178,12 +179,16 @@ export default function AirportMap({
   useEffect(() => {
     if (!containerRef.current || mappable.length === 0) return;
 
+    // Initial center from real runway geometry (fitBounds refines it on load);
+    // mappable runways always have an anchor, so this is defined in practice.
+    const initialCenter = runwayAnchor(mappable[0].runway);
+
     let map: maplibregl.Map;
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
         style: basemapStyle,
-        center: pos({ lat: 33.3699, lng: -81.9645 }),
+        center: initialCenter ? pos(initialCenter) : undefined,
         zoom: 14,
         attributionControl: { compact: true },
         dragRotate: false,

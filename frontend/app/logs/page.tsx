@@ -1,26 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollText, ArrowUpRight } from "lucide-react";
+import {
+  createColumnHelper,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type SortingState,
+} from "@tanstack/react-table";
 import Badge from "@/components/Badge";
+import DataTable from "@/components/DataTable";
 import { useOverview } from "@/lib/store";
 import * as api from "@/lib/api";
+import type { Inspection } from "@/lib/types";
 import { fmtInTz } from "@/lib/format";
 import { INSPECTION_STATUS, INSPECTION_WINDOW } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, EYEBROW, H2, MUTED } from "@/lib/vstyle";
 
-const CELL = "px-4 py-3 text-left align-middle";
-const RULE = "border-l border-[#dbdfe3]";
-
 type Counts = { images: number; issues: number };
+
+const col = createColumnHelper<Inspection>();
 
 /** Inspection log — one row per daily pass, with that day's results + report. */
 export default function LogsPage() {
   const { overview, loading } = useOverview();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
+  const [sorting, setSorting] = useState<SortingState>([{ id: "date", desc: true }]);
 
-  const inspections = overview?.inspections ?? [];
+  const inspections = useMemo(() => overview?.inspections ?? [], [overview?.inspections]);
   const tz = overview?.airport.timezone;
   const currentId = overview?.inspection?.id;
   const ids = inspections.map((i) => i.id).join(",");
@@ -39,10 +48,7 @@ export default function LogsPage() {
               [
                 id,
                 d.jobs.reduce<Counts>(
-                  (a, j) => ({
-                    images: a.images + j.imageCount,
-                    issues: a.issues + j.issueCount,
-                  }),
+                  (a, j) => ({ images: a.images + j.imageCount, issues: a.issues + j.issueCount }),
                   { images: 0, issues: 0 },
                 ),
               ] as const,
@@ -59,6 +65,93 @@ export default function LogsPage() {
       live = false;
     };
   }, [ids]);
+
+  const columns = useMemo(
+    () => [
+      col.accessor((i) => i.scheduledTime, {
+        id: "date",
+        header: "Date",
+        sortingFn: "text", // ISO timestamps → text compare is chronological
+        cell: ({ row }) => {
+          const i = row.original;
+          return (
+            <div className="flex items-center gap-2.5">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  i.id === currentId ? "bg-[#181b1e]" : "bg-[#c7cdd2]",
+                )}
+              />
+              <span className="font-mono text-[12px] text-[#181b1e]">
+                {fmtInTz(i.scheduledTime, tz, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+              </span>
+              <span className={cn("font-mono text-[11px]", MUTED)}>
+                {fmtInTz(i.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+          );
+        },
+        meta: { thClass: "w-full" },
+      }),
+      col.accessor((i) => INSPECTION_WINDOW[i.window], {
+        id: "window",
+        header: "Window",
+        sortingFn: "alphanumeric",
+        cell: (c) => c.getValue(),
+        meta: { tdClass: "whitespace-nowrap text-[12px] text-[#3f4448]" },
+      }),
+      col.accessor((i) => counts[i.id]?.issues ?? -1, {
+        id: "issues",
+        header: "Issues",
+        cell: ({ row }) => counts[row.original.id]?.issues ?? "—",
+        meta: { tdClass: "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#181b1e]" },
+      }),
+      col.accessor((i) => counts[i.id]?.images ?? -1, {
+        id: "images",
+        header: "Images",
+        cell: ({ row }) => counts[row.original.id]?.images ?? "—",
+        meta: { tdClass: "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#5b6166]" },
+      }),
+      col.accessor((i) => INSPECTION_STATUS[i.status].label, {
+        id: "status",
+        header: "Status",
+        sortingFn: "alphanumeric",
+        cell: ({ row }) => (
+          <Badge tone={INSPECTION_STATUS[row.original.status].tone}>
+            {INSPECTION_STATUS[row.original.status].label}
+          </Badge>
+        ),
+        meta: { tdClass: "whitespace-nowrap" },
+      }),
+      col.display({
+        id: "report",
+        header: "",
+        cell: ({ row }) => (
+          <a
+            href={api.reportUrl(row.original.id, "html")}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 font-mono text-[11px] text-[#5b6166] hover:text-[#181b1e] focus-visible:text-[#181b1e] focus-visible:underline focus-visible:outline-none"
+          >
+            Report <ArrowUpRight size={13} strokeWidth={2} aria-hidden />
+          </a>
+        ),
+        meta: { tdClass: "whitespace-nowrap text-right" },
+      }),
+    ],
+    [counts, tz, currentId],
+  );
+
+  const table = useReactTable({
+    data: inspections,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getRowId: (i) => i.id,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-6">
@@ -77,107 +170,17 @@ export default function LogsPage() {
           </p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          {loading ? (
+        {loading ? (
           <p className={cn("px-4 py-8 text-center font-mono text-[12px]", MUTED)}>Loading log…</p>
-        ) : inspections.length === 0 ? (
-          <p className={cn("px-4 py-8 text-center text-[12px]", MUTED)}>No inspections recorded.</p>
         ) : (
-          <table className="w-full border-collapse">
-            <colgroup>
-              <col className="w-full" />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-            </colgroup>
-            <thead>
-              <tr className="border-b border-[#dbdfe3]">
-                <th className={cn(CELL, "py-2", EYEBROW)}>Date</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Window</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Issues</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Images</th>
-                <th className={cn(CELL, "py-2", EYEBROW, RULE)}>Status</th>
-                <th className={cn(CELL, "py-2", RULE)} />
-              </tr>
-            </thead>
-            <tbody>
-              {inspections.map((i) => {
-                const c = counts[i.id];
-                const href = api.reportUrl(i.id, "html");
-                const active = i.id === currentId;
-                return (
-                  <tr
-                    key={i.id}
-                    onClick={() => window.open(href, "_blank", "noreferrer")}
-                    className="cursor-pointer border-b border-[#dbdfe3] last:border-b-0 hover:bg-[#eef1f4]"
-                  >
-                    <td className={CELL}>
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 shrink-0 rounded-full",
-                            active ? "bg-[#181b1e]" : "bg-[#c7cdd2]",
-                          )}
-                        />
-                        <span className="font-mono text-[12px] text-[#181b1e]">
-                          {fmtInTz(i.scheduledTime, tz, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </span>
-                        <span className={cn("font-mono text-[11px]", MUTED)}>
-                          {fmtInTz(i.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={cn(CELL, RULE, "whitespace-nowrap text-[12px] text-[#3f4448]")}>
-                      {INSPECTION_WINDOW[i.window]}
-                    </td>
-                    <td
-                      className={cn(
-                        CELL,
-                        RULE,
-                        "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#181b1e]",
-                      )}
-                    >
-                      {c ? c.issues : "—"}
-                    </td>
-                    <td
-                      className={cn(
-                        CELL,
-                        RULE,
-                        "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#5b6166]",
-                      )}
-                    >
-                      {c ? c.images : "—"}
-                    </td>
-                    <td className={cn(CELL, RULE, "whitespace-nowrap")}>
-                      <Badge tone={INSPECTION_STATUS[i.status].tone}>
-                        {INSPECTION_STATUS[i.status].label}
-                      </Badge>
-                    </td>
-                    <td className={cn(CELL, RULE, "whitespace-nowrap text-right")}>
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 font-mono text-[11px] text-[#5b6166] hover:text-[#181b1e]"
-                      >
-                        Report <ArrowUpRight size={13} strokeWidth={2} />
-                      </a>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          )}
-        </div>
+          <DataTable
+            table={table}
+            label="Daily passes"
+            minWidth={720}
+            rowHref={(i) => `/inspection/${i.id}`}
+            empty={<p className={cn("px-4 py-8 text-center text-[12px]", MUTED)}>No inspections recorded.</p>}
+          />
+        )}
       </section>
     </div>
   );

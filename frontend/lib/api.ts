@@ -9,6 +9,7 @@ import type {
   Airport,
   BadgeTone,
   ConfidenceBand,
+  Drone,
   IssueCandidate,
   IssueCategory,
   IssueStatus,
@@ -66,6 +67,14 @@ export interface Overview {
 export interface InspectionWithJobs {
   inspection: Inspection;
   jobs: Array<InspectionJob & { runway?: Runway }>;
+}
+
+export interface InspectionReport {
+  inspection: Inspection;
+  airport: Airport;
+  generatedAt: string;
+  totals: { issues: number; tickets: number; ticketsOpen: number; ticketsCompleted: number };
+  runways: Array<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] }>;
 }
 
 export interface RunwayWithIssues {
@@ -147,6 +156,8 @@ export const runInspectionNow = () =>
 
 export const reportUrl = (id: string, format: "html" | "json") =>
   `/api/inspections/${id}/report?format=${format}`;
+export const getReport = (id: string) =>
+  jsonReq<InspectionReport>(reportUrl(id, "json"));
 
 // ── Runways / issues ──────────────────────────────────────────────────────────
 
@@ -190,6 +201,11 @@ export const listZones = (runwayId: string) =>
   jsonReq<{ zones: Zone[] }>(
     `/api/zones?runwayId=${encodeURIComponent(runwayId)}`,
   ).then((r) => r.zones);
+
+// ── Fleet ─────────────────────────────────────────────────────────────────────
+
+export const listDrones = () =>
+  jsonReq<{ drones: Drone[] }>("/api/drones").then((r) => r.drones);
 
 // ── Uploads ───────────────────────────────────────────────────────────────────
 

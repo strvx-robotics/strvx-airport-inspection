@@ -38,12 +38,17 @@ export default function DataTable<T>({
   label,
   minWidth = 720,
   rowHref,
+  onRowClick,
   empty,
 }: {
   table: Table<T>;
   label: string;
   minWidth?: number;
+  /** Internal nav: the first cell becomes a real <Link>, the row a pointer shortcut. */
   rowHref?: (row: T) => string;
+  /** Generic row action (e.g. open an external report). The caller must supply
+   *  its own focusable control in a cell for keyboard/AT users. */
+  onRowClick?: (row: T) => void;
   empty?: ReactNode;
 }) {
   const router = useRouter();
@@ -112,13 +117,18 @@ export default function DataTable<T>({
           ) : (
             rows.map((row) => {
               const href = rowHref?.(row.original);
+              const onClick = href
+                ? () => router.push(href)
+                : onRowClick
+                  ? () => onRowClick(row.original)
+                  : undefined;
               return (
                 <tr
                   key={row.id}
-                  onClick={href ? () => router.push(href) : undefined}
+                  onClick={onClick}
                   className={cn(
                     "border-b border-[#dbdfe3] transition-colors last:border-b-0",
-                    href && "cursor-pointer hover:bg-[#eef1f4]",
+                    onClick && "cursor-pointer hover:bg-[#eef1f4]",
                   )}
                 >
                   {row.getVisibleCells().map((cell, ci) => {

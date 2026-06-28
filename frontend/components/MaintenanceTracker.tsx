@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Wrench, ChevronRight, Search, ClipboardList } from "lucide-react";
+import { Wrench, Search, ClipboardList } from "lucide-react";
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -95,11 +95,6 @@ const columns = [
     sortingFn: "text", // ISO timestamps → plain text compare is chronological & stable
     cell: (c) => rel(c.row.original.createdAt),
     meta: { tdClass: "whitespace-nowrap font-mono text-[11px] text-[#6b7176]" },
-  }),
-  col.display({
-    id: "chevron",
-    header: "",
-    cell: () => <ChevronRight size={15} strokeWidth={2} className="text-[#9aa1a6]" />,
   }),
 ];
 
