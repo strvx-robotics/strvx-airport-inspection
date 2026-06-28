@@ -8,8 +8,8 @@ import {
   Satellite,
   Plane,
   SquareDashed,
-  Minus,
   MapPin,
+  Plus,
 } from "lucide-react";
 import { MapPanel } from "./MapPanel";
 import { SEVERITY } from "@/lib/ui";
@@ -20,17 +20,17 @@ import { cn } from "@/lib/cn";
 export type LayerKey = "satellite" | "runways" | "zones" | "centerline" | "issues";
 export type LayerVis = Record<LayerKey, boolean>;
 
+// Centerline is always drawn (not user-toggleable) — it's reference geometry.
 const LAYER_ROWS: { key: LayerKey; icon: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>; label: string }[] = [
   { key: "satellite", icon: Satellite, label: "Satellite" },
   { key: "runways", icon: Plane, label: "Runways" },
   { key: "zones", icon: SquareDashed, label: "Zones" },
-  { key: "centerline", icon: Minus, label: "Centerline" },
   { key: "issues", icon: MapPin, label: "Issues" },
 ];
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 
-/** Left-edge tool rail: layer visibility, severity filter, recenter. */
+/** Left-edge tool rail: layer visibility, severity filter, recenter, markers. */
 export function MapToolbar({
   collapsed,
   onToggleCollapsed,
@@ -39,6 +39,8 @@ export function MapToolbar({
   severities,
   onToggleSeverity,
   onRecenter,
+  addMode,
+  onToggleAddMode,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -47,6 +49,8 @@ export function MapToolbar({
   severities: Set<Severity>;
   onToggleSeverity: (s: Severity) => void;
   onRecenter: () => void;
+  addMode: boolean;
+  onToggleAddMode: () => void;
 }) {
   return (
     <MapPanel
@@ -57,6 +61,15 @@ export function MapToolbar({
       className="pointer-events-auto absolute left-3 top-3 z-10 w-48"
     >
       <div className="flex flex-col gap-0.5 p-1.5">
+        <button
+          onClick={onRecenter}
+          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[#3f4448] transition-colors hover:bg-white/5 hover:text-[#181b1e]"
+        >
+          <Crosshair size={15} strokeWidth={1.9} className="text-[#5b6166]" />
+          <span className="font-mono text-[11px] tracking-wide">Recenter</span>
+        </button>
+        <Divider />
+
         {LAYER_ROWS.map((r) => (
           <Toggle key={r.key} icon={r.icon} label={r.label} on={layers[r.key]} onClick={() => onToggleLayer(r.key)} />
         ))}
@@ -82,13 +95,26 @@ export function MapToolbar({
         ))}
 
         <Divider />
+        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#9aa1a6]">
+          Markers
+        </p>
         <button
-          onClick={onRecenter}
-          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[#3f4448] transition-colors hover:bg-white/5 hover:text-[#181b1e]"
+          onClick={onToggleAddMode}
+          className={cn(
+            "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
+            addMode
+              ? "bg-[#181b1e] text-[#eef1f4]"
+              : "text-[#3f4448] hover:bg-white/5 hover:text-[#181b1e]",
+          )}
         >
-          <Crosshair size={15} strokeWidth={1.9} className="text-[#5b6166]" />
-          <span className="font-mono text-[11px] tracking-wide">Recenter</span>
+          <Plus size={15} strokeWidth={2.1} className={addMode ? "text-[#eef1f4]" : "text-[#5b6166]"} />
+          <span className="flex-1 font-mono text-[11px] tracking-wide">
+            {addMode ? "Click map to drop…" : "Add marker"}
+          </span>
         </button>
+        <p className="px-2 pt-1 font-mono text-[10px] leading-snug text-[#9aa1a6]">
+          Click a marker to rename or delete it.
+        </p>
       </div>
     </MapPanel>
   );

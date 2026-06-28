@@ -8,6 +8,10 @@ const ESRI_IMAGERY =
 
 export const basemapStyle: StyleSpecification = {
   version: 8,
+  // Glyphs power WebGL-rendered text labels (e.g. user marker names). Public
+  // MapLibre demo font stack — no API key. Labels rendered from these stay
+  // pixel-locked to their coordinates exactly like the rest of the map.
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
   sources: {
     sat: {
       type: "raster",

@@ -66,11 +66,6 @@ export function getPool(): Pool {
 
 const txStore = new AsyncLocalStorage<PoolClient>();
 
-/** The active connection: the transaction client if inside tx(), else the pool. */
-function executor(): Pool | PoolClient {
-  return txStore.getStore() ?? getPool();
-}
-
 /** Rewrite SQLite-style `?` placeholders to Postgres `$1, $2, …` positional ones. */
 // ponytail: assumes no literal '?' inside the SQL strings — true for every query here.
 function toPositional(sql: string): string {
@@ -78,11 +73,43 @@ function toPositional(sql: string): string {
   return sql.replace(/\?/g, () => `$${++i}`);
 }
 
+// A dropped/reset connection is safe to retry once on a fresh pooled connection.
+// We deliberately do NOT retry auth failures or the pooler circuit-breaker —
+// retrying those just multiplies failed auth attempts and trips Supavisor's
+// breaker (ECIRCUITBREAKER), making a blip into a hard outage.
+const RETRYABLE_DB_ERROR =
+  /ECONNRESET|ETIMEDOUT|Connection terminated|connection terminated unexpectedly|socket hang up/i;
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Run SQL on the active executor. Outside a transaction, retry once on a dropped
+ *  connection; inside a transaction the client is fixed, so the error surfaces and
+ *  tx() rolls back. */
+async function runSql<R extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  params: readonly unknown[],
+): Promise<QueryResult<R>> {
+  const positional = toPositional(sql);
+  const args = params as unknown[];
+  const client = txStore.getStore();
+  if (client) return client.query<R>(positional, args);
+
+  const pool = getPool();
+  try {
+    return await pool.query<R>(positional, args);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!RETRYABLE_DB_ERROR.test(msg)) throw e;
+    await sleep(200);
+    return pool.query<R>(positional, args);
+  }
+}
+
 export function query<R extends QueryResultRow = QueryResultRow>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<QueryResult<R>> {
-  return executor().query<R>(toPositional(sql), params as unknown[]);
+  return runSql<R>(sql, params);
 }
 
 // one()/all() are intentionally unconstrained (no `extends QueryResultRow`) so
@@ -94,7 +121,7 @@ export async function one<R = QueryResultRow>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<R | undefined> {
-  const res = await executor().query(toPositional(sql), params as unknown[]);
+  const res = await runSql(sql, params);
   return res.rows[0] as R | undefined;
 }
 
@@ -103,7 +130,7 @@ export async function all<R = QueryResultRow>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<R[]> {
-  const res = await executor().query(toPositional(sql), params as unknown[]);
+  const res = await runSql(sql, params);
   return res.rows as R[];
 }
 
@@ -327,6 +354,14 @@ CREATE TABLE IF NOT EXISTS users (
   role       TEXT NOT NULL,
   airport_id TEXT,
   created_at TEXT NOT NULL
+);
+
+-- Generic key/value app configuration (e.g. the drone HLS stream URL). Kept in
+-- the DB so settings persist across devices/deploys instead of per-browser.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_runway      ON issue_candidates(runway_id);

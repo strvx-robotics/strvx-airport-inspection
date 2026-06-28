@@ -261,6 +261,17 @@ export const createSchedule = (body: {
     actor: actor(),
   }).then((r) => r.schedule);
 
+// ── Settings (drone HLS stream URL, stored in Supabase) ─────────────────────────
+
+export const getSettings = () =>
+  jsonReq<{ droneHlsUrl: string | null }>("/api/settings");
+
+export const updateStreamUrl = (droneHlsUrl: string) =>
+  jsonReq<{ droneHlsUrl: string | null }>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify({ droneHlsUrl }),
+  });
+
 // ── Feedback export (JSONL text, not JSON) ─────────────────────────────────────
 
 export async function exportFeedbackJsonl(): Promise<string> {

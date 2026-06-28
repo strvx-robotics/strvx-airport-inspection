@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:setup": "node --env-file=.env.local --import tsx scripts/db-setup.ts"
+    "db:setup": "node --env-file=.env.local --import tsx scripts/db-setup.ts",
+    "db:bootstrap": "node --env-file=.env.local --import tsx scripts/bootstrap.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

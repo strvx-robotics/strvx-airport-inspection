@@ -4,7 +4,7 @@
 // ("08 – 26" → 080°) when threshold_heading_deg isn't stored.
 
 import type { IssueCandidate, LngLat, Runway, Zone } from "./types";
-import { destinationPoint } from "./geo";
+import { bearingBetween, destinationPoint, distanceM, toRad } from "./geo";
 
 const RUNWAY_HALF_WIDTH_M = 23; // ~45 m runway
 
@@ -90,6 +90,45 @@ export function issuePosition(
   const heading = runwayHeading(runway);
   if (!anchor || heading == null || issue.stationM == null) return undefined;
   return stationToLngLat(anchor, heading, issue.stationM, issue.lateralOffsetM ?? 0);
+}
+
+/** Where a GPS point falls relative to one runway: station (m from threshold) +
+ *  signed lateral offset (m, + = right of centerline). undefined if not mappable. */
+export function projectOntoRunway(
+  runway: Runway,
+  point: LngLat,
+): { stationM: number; lateralOffsetM: number } | undefined {
+  const anchor = runwayAnchor(runway);
+  const heading = runwayHeading(runway);
+  if (!anchor || heading == null) return undefined;
+  const dist = distanceM(anchor, point);
+  const rel = toRad(bearingBetween(anchor, point) - heading);
+  return { stationM: dist * Math.cos(rel), lateralOffsetM: dist * Math.sin(rel) };
+}
+
+/** Pick the runway a GPS point sits on (within length + margin of the surface),
+ *  nearest centerline wins. Returns the runway id + its station/lateral offset,
+ *  or undefined if the point isn't on any runway. */
+export function locateOnRunways(
+  runways: Runway[],
+  point: LngLat,
+  marginM = 40,
+): { runwayId: string; stationM: number; lateralOffsetM: number } | undefined {
+  let best: { runwayId: string; stationM: number; lateralOffsetM: number } | undefined;
+  let bestLateral = Infinity;
+  for (const runway of runways) {
+    if (!isMappable(runway)) continue;
+    const p = projectOntoRunway(runway, point);
+    if (!p) continue;
+    const len = runway.lengthM ?? 0;
+    const onAlong = p.stationM >= -marginM && p.stationM <= len + marginM;
+    const onLateral = Math.abs(p.lateralOffsetM) <= RUNWAY_HALF_WIDTH_M + marginM;
+    if (onAlong && onLateral && Math.abs(p.lateralOffsetM) < bestLateral) {
+      bestLateral = Math.abs(p.lateralOffsetM);
+      best = { runwayId: runway.id, stationM: p.stationM, lateralOffsetM: p.lateralOffsetM };
+    }
+  }
+  return best;
 }
 
 // ── Self-check (ponytail: `npx tsx lib/runwayGeom.ts`) ────────────────────────

@@ -904,3 +904,20 @@ export async function exportFeedbackJsonl(): Promise<string> {
   for (const pair of await getDraftPairs()) lines.push(JSON.stringify({ type: "draft_pair", ...pair }));
   return lines.join("\n");
 }
+
+// ── App settings (key/value) ───────────────────────────────────────────────
+
+/** Read a single app setting, or undefined if unset. */
+export async function getSetting(key: string): Promise<string | undefined> {
+  const row = await one<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", [key]);
+  return row?.value;
+}
+
+/** Upsert an app setting. */
+export async function setSetting(key: string, value: string): Promise<void> {
+  await run(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+    [key, value, now()],
+  );
+}

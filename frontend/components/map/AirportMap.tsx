@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -16,6 +16,8 @@ import {
 } from "@/lib/runwayGeom";
 import { basemapStyle } from "./mapStyle";
 import { MapToolbar, type LayerKey, type LayerVis } from "./MapToolbar";
+import { MarkerEditor } from "./MarkerEditor";
+import { loadMarkers, newMarkerId, saveMarkers, type MapMarker } from "@/lib/mapMarkers";
 
 export interface RunwayLayer {
   runway: Runway;
@@ -26,6 +28,12 @@ export interface RunwayLayer {
 // Pin radius grows with severity; fill stays white (monochrome) — size carries rank.
 const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, critical: 8 };
 const ALL_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
+
+// User-marker MapLibre ids. Rendered as native GeoJSON layers (circle + symbol)
+// so they stay pixel-locked to their coordinates when panning/zooming.
+const MARKER_SOURCE = "user-markers";
+const MARKER_DOT = "user-markers-dot";
+const MARKER_LABEL = "user-markers-label";
 
 // Which MapLibre layer ids each toolbar toggle controls.
 const LAYER_GROUPS: Record<LayerKey, string[]> = {
@@ -42,6 +50,15 @@ const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
 });
+
+const markersFC = (markers: MapMarker[]): FeatureCollection =>
+  fc(
+    markers.map((m) => ({
+      type: "Feature",
+      properties: { id: m.id, name: m.name },
+      geometry: { type: "Point", coordinates: [m.lng, m.lat] },
+    })),
+  );
 
 function applyLayerVis(map: maplibregl.Map, vis: LayerVis) {
   for (const key of Object.keys(LAYER_GROUPS) as LayerKey[]) {
@@ -136,6 +153,23 @@ export default function AirportMap({
   });
   const [sevSet, setSevSet] = useState<Set<Severity>>(new Set(ALL_SEVERITIES));
 
+  // User-dropped markers — named annotations, persisted per airport.
+  const airportId = layers[0]?.runway.airportId ?? "default";
+  const [markers, setMarkers] = useState<MapMarker[]>(() => loadMarkers(airportId));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addMode, setAddMode] = useState(false);
+  // The editor follows its marker by direct DOM writes (not React state), so a
+  // pan/zoom doesn't re-render the whole map ~60×/sec — panning stays smooth.
+  const editorElRef = useRef<HTMLDivElement>(null);
+
+  // Refs so the once-registered map event handlers always read current state.
+  const markersRef = useRef(markers);
+  const addModeRef = useRef(addMode);
+  const selectedRef = useRef(selectedId);
+  useEffect(() => { markersRef.current = markers; }, [markers]);
+  useEffect(() => { addModeRef.current = addMode; }, [addMode]);
+  useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
+
   const mappable = layers.filter((l) => isMappable(l.runway));
   const sig = mappable
     .map((l) => `${l.runway.id}:${l.issues.map((i) => i.id).join(",")}:${l.zones.map((z) => z.id).join(",")}`)
@@ -210,6 +244,83 @@ export default function AirportMap({
         const id = e.features?.[0]?.properties?.id;
         if (id) router.push(`/issue/${id}`);
       });
+
+      // ── User markers: drop-at-cursor named annotations ────────────────────
+      map.addSource(MARKER_SOURCE, { type: "geojson", data: markersFC(markersRef.current) });
+      // Google-Maps-style location dot: solid blue core with a thick white ring.
+      map.addLayer({
+        id: MARKER_DOT,
+        type: "circle",
+        source: MARKER_SOURCE,
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#1a73e8",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+          "circle-opacity": 1,
+        },
+      });
+      map.addLayer({
+        id: MARKER_LABEL,
+        type: "symbol",
+        source: MARKER_SOURCE,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": 11,
+          "text-offset": [0, 1.1],
+          "text-anchor": "top",
+          // Always show every label, locked to its point — never decluttered away.
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "#181b1e",
+          "text-halo-width": 1.6,
+          "text-halo-blur": 0.3,
+        },
+      });
+
+      // Keep the open editor glued to its marker as the camera moves — write the
+      // position straight to the DOM node, no React state, so pan stays smooth.
+      map.on("move", () => {
+        const el = editorElRef.current;
+        const id = selectedRef.current;
+        if (!el || !id) return;
+        const m = markersRef.current.find((x) => x.id === id);
+        if (!m) return;
+        const p = map.project([m.lng, m.lat]);
+        el.style.left = `${p.x}px`;
+        el.style.top = `${p.y}px`;
+      });
+
+      map.on("mouseenter", MARKER_DOT, () => {
+        if (!addModeRef.current) map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", MARKER_DOT, () => {
+        map.getCanvas().style.cursor = addModeRef.current ? "crosshair" : "";
+      });
+
+      // Click a marker → select it (opens the name/delete editor).
+      map.on("click", MARKER_DOT, (e) => {
+        if (addModeRef.current) return; // add-mode: the map-level handler drops a new one
+        const id = e.features?.[0]?.properties?.id;
+        if (typeof id === "string") setSelectedId(id);
+      });
+
+      // Map-level click: drop at the cursor in add-mode, else deselect on empty map.
+      map.on("click", (e) => {
+        if (addModeRef.current) {
+          const m: MapMarker = { id: newMarkerId(), lng: e.lngLat.lng, lat: e.lngLat.lat, name: "" };
+          setMarkers((prev) => [...prev, m]);
+          setSelectedId(m.id);
+          setAddMode(false);
+          return;
+        }
+        const hit = map.queryRenderedFeatures(e.point, { layers: [MARKER_DOT] });
+        if (hit.length === 0) setSelectedId(null);
+      });
     });
 
     map.on("error", () => {/* tile/network errors are non-fatal — geometry still renders */});
@@ -229,6 +340,49 @@ export default function AirportMap({
   useEffect(() => {
     if (loadedRef.current && mapRef.current) applySevFilter(mapRef.current, sevSet);
   }, [sevSet]);
+
+  // Push marker changes to the live source (the load handler seeds initial data).
+  useEffect(() => {
+    if (loadedRef.current && mapRef.current) {
+      const src = mapRef.current.getSource(MARKER_SOURCE) as maplibregl.GeoJSONSource | undefined;
+      src?.setData(markersFC(markers));
+    }
+  }, [markers]);
+
+  // Persist markers per airport so they survive reloads.
+  useEffect(() => {
+    saveMarkers(airportId, markers);
+  }, [airportId, markers]);
+
+  // Crosshair cursor while placing a marker.
+  useEffect(() => {
+    const m = mapRef.current;
+    if (m) m.getCanvas().style.cursor = addMode ? "crosshair" : "";
+  }, [addMode]);
+
+  // Position the editor (pre-paint) whenever it opens or its marker moves.
+  useLayoutEffect(() => {
+    const m = mapRef.current;
+    const el = editorElRef.current;
+    if (!m || !el || !selectedId) return;
+    const mk = markers.find((x) => x.id === selectedId);
+    if (!mk) return;
+    const p = m.project([mk.lng, mk.lat]);
+    el.style.left = `${p.x}px`;
+    el.style.top = `${p.y}px`;
+  }, [selectedId, markers]);
+
+  // Escape exits add-mode / closes the editor.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setAddMode(false);
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (mappable.length === 0) {
     return (
@@ -268,7 +422,31 @@ export default function AirportMap({
           const b = boundsRef.current;
           if (m && b && !b.isEmpty()) m.fitBounds(b, { padding: 64, maxZoom: 16 });
         }}
+        addMode={addMode}
+        onToggleAddMode={() => {
+          setAddMode((v) => !v);
+          setSelectedId(null);
+        }}
       />
+      {selectedId &&
+        (() => {
+          const mk = markers.find((x) => x.id === selectedId);
+          if (!mk) return null;
+          return (
+            <MarkerEditor
+              ref={editorElRef}
+              name={mk.name}
+              onRename={(name) =>
+                setMarkers((prev) => prev.map((x) => (x.id === mk.id ? { ...x, name } : x)))
+              }
+              onDelete={() => {
+                setMarkers((prev) => prev.filter((x) => x.id !== mk.id));
+                setSelectedId(null);
+              }}
+              onClose={() => setSelectedId(null)}
+            />
+          );
+        })()}
     </div>
   );
 }
