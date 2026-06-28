@@ -73,12 +73,12 @@ export type InspectionWindow = "daylight" | "dusk_lit";
 /** Badge tones — mirrors components/Badge.tsx so the data layer can return tones. */
 export type BadgeTone =
   | "green"
-  | "amber"
-  | "orange"
-  | "red"
+  | "gray"
+  | "black"
   | "blue"
-  | "violet"
-  | "gray";
+  | "purple"
+  | "amber"
+  | "red";
 
 // Enum value arrays (domain data; presentation labels live in lib/ui.ts).
 export const ISSUE_CATEGORIES: IssueCategory[] = [

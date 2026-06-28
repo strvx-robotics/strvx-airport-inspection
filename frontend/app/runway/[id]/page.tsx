@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { ChevronLeft, ChevronRight, Plane, CheckCircle2 } from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
 import { INSPECTION } from "@/lib/seed";
 import { useRunwayDetail } from "@/lib/store";
 import { CATEGORY, DECISION, confidenceBand, pct } from "@/lib/ui";
+import { cn } from "@/lib/cn";
+import { CARD, EYEBROW, H2, MUTED, LINK } from "@/lib/vstyle";
 
 export default function RunwayDetail() {
   const { id } = useParams<{ id: string }>();
@@ -18,34 +21,46 @@ export default function RunwayDetail() {
   const mine = [...issues].sort((a, b) => b.confidence - a.confidence);
 
   return (
-    <div className="space-y-6">
-      <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-800">
-        ‹ Inspection overview
+    <div className="mx-auto w-full max-w-6xl px-6 py-6">
+      <Link href="/" className={cn("inline-flex items-center gap-1", LINK)}>
+        <ChevronLeft size={14} strokeWidth={2} /> Inspection overview
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{runway.name}</h1>
-        <p className="text-sm text-zinc-500">
+      <div className="mt-3">
+        <p className={EYEBROW}>Valanor · Runway detail</p>
+        <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
+          <Plane size={17} strokeWidth={2} /> {runway.name}
+        </h1>
+        <p className={cn("mt-1 font-mono text-[12px]", MUTED)}>
           {runway.designation} · {runway.length} · inspected {INSPECTION.label}
         </p>
       </div>
 
       {mine.length === 0 ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-8 text-center">
-          <p className="text-lg font-medium text-emerald-800">No issues found</p>
-          <p className="text-sm text-emerald-700">
+        <div
+          className={cn(
+            "mt-6 flex flex-col items-center justify-center gap-2 rounded-md p-12 text-center",
+            CARD,
+          )}
+        >
+          <CheckCircle2 size={22} strokeWidth={1.6} className="text-[#56c98a]" />
+          <p className="text-[13px] font-medium text-[#e7eaec]">No issues found</p>
+          <p className={cn("text-[12px]", MUTED)}>
             The inspection pass for {runway.name} flagged no candidates.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="mt-6 space-y-3">
           {mine.map((issue) => {
             const band = confidenceBand(issue.confidence);
             return (
               <Link
                 key={issue.id}
                 href={`/issue/${issue.id}`}
-                className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 hover:border-zinc-300 hover:shadow-sm"
+                className={cn(
+                  "group flex gap-4 rounded-md p-4 transition-colors hover:bg-[#16191c]",
+                  CARD,
+                )}
               >
                 <div className="w-40 shrink-0">
                   <RunwayImage
@@ -57,8 +72,12 @@ export default function RunwayDetail() {
                 <div className="flex flex-1 flex-col justify-between">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{CATEGORY[issue.category]}</p>
-                      <p className="text-sm text-zinc-500">{issue.zone}</p>
+                      <p className="text-[14px] font-semibold text-[#e7eaec]">
+                        {CATEGORY[issue.category]}
+                      </p>
+                      <p className={cn("mt-0.5 font-mono text-[11px]", MUTED)}>
+                        {issue.zone}
+                      </p>
                     </div>
                     <Badge tone={DECISION[issue.status].tone}>
                       {DECISION[issue.status].label}
@@ -66,11 +85,11 @@ export default function RunwayDetail() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge tone={band.tone}>{band.label}</Badge>
-                    <span className="text-sm text-zinc-500">
+                    <span className={cn("font-mono text-[12px]", MUTED)}>
                       {pct(issue.confidence)} confidence
                     </span>
-                    <span className="ml-auto text-sm font-medium text-zinc-700">
-                      Review ›
+                    <span className="ml-auto inline-flex items-center gap-1 font-mono text-[11px] text-[#9aa1a6] group-hover:text-[#e7eaec]">
+                      Review <ChevronRight size={14} strokeWidth={2} />
                     </span>
                   </div>
                 </div>
@@ -84,15 +103,19 @@ export default function RunwayDetail() {
 }
 
 function Loading() {
-  return <p className="text-sm text-zinc-400">Loading runway…</p>;
+  return (
+    <div className="mx-auto w-full max-w-6xl px-6 py-6">
+      <p className={cn("font-mono text-[12px]", MUTED)}>Loading runway…</p>
+    </div>
+  );
 }
 
 function NotFound() {
   return (
-    <div className="space-y-3">
-      <p className="text-zinc-600">Runway not found.</p>
-      <Link href="/" className="text-sm text-blue-600 hover:underline">
-        ‹ Back to overview
+    <div className="mx-auto w-full max-w-6xl space-y-3 px-6 py-6">
+      <p className="text-[13px] text-[#e7eaec]">Runway not found.</p>
+      <Link href="/" className={cn("inline-flex items-center gap-1", LINK)}>
+        <ChevronLeft size={14} strokeWidth={2} /> Back to overview
       </Link>
     </div>
   );

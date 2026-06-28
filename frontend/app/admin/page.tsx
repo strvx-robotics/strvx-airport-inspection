@@ -1,11 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { Cog, Play, FileText, FileJson, Download } from "lucide-react";
 import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
 import { INSPECTION_WINDOW } from "@/lib/ui";
 import { INSPECTION_WINDOWS } from "@/lib/types";
 import type { InspectionWindow } from "@/lib/types";
+import { cn } from "@/lib/cn";
+import {
+  PAGE,
+  CARD,
+  BAR,
+  INPUT,
+  BTN,
+  BTN_PRIMARY,
+  EYEBROW,
+  H2,
+  MUTED,
+} from "@/lib/vstyle";
 
 export default function AdminPage() {
   const { role } = useStore();
@@ -13,11 +26,18 @@ export default function AdminPage() {
 
   if (role !== "admin") {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Admin setup</h1>
-        <p className="rounded-md bg-zinc-100 px-3 py-2 text-sm text-zinc-500">
-          Switch to the Admin role to manage airports, runways, and schedules.
-        </p>
+      <div className={cn("min-h-full px-6 py-6", PAGE)}>
+        <div className="mx-auto max-w-6xl space-y-4">
+          <div>
+            <p className={EYEBROW}>Valanor · Configuration</p>
+            <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
+              <Cog size={17} strokeWidth={2} /> Admin
+            </h1>
+          </div>
+          <div className={cn("rounded-md px-4 py-3 text-[13px]", CARD, MUTED)}>
+            Switch to the Admin role to manage airports, runways, and schedules.
+          </div>
+        </div>
       </div>
     );
   }
@@ -27,35 +47,34 @@ export default function AdminPage() {
   const runways = overview?.runways.map((r) => r.runway) ?? [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-          Configuration
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Admin setup</h1>
-        <p className="text-sm text-zinc-500">
-          Manage the inspection program, run a pass, and export learning data.
-        </p>
-      </div>
+    <div className={cn("min-h-full px-6 py-6", PAGE)}>
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div>
+          <p className={EYEBROW}>Valanor · Configuration</p>
+          <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
+            <Cog size={17} strokeWidth={2} /> Admin
+          </h1>
+          <p className={cn("mt-1 text-[13px]", MUTED)}>
+            Manage the inspection program, run a pass, and export learning data.
+          </p>
+        </div>
 
-      <RunAndExport
-        inspectionId={inspectionId}
-        onRan={() => void refresh()}
-      />
+        <RunAndExport inspectionId={inspectionId} onRan={() => void refresh()} />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card title="Create airport">
-          <AirportForm onDone={() => void refresh()} />
-        </Card>
-        <Card title="Create runway">
-          <RunwayForm airportId={airportId} onDone={() => void refresh()} />
-        </Card>
-        <Card title="Create zone">
-          <ZoneForm runways={runways} onDone={() => void refresh()} />
-        </Card>
-        <Card title="Create schedule">
-          <ScheduleForm airportId={airportId} onDone={() => void refresh()} />
-        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card title="Create airport">
+            <AirportForm onDone={() => void refresh()} />
+          </Card>
+          <Card title="Create runway">
+            <RunwayForm airportId={airportId} onDone={() => void refresh()} />
+          </Card>
+          <Card title="Create zone">
+            <ZoneForm runways={runways} onDone={() => void refresh()} />
+          </Card>
+          <Card title="Create schedule">
+            <ScheduleForm airportId={airportId} onDone={() => void refresh()} />
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -95,44 +114,50 @@ function RunAndExport({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={runNow}
-          disabled={busy}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:bg-zinc-300"
-        >
-          {busy ? "Running…" : "Run 6 AM inspection now"}
-        </button>
-        <button
-          onClick={exportFeedback}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-        >
-          Export feedback (JSONL)
-        </button>
-        {inspectionId && (
-          <>
-            <a
-              href={api.reportUrl(inspectionId, "html")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Report (HTML)
-            </a>
-            <a
-              href={api.reportUrl(inspectionId, "json")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Report (JSON)
-            </a>
-          </>
-        )}
+    <section className={cn("overflow-hidden rounded-md", CARD)}>
+      <div className={cn("flex items-center px-4 py-3", BAR)}>
+        <h2 className="text-[13px] font-semibold text-[#e7eaec]">Run &amp; export</h2>
       </div>
-      {msg && <p className="text-sm text-zinc-500">{msg}</p>}
-    </div>
+      <div className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={runNow}
+            disabled={busy}
+            className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}
+          >
+            <Play size={13} strokeWidth={2} />
+            {busy ? "Running…" : "Run 6 AM inspection now"}
+          </button>
+          <button
+            onClick={exportFeedback}
+            className={cn("h-8 px-3 text-[12px]", BTN)}
+          >
+            <Download size={13} strokeWidth={2} /> Export feedback (JSONL)
+          </button>
+          {inspectionId && (
+            <>
+              <a
+                href={api.reportUrl(inspectionId, "html")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn("h-8 px-3 text-[12px]", BTN)}
+              >
+                <FileText size={13} strokeWidth={2} /> Report (HTML)
+              </a>
+              <a
+                href={api.reportUrl(inspectionId, "json")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn("h-8 px-3 text-[12px]", BTN)}
+              >
+                <FileJson size={13} strokeWidth={2} /> Report (JSON)
+              </a>
+            </>
+          )}
+        </div>
+        {msg && <p className={cn("text-[12px]", MUTED)}>{msg}</p>}
+      </div>
+    </section>
   );
 }
 
@@ -262,14 +287,16 @@ function ScheduleForm({
   );
 }
 
-// ── Small form primitives (match the existing Tailwind look) ──────────────────
+// ── Small form primitives (Valanor workspace look) ────────────────────────────
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {children}
-    </div>
+    <section className={cn("overflow-hidden rounded-md", CARD)}>
+      <div className={cn("flex items-center px-4 py-3", BAR)}>
+        <h2 className="text-[13px] font-semibold text-[#e7eaec]">{title}</h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
   );
 }
 
@@ -307,12 +334,12 @@ function FormShell({
               setBusy(false);
             }
           }}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}
         >
           {busy ? "Saving…" : "Create"}
         </button>
-        {ok && <span className="text-xs text-emerald-600">Saved.</span>}
-        {err && <span className="text-xs text-red-600">Failed.</span>}
+        {ok && <span className="font-mono text-[11px] text-[#56c98a]">Saved.</span>}
+        {err && <span className="font-mono text-[11px] text-[#e2685c]">Failed.</span>}
       </div>
     </div>
   );
@@ -331,14 +358,12 @@ function Input({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </label>
+      <label className={EYEBROW}>{label}</label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+        className={cn("h-8 w-full px-3", INPUT)}
       />
     </div>
   );
@@ -357,13 +382,11 @@ function Select({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </label>
+      <label className={EYEBROW}>{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+        className={cn("h-8 w-full px-2", INPUT)}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

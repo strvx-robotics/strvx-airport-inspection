@@ -49,7 +49,7 @@ export const INSPECTION_WINDOW: Record<InspectionWindow, string> = {
 export const SEVERITY: Record<Severity, { label: string; tone: Tone }> = {
   low: { label: "Low", tone: "gray" },
   medium: { label: "Medium", tone: "amber" },
-  high: { label: "High", tone: "orange" },
+  high: { label: "High", tone: "amber" },
   critical: { label: "Critical", tone: "red" },
 };
 
@@ -57,7 +57,7 @@ export const DECISION: Record<IssueDecision, { label: string; tone: Tone }> = {
   pending: { label: "Pending review", tone: "amber" },
   approved: { label: "Approved", tone: "green" },
   rejected: { label: "Rejected", tone: "red" },
-  manual_review: { label: "Manual review", tone: "violet" },
+  manual_review: { label: "Manual review", tone: "purple" },
 };
 
 export const TICKET_STATUS: Record<TicketStatus, { label: string; tone: Tone }> =
@@ -65,7 +65,7 @@ export const TICKET_STATUS: Record<TicketStatus, { label: string; tone: Tone }> 
     draft: { label: "Draft", tone: "gray" },
     sent: { label: "Sent to maintenance", tone: "blue" },
     in_progress: { label: "In progress", tone: "blue" },
-    repaired: { label: "Repaired · awaiting reinspection", tone: "violet" },
+    repaired: { label: "Repaired · awaiting reinspection", tone: "purple" },
     closed: { label: "Closed", tone: "green" },
     rejected: { label: "Rejected", tone: "red" },
   };

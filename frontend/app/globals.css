@@ -1,11 +1,97 @@
 @import "tailwindcss";
 
-html,
-body {
-  height: 100%;
+/* ============================================================ Valanor theme ==
+   Mirrors strvx-robotics-product/frontend/src/index.css. Monochrome operator UI;
+   color is signal only (good green, warning amber, critical red). The tabular
+   screens use the "internal-ops workspace" palette (see lib/vstyle.ts).
+   ========================================================================== */
+@theme {
+  --font-display: var(--font-ibm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-ibm-mono), ui-monospace, "SF Mono", monospace;
+
+  /* surfaces */
+  --color-void: #070809;
+  --color-abyss: #030404;
+  --color-panel: #0e1012;
+  --color-panel-2: #141719;
+  --color-line: #262a2d;
+  --color-line-bright: #393f43;
+
+  /* workspace surfaces (LogsView palette) */
+  --color-surface: #121517;
+  --color-surface-2: #16191c;
+  --color-content: #0b0d0e;
+  --color-edge: #262b2f;
+  --color-edge-2: #343a3f;
+
+  /* ink */
+  --color-ink: #e7eaec;
+  --color-ink-dim: #9aa1a6;
+  --color-ink-faint: #737a7f;
+  --color-ink-ghost: #5b6166;
+
+  /* signal */
+  --color-accent: #ffffff;
+  --color-critical: #b64a43;
+  --color-good: #56c98a;
 }
 
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-void);
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: rgba(255, 255, 255, 0.22);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .label {
+    font-family: var(--font-display);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-ink-dim);
+  }
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  .glass {
+    background: rgba(20, 23, 26, 0.42);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 6px 22px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .glass-dark {
+    background: rgba(7, 9, 11, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
 }

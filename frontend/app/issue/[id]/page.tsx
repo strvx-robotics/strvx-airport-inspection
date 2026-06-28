@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Flag, ScanSearch, X } from "lucide-react";
 import Badge from "@/components/Badge";
 import DiffView from "@/components/DiffView";
 import RejectModal from "@/components/RejectModal";
@@ -18,6 +19,18 @@ import {
 } from "@/lib/ui";
 import { ISSUE_CATEGORIES } from "@/lib/types";
 import type { IssueCategory, RejectionReason, Severity } from "@/lib/types";
+import {
+  BTN,
+  BTN_DANGER,
+  BTN_PRIMARY,
+  CARD,
+  DOT,
+  EYEBROW,
+  H2,
+  INPUT,
+  LINK,
+} from "@/lib/vstyle";
+import { cn } from "@/lib/cn";
 
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,11 +56,16 @@ export default function IssueDetail() {
   }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!issue) {
-    if (loading) return <p className="text-sm text-zinc-400">Loading issue…</p>;
+    if (loading)
+      return (
+        <div className="mx-auto max-w-6xl px-6 py-6">
+          <p className="text-[13px] text-[#737a7f]">Loading issue…</p>
+        </div>
+      );
     return (
-      <div className="space-y-3">
-        <p className="text-zinc-600">Issue not found.</p>
-        <Link href="/" className="text-sm text-blue-600 hover:underline">
+      <div className="mx-auto max-w-6xl space-y-3 px-6 py-6">
+        <p className="text-[13px] text-[#9aa1a6]">Issue not found.</p>
+        <Link href="/" className={LINK}>
           ‹ Back to overview
         </Link>
       </div>
@@ -84,21 +102,28 @@ export default function IssueDetail() {
     void rejectIssue(issue.id, reason, note).catch(() => undefined);
   };
 
+  const selectClass = cn(
+    "w-full px-2 py-2",
+    INPUT,
+    "disabled:cursor-not-allowed disabled:opacity-60",
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
       <Link
         href={`/runway/${issue.runwayId}`}
-        className="text-sm text-zinc-500 hover:text-zinc-800"
+        className={cn("h-8 px-2.5 text-[12px]", BTN)}
       >
-        ‹ {runway?.name ?? "Runway"}
+        <ChevronLeft size={14} strokeWidth={2} /> {runway?.name ?? "Runway"}
       </Link>
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {CATEGORY[issue.category]}
+          <p className={EYEBROW}>Valanor · Issue review</p>
+          <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
+            <ScanSearch size={17} strokeWidth={2} /> {CATEGORY[issue.category]}
           </h1>
-          <p className="text-sm text-zinc-500">
+          <p className="mt-1 font-mono text-[12px] text-[#737a7f]">
             {runway?.name} · {issue.zone} · {issue.id.toUpperCase()}
           </p>
         </div>
@@ -108,25 +133,24 @@ export default function IssueDetail() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
+        {/* left — the evidence */}
         <div className="space-y-3">
           <RunwayImage bbox={issue.bbox} label={CATEGORY[issue.category]} />
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={band.tone}>{band.label}</Badge>
-            <span className="text-sm text-zinc-500">
+            <span className="font-mono text-[12px] text-[#9aa1a6]">
               {pct(issue.confidence)} model confidence
             </span>
             {issue.gps && (
-              <span className="ml-auto font-mono text-xs text-zinc-400">
+              <span className="ml-auto font-mono text-[11px] text-[#737a7f]">
                 {issue.gps.lat.toFixed(4)}, {issue.gps.lng.toFixed(4)}
               </span>
             )}
           </div>
-
-          {/* Self-improvement: immutable AI draft vs. edited text (design §13). */}
-          <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />
         </div>
 
-        <div className="space-y-4">
+        {/* right — the review card */}
+        <div className={cn("space-y-4 rounded-md p-4", CARD)}>
           <Field label="Category">
             <select
               value={category}
@@ -136,7 +160,7 @@ export default function IssueDetail() {
                 setCategory(next);
                 persist({ category: next });
               }}
-              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:bg-zinc-100 disabled:text-zinc-500"
+              className={selectClass}
             >
               {ISSUE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -146,7 +170,19 @@ export default function IssueDetail() {
             </select>
           </Field>
 
-          <Field label="Severity">
+          <Field
+            label={
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "inline-block h-2 w-2 rounded-full",
+                    DOT[severity],
+                  )}
+                />
+                Severity
+              </span>
+            }
+          >
             <select
               value={severity}
               disabled={!editable}
@@ -155,7 +191,7 @@ export default function IssueDetail() {
                 setSeverity(next);
                 persist({ severity: next });
               }}
-              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:bg-zinc-100 disabled:text-zinc-500"
+              className={selectClass}
             >
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
@@ -172,9 +208,16 @@ export default function IssueDetail() {
               onChange={(e) => setDraft(e.target.value)}
               onBlur={() => editable && persist({ draft })}
               rows={5}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm leading-relaxed disabled:bg-zinc-100 disabled:text-zinc-500"
+              className={cn(
+                "w-full px-3 py-2 leading-relaxed",
+                INPUT,
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              )}
             />
           </Field>
+
+          {/* Self-improvement: immutable AI draft vs. edited text (design §13). */}
+          <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />
 
           <Field label="Inspector notes">
             <textarea
@@ -184,7 +227,11 @@ export default function IssueDetail() {
               onBlur={() => editable && persist({ notes })}
               rows={2}
               placeholder="Optional…"
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100"
+              className={cn(
+                "w-full px-3 py-2",
+                INPUT,
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              )}
             />
           </Field>
 
@@ -195,29 +242,29 @@ export default function IssueDetail() {
               label={DECISION[issue.status].label}
             />
           ) : !canReview ? (
-            <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-500">
+            <p className="rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2 text-center text-[12px] text-[#9aa1a6]">
               Switch to the Inspector role to review this candidate.
             </p>
           ) : (
             <div className="space-y-2 pt-1">
               <button
                 onClick={handleApprove}
-                className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className={cn("h-9 w-full px-3 text-[12px]", BTN_PRIMARY)}
               >
-                Approve &amp; create ticket
+                <Check size={14} strokeWidth={2} /> Approve &amp; create ticket
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setShowReject(true)}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  className={cn("h-9 px-3 text-[12px]", BTN_DANGER)}
                 >
-                  Reject
+                  <X size={14} strokeWidth={2} /> Reject
                 </button>
                 <button
                   onClick={() => void manualReview(issue.id).catch(() => undefined)}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  className={cn("h-9 px-3 text-[12px]", BTN)}
                 >
-                  Manual review
+                  <Flag size={14} strokeWidth={2} /> Manual review
                 </button>
               </div>
             </div>
@@ -248,14 +295,14 @@ function Resolved({
     return (
       <Link
         href={`/ticket/${ticketId}`}
-        className="block w-full rounded-md bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-white hover:bg-zinc-800"
+        className={cn("h-9 w-full px-3 text-[12px]", BTN)}
       >
-        View ticket {ticketId} ›
+        View ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
       </Link>
     );
   }
   return (
-    <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-600">
+    <p className="rounded-md border border-[#262b2f] bg-[#0f1214] px-3 py-2 text-center text-[12px] text-[#9aa1a6]">
       {label} — no ticket created.
     </p>
   );
@@ -265,14 +312,12 @@ function Field({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </label>
+      <label className={cn("block", EYEBROW)}>{label}</label>
       {children}
     </div>
   );

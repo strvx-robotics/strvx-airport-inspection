@@ -203,8 +203,14 @@ function createDb(): DB {
   const conn = new Database(DB_PATH);
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");
+  // Wait for the write lock instead of erroring — `next build` collects page
+  // data with parallel workers that each import this module and open the same
+  // fresh file (otherwise SQLITE_BUSY).
+  conn.pragma("busy_timeout = 5000");
   conn.exec(SCHEMA);
-  seedDatabase(conn);
+  // BEGIN IMMEDIATE so concurrent workers serialize the idempotent seed: the
+  // first acquires the write lock and seeds; the rest wait, then see it populated.
+  conn.transaction(() => seedDatabase(conn)).immediate();
   return conn;
 }
 

@@ -3,10 +3,30 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  ChevronLeft,
+  Wrench,
+  CheckCircle2,
+  Lock,
+  ClipboardCheck,
+} from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
 import { useStore, useTicketDetail } from "@/lib/store";
 import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
+import { cn } from "@/lib/cn";
+import {
+  CARD,
+  BAR,
+  INPUT,
+  BTN_PRIMARY,
+  EYEBROW,
+  H2,
+  MUTED,
+  LINK,
+  METRIC_CELL,
+  DOT,
+} from "@/lib/vstyle";
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,12 +44,17 @@ export default function TicketPage() {
   }, [ticket, synced]);
 
   if (!ticket) {
-    if (loading) return <p className="text-sm text-zinc-400">Loading ticket…</p>;
+    if (loading)
+      return (
+        <div className="mx-auto max-w-6xl px-6 py-6">
+          <p className={cn("text-[13px]", MUTED)}>Loading ticket…</p>
+        </div>
+      );
     return (
-      <div className="space-y-3">
-        <p className="text-zinc-600">Ticket not found.</p>
-        <Link href="/" className="text-sm text-blue-600 hover:underline">
-          ‹ Back to overview
+      <div className="mx-auto max-w-6xl space-y-3 px-6 py-6">
+        <p className={cn("text-[13px]", MUTED)}>Ticket not found.</p>
+        <Link href="/" className={cn("inline-flex items-center gap-1", LINK)}>
+          <ChevronLeft size={14} strokeWidth={2} /> Back to overview
         </Link>
       </div>
     );
@@ -39,119 +64,155 @@ export default function TicketPage() {
   const canWork = role === "maintenance" || role === "admin";
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
       <Link
         href={`/runway/${ticket.runwayId}`}
-        className="text-sm text-zinc-500 hover:text-zinc-800"
+        className={cn("inline-flex items-center gap-1", LINK)}
       >
-        ‹ {runway?.name ?? "Runway"}
+        <ChevronLeft size={14} strokeWidth={2} /> {runway?.name ?? "Runway"}
       </Link>
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Maintenance ticket
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">{ticket.id}</h1>
-          <p className="text-sm text-zinc-500">
+          <p className={EYEBROW}>Maintenance ticket</p>
+          <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
+            <Wrench size={17} strokeWidth={2} />
+            <span className="font-mono">{ticket.id}</span>
+          </h1>
+          <p className={cn("mt-1 text-[13px]", MUTED)}>
             {CATEGORY[ticket.category]} · {runway?.name} · {ticket.zone}
           </p>
         </div>
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
-        <div className="space-y-3">
-          {issue && (
-            <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} />
-          )}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <Row label="Severity">
-              <Badge tone={SEVERITY[ticket.severity].tone}>
-                {SEVERITY[ticket.severity].label}
-              </Badge>
-            </Row>
-            <Row label="Created by">{ticket.createdBy}</Row>
-            <Row label="Assigned to">{ticket.assignedTo}</Row>
-            {issue?.gps && (
-              <Row label="Location">
-                <span className="font-mono text-xs text-zinc-500">
-                  {issue.gps.lat.toFixed(4)}, {issue.gps.lng.toFixed(4)}
-                </span>
-              </Row>
-            )}
-          </dl>
+      {/* field strip */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[#262b2f] bg-[#262b2f] sm:grid-cols-4">
+        <div className={METRIC_CELL}>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+            Severity
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                DOT[ticket.severity],
+              )}
+            />
+            <Badge tone={SEVERITY[ticket.severity].tone}>
+              {SEVERITY[ticket.severity].label}
+            </Badge>
+          </div>
         </div>
+        <div className={METRIC_CELL}>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+            Created by
+          </div>
+          <div className="mt-1.5 text-[13px] text-[#e7eaec]">
+            {ticket.createdBy}
+          </div>
+        </div>
+        <div className={METRIC_CELL}>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+            Assigned to
+          </div>
+          <div className="mt-1.5 text-[13px] text-[#e7eaec]">
+            {ticket.assignedTo}
+          </div>
+        </div>
+        <div className={METRIC_CELL}>
+          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+            Location
+          </div>
+          <div className="mt-1.5 font-mono text-[12px] text-[#9aa1a6]">
+            {issue?.gps
+              ? `${issue.gps.lat.toFixed(4)}, ${issue.gps.lng.toFixed(4)}`
+              : "—"}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
+        {/* evidence */}
+        {issue && (
+          <section className={cn("overflow-hidden rounded-md", CARD)}>
+            <div className={cn("px-4 py-3", BAR)}>
+              <h3 className="text-[13px] font-semibold text-[#e7eaec]">
+                Evidence
+              </h3>
+            </div>
+            <div className="p-3">
+              <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} />
+            </div>
+          </section>
+        )}
 
         <div className="space-y-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Description
-            </p>
-            <p className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm leading-relaxed">
+          {/* description */}
+          <section className={cn("overflow-hidden rounded-md", CARD)}>
+            <div className={cn("px-4 py-3", BAR)}>
+              <h3 className="text-[13px] font-semibold text-[#e7eaec]">
+                Description
+              </h3>
+            </div>
+            <p className="px-4 py-3 text-[13px] leading-relaxed text-[#c2c8cc]">
               {ticket.description}
             </p>
-          </div>
+          </section>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Repair notes
-            </label>
+          {/* repair notes */}
+          <div className="space-y-1.5">
+            <label className={EYEBROW}>Repair notes</label>
             <textarea
               value={notes}
               disabled={ticket.status === "closed" || !canWork}
               onChange={(e) => setNotesLocal(e.target.value)}
               rows={3}
               placeholder="Maintenance notes…"
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100"
+              className={cn(
+                "w-full px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50",
+                INPUT,
+              )}
             />
           </div>
 
           {!canWork && ticket.status !== "closed" ? (
-            <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-500">
+            <p
+              className={cn(
+                "flex items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#16191c] px-3 py-2 text-center text-[12px]",
+                MUTED,
+              )}
+            >
+              <Lock size={13} strokeWidth={2} />
               Switch to the Maintenance role to work this ticket.
             </p>
           ) : ticket.status === "sent" || ticket.status === "in_progress" ? (
             <button
               onClick={() => void repairTicket(ticket.id, notes).catch(() => undefined)}
-              className="w-full rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
+              className={cn("h-9 w-full px-3 text-[13px]", BTN_PRIMARY)}
             >
-              Mark repaired
+              <Wrench size={14} strokeWidth={2} /> Mark repaired
             </button>
           ) : ticket.status === "repaired" ? (
             <div className="space-y-2">
-              <p className="rounded-md bg-violet-50 px-3 py-2 text-center text-sm text-violet-700">
+              <p className="flex items-center justify-center gap-2 rounded-md border border-[#382a5c] bg-[#1b1430] px-3 py-2 text-center text-[12px] text-[#b08cf5]">
+                <ClipboardCheck size={13} strokeWidth={2} />
                 Repaired — awaiting inspector reinspection.
               </p>
               <button
                 onClick={() => void closeTicket(ticket.id).catch(() => undefined)}
-                className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className={cn("h-9 w-full px-3 text-[13px]", BTN_PRIMARY)}
               >
-                Close after reinspection
+                <CheckCircle2 size={14} strokeWidth={2} /> Close after reinspection
               </button>
             </div>
           ) : (
-            <p className="rounded-md bg-emerald-50 px-3 py-2 text-center text-sm text-emerald-700">
-              Ticket closed.
+            <p className="flex items-center justify-center gap-2 rounded-md border border-[#1f4631] bg-[#0f2419] px-3 py-2 text-center text-[12px] text-[#56c98a]">
+              <CheckCircle2 size={13} strokeWidth={2} /> Ticket closed.
             </p>
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="text-xs text-zinc-400">{label}</dt>
-      <dd className="mt-0.5">{children}</dd>
     </div>
   );
 }
