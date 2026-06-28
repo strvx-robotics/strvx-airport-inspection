@@ -46,6 +46,19 @@ async def get_ticket(id: str) -> Ticket | None:
     return _to_ticket(r) if r else None
 
 
+async def get_ticket_detail(id: str):
+    from app.repo.issues import get_issue
+    from app.repo.runways import get_runway
+    ticket = await get_ticket(id)
+    if ticket is None:
+        return None
+    return {
+        "ticket": ticket,
+        "issue": await get_issue(ticket.issue_id),
+        "runway": await get_runway(ticket.runway_id),
+    }
+
+
 async def list_tickets() -> list[Ticket]:
     rows = await db.all(f"{_TICKET_SELECT} ORDER BY t.created_at DESC")
     return [_to_ticket(r) for r in rows]

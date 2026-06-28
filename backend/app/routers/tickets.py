@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 
 from app.deps import actor_from
+from app.errors import AppError
 from app.repo import tickets as repo
 from app.serialize import dump
 
@@ -10,6 +11,19 @@ router = APIRouter()
 @router.get("/tickets")
 async def get_tickets() -> dict:
     return {"tickets": [dump(t) for t in await repo.list_tickets()]}
+
+
+@router.get("/tickets/{id}")
+async def get_ticket_detail_route(id: str) -> dict:
+    detail = await repo.get_ticket_detail(id)
+    if detail is None:
+        raise AppError(f"Ticket not found: {id}")
+    out = {"ticket": dump(detail["ticket"])}
+    if detail["issue"] is not None:
+        out["issue"] = dump(detail["issue"])
+    if detail["runway"] is not None:
+        out["runway"] = dump(detail["runway"])
+    return out
 
 
 @router.post("/tickets/{id}/repair")
