@@ -3,16 +3,28 @@
 import Link from "next/link";
 import Badge from "@/components/Badge";
 import { AIRPORT, INSPECTION, RUNWAYS } from "@/lib/seed";
-import { useStore } from "@/lib/store";
-import { runwayStatus } from "@/lib/ui";
+import { useOverview } from "@/lib/store";
 
 export default function Dashboard() {
-  const { issues, tickets, reset } = useStore();
+  const { overview, refresh } = useOverview();
 
-  const openTickets = tickets.filter(
-    (t) => t.status === "sent" || t.status === "in_progress" || t.status === "repaired",
-  ).length;
-  const closedTickets = tickets.filter((t) => t.status === "closed").length;
+  // Render seed runways instantly for a snappy first paint, then overlay live
+  // counts + status from the server once the overview resolves.
+  const rows =
+    overview?.runways ??
+    RUNWAYS.map((runway) => ({
+      runway,
+      issueCount: 0,
+      pendingCount: 0,
+      ticketsOpen: 0,
+      ticketsCompleted: 0,
+      status: { label: "Loading…", tone: "gray" as const },
+    }));
+  const totals = overview?.totals ?? {
+    issues: 0,
+    ticketsOpen: 0,
+    ticketsCompleted: 0,
+  };
 
   return (
     <div className="space-y-6">
@@ -29,49 +41,45 @@ export default function Dashboard() {
           </p>
         </div>
         <button
-          onClick={reset}
+          onClick={() => void refresh()}
           className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
         >
-          Reset demo
+          Refresh
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Issues found" value={issues.length} />
-        <Stat label="Tickets open" value={openTickets} />
-        <Stat label="Tickets completed" value={closedTickets} />
+        <Stat label="Issues found" value={totals.issues} />
+        <Stat label="Tickets open" value={totals.ticketsOpen} />
+        <Stat label="Tickets completed" value={totals.ticketsCompleted} />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-        {RUNWAYS.map((rw, idx) => {
-          const status = runwayStatus(rw.id, issues, tickets);
-          const found = issues.filter((i) => i.runwayId === rw.id).length;
-          return (
-            <Link
-              key={rw.id}
-              href={`/runway/${rw.id}`}
-              className={`flex items-center justify-between px-5 py-4 hover:bg-zinc-50 ${
-                idx > 0 ? "border-t border-zinc-100" : ""
-              }`}
-            >
-              <div>
-                <p className="font-medium">{rw.name}</p>
-                <p className="text-sm text-zinc-500">
-                  {rw.designation} · {rw.length}
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-zinc-500">
-                  {found === 0
-                    ? "0 issues"
-                    : `${found} issue${found > 1 ? "s" : ""}`}
-                </span>
-                <Badge tone={status.tone}>{status.label}</Badge>
-                <span className="text-zinc-300">›</span>
-              </div>
-            </Link>
-          );
-        })}
+        {rows.map((row, idx) => (
+          <Link
+            key={row.runway.id}
+            href={`/runway/${row.runway.id}`}
+            className={`flex items-center justify-between px-5 py-4 hover:bg-zinc-50 ${
+              idx > 0 ? "border-t border-zinc-100" : ""
+            }`}
+          >
+            <div>
+              <p className="font-medium">{row.runway.name}</p>
+              <p className="text-sm text-zinc-500">
+                {row.runway.designation} · {row.runway.length}
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-zinc-500">
+                {row.issueCount === 0
+                  ? "0 issues"
+                  : `${row.issueCount} issue${row.issueCount > 1 ? "s" : ""}`}
+              </span>
+              <Badge tone={row.status.tone}>{row.status.label}</Badge>
+              <span className="text-zinc-300">›</span>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );

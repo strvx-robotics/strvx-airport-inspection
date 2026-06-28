@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Badge from "@/components/Badge";
+import DiffView from "@/components/DiffView";
+import RejectModal from "@/components/RejectModal";
 import RunwayImage from "@/components/RunwayImage";
-import { RUNWAYS } from "@/lib/seed";
-import { useStore } from "@/lib/store";
+import { useIssueDetail, useStore } from "@/lib/store";
 import {
   CATEGORY,
   DECISION,
@@ -14,22 +16,34 @@ import {
   confidenceBand,
   pct,
 } from "@/lib/ui";
-import type { Severity } from "@/lib/types";
+import { ISSUE_CATEGORIES } from "@/lib/types";
+import type { IssueCategory, RejectionReason, Severity } from "@/lib/types";
 
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>();
-  const {
-    issue: getIssue,
-    approveIssue,
-    rejectIssue,
-    manualReview,
-    setNotes,
-    setSeverity,
-    setDraft,
-  } = useStore();
+  const router = useRouter();
+  const { issue, loading } = useIssueDetail(id);
+  const { role, approveIssue, rejectIssue, manualReview, editIssue, runways } =
+    useStore();
 
-  const issue = getIssue(id);
+  // Local editable state — instant typing; persisted to the API on blur/change.
+  const [category, setCategory] = useState<IssueCategory>("fod");
+  const [severity, setSeverity] = useState<Severity>("medium");
+  const [draft, setDraft] = useState("");
+  const [notes, setNotes] = useState("");
+  const [showReject, setShowReject] = useState(false);
+
+  // Sync local state when the issue first loads (or the id changes).
+  useEffect(() => {
+    if (!issue) return;
+    setCategory(issue.category);
+    setSeverity(issue.severity);
+    setDraft(issue.draft);
+    setNotes(issue.inspectorNotes);
+  }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!issue) {
+    if (loading) return <p className="text-sm text-zinc-400">Loading issue…</p>;
     return (
       <div className="space-y-3">
         <p className="text-zinc-600">Issue not found.</p>
@@ -40,9 +54,35 @@ export default function IssueDetail() {
     );
   }
 
-  const runway = RUNWAYS.find((r) => r.id === issue.runwayId);
+  const runway = runways[issue.runwayId];
   const band = confidenceBand(issue.confidence);
-  const decided = issue.decision !== "pending";
+  const decided = issue.status !== "pending";
+  const canReview = role === "inspector" || role === "admin";
+  const editable = !decided && canReview;
+
+  const persist = (patch: {
+    category?: IssueCategory;
+    severity?: Severity;
+    draft?: string;
+    notes?: string;
+  }) => {
+    void editIssue(issue.id, patch).catch(() => undefined);
+  };
+
+  const handleApprove = async () => {
+    try {
+      await editIssue(issue.id, { category, severity, draft, notes });
+      const ticketId = await approveIssue(issue.id);
+      if (ticketId) router.push(`/ticket/${ticketId}`);
+    } catch {
+      /* optimistic update already rolled back in the store */
+    }
+  };
+
+  const handleReject = (reason: RejectionReason, note?: string) => {
+    setShowReject(false);
+    void rejectIssue(issue.id, reason, note).catch(() => undefined);
+  };
 
   return (
     <div className="space-y-6">
@@ -50,7 +90,7 @@ export default function IssueDetail() {
         href={`/runway/${issue.runwayId}`}
         className="text-sm text-zinc-500 hover:text-zinc-800"
       >
-        ‹ {runway?.name}
+        ‹ {runway?.name ?? "Runway"}
       </Link>
 
       <div className="flex items-start justify-between gap-4">
@@ -62,8 +102,8 @@ export default function IssueDetail() {
             {runway?.name} · {issue.zone} · {issue.id.toUpperCase()}
           </p>
         </div>
-        <Badge tone={DECISION[issue.decision].tone}>
-          {DECISION[issue.decision].label}
+        <Badge tone={DECISION[issue.status].tone}>
+          {DECISION[issue.status].label}
         </Badge>
       </div>
 
@@ -81,14 +121,40 @@ export default function IssueDetail() {
               </span>
             )}
           </div>
+
+          {/* Self-improvement: immutable AI draft vs. edited text (design §13). */}
+          <DiffView aiDraftText={issue.aiDraftText} editedText={draft} />
         </div>
 
         <div className="space-y-4">
+          <Field label="Category">
+            <select
+              value={category}
+              disabled={!editable}
+              onChange={(e) => {
+                const next = e.target.value as IssueCategory;
+                setCategory(next);
+                persist({ category: next });
+              }}
+              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:bg-zinc-100 disabled:text-zinc-500"
+            >
+              {ISSUE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY[c]}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           <Field label="Severity">
             <select
-              value={issue.severity}
-              disabled={decided}
-              onChange={(e) => setSeverity(issue.id, e.target.value as Severity)}
+              value={severity}
+              disabled={!editable}
+              onChange={(e) => {
+                const next = e.target.value as Severity;
+                setSeverity(next);
+                persist({ severity: next });
+              }}
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:bg-zinc-100 disabled:text-zinc-500"
             >
               {SEVERITIES.map((s) => (
@@ -101,9 +167,10 @@ export default function IssueDetail() {
 
           <Field label="Suggested ticket — AI draft">
             <textarea
-              value={issue.draft}
-              disabled={decided}
-              onChange={(e) => setDraft(issue.id, e.target.value)}
+              value={draft}
+              disabled={!editable}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => editable && persist({ draft })}
               rows={5}
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm leading-relaxed disabled:bg-zinc-100 disabled:text-zinc-500"
             />
@@ -111,9 +178,10 @@ export default function IssueDetail() {
 
           <Field label="Inspector notes">
             <textarea
-              value={issue.inspectorNotes}
-              disabled={decided}
-              onChange={(e) => setNotes(issue.id, e.target.value)}
+              value={notes}
+              disabled={!editable}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={() => editable && persist({ notes })}
               rows={2}
               placeholder="Optional…"
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100"
@@ -121,24 +189,32 @@ export default function IssueDetail() {
           </Field>
 
           {decided ? (
-            <Resolved issueId={issue.id} />
+            <Resolved
+              status={issue.status}
+              ticketId={issue.ticketId}
+              label={DECISION[issue.status].label}
+            />
+          ) : !canReview ? (
+            <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-500">
+              Switch to the Inspector role to review this candidate.
+            </p>
           ) : (
             <div className="space-y-2 pt-1">
               <button
-                onClick={() => approveIssue(issue.id)}
+                onClick={handleApprove}
                 className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
               >
                 Approve &amp; create ticket
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => rejectIssue(issue.id)}
+                  onClick={() => setShowReject(true)}
                   className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                 >
                   Reject
                 </button>
                 <button
-                  onClick={() => manualReview(issue.id)}
+                  onClick={() => void manualReview(issue.id).catch(() => undefined)}
                   className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                 >
                   Manual review
@@ -148,28 +224,39 @@ export default function IssueDetail() {
           )}
         </div>
       </div>
+
+      {showReject && (
+        <RejectModal
+          onCancel={() => setShowReject(false)}
+          onConfirm={handleReject}
+        />
+      )}
     </div>
   );
 }
 
-function Resolved({ issueId }: { issueId: string }) {
-  const { issue: getIssue } = useStore();
-  const issue = getIssue(issueId);
-  if (!issue) return null;
-
-  if (issue.decision === "approved" && issue.ticketId) {
+function Resolved({
+  status,
+  ticketId,
+  label,
+}: {
+  status: string;
+  ticketId?: string;
+  label: string;
+}) {
+  if (status === "approved" && ticketId) {
     return (
       <Link
-        href={`/ticket/${issue.ticketId}`}
+        href={`/ticket/${ticketId}`}
         className="block w-full rounded-md bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-white hover:bg-zinc-800"
       >
-        View ticket {issue.ticketId} ›
+        View ticket {ticketId} ›
       </Link>
     );
   }
   return (
     <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-600">
-      {DECISION[issue.decision].label} — no ticket created.
+      {label} — no ticket created.
     </p>
   );
 }

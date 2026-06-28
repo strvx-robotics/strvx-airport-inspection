@@ -4,17 +4,18 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
-import { INSPECTION, RUNWAYS } from "@/lib/seed";
-import { useStore } from "@/lib/store";
+import { INSPECTION } from "@/lib/seed";
+import { useRunwayDetail } from "@/lib/store";
 import { CATEGORY, DECISION, confidenceBand, pct } from "@/lib/ui";
 
 export default function RunwayDetail() {
   const { id } = useParams<{ id: string }>();
-  const { issues } = useStore();
-  const runway = RUNWAYS.find((r) => r.id === id);
-  const mine = issues.filter((i) => i.runwayId === id);
+  const { runway, issues, loading } = useRunwayDetail(id);
 
-  if (!runway) return <NotFound />;
+  if (!runway) return loading ? <Loading /> : <NotFound />;
+
+  // Sort by confidence desc to match the server ordering.
+  const mine = [...issues].sort((a, b) => b.confidence - a.confidence);
 
   return (
     <div className="space-y-6">
@@ -59,8 +60,8 @@ export default function RunwayDetail() {
                       <p className="font-medium">{CATEGORY[issue.category]}</p>
                       <p className="text-sm text-zinc-500">{issue.zone}</p>
                     </div>
-                    <Badge tone={DECISION[issue.decision].tone}>
-                      {DECISION[issue.decision].label}
+                    <Badge tone={DECISION[issue.status].tone}>
+                      {DECISION[issue.status].label}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-2">
@@ -80,6 +81,10 @@ export default function RunwayDetail() {
       )}
     </div>
   );
+}
+
+function Loading() {
+  return <p className="text-sm text-zinc-400">Loading runway…</p>;
 }
 
 function NotFound() {

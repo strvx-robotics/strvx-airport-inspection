@@ -24,6 +24,12 @@
 .DS_Store
 *.pem
 
+# local SQLite database (created on boot)
+/data
+
+# uploaded inspection images (created on boot)
+/public/uploads
+
 # debug
 npm-debug.log*
 yarn-debug.log*

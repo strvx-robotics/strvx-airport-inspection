@@ -2,21 +2,29 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
-import { RUNWAYS } from "@/lib/seed";
-import { useStore } from "@/lib/store";
+import { useStore, useTicketDetail } from "@/lib/store";
 import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
-  const { ticket: getTicket, issue: getIssue, markRepaired, closeTicket } =
-    useStore();
-  const ticket = getTicket(id);
-  const [notes, setNotesLocal] = useState(ticket?.maintenanceNotes ?? "");
+  const { ticket, issue, runway, loading } = useTicketDetail(id);
+  const { role, repairTicket, closeTicket } = useStore();
+  const [notes, setNotesLocal] = useState("");
+  const [synced, setSynced] = useState(false);
+
+  // Seed the repair-notes box from the ticket once it loads.
+  useEffect(() => {
+    if (ticket && !synced) {
+      setNotesLocal(ticket.maintenanceNotes ?? "");
+      setSynced(true);
+    }
+  }, [ticket, synced]);
 
   if (!ticket) {
+    if (loading) return <p className="text-sm text-zinc-400">Loading ticket…</p>;
     return (
       <div className="space-y-3">
         <p className="text-zinc-600">Ticket not found.</p>
@@ -27,9 +35,8 @@ export default function TicketPage() {
     );
   }
 
-  const issue = getIssue(ticket.issueId);
-  const runway = RUNWAYS.find((r) => r.id === ticket.runwayId);
   const status = TICKET_STATUS[ticket.status];
+  const canWork = role === "maintenance" || role === "admin";
 
   return (
     <div className="space-y-6">
@@ -37,7 +44,7 @@ export default function TicketPage() {
         href={`/runway/${ticket.runwayId}`}
         className="text-sm text-zinc-500 hover:text-zinc-800"
       >
-        ‹ {runway?.name}
+        ‹ {runway?.name ?? "Runway"}
       </Link>
 
       <div className="flex items-start justify-between gap-4">
@@ -55,7 +62,9 @@ export default function TicketPage() {
 
       <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
         <div className="space-y-3">
-          {issue && <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} />}
+          {issue && (
+            <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} />
+          )}
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <Row label="Severity">
               <Badge tone={SEVERITY[ticket.severity].tone}>
@@ -90,7 +99,7 @@ export default function TicketPage() {
             </label>
             <textarea
               value={notes}
-              disabled={ticket.status === "closed"}
+              disabled={ticket.status === "closed" || !canWork}
               onChange={(e) => setNotesLocal(e.target.value)}
               rows={3}
               placeholder="Maintenance notes…"
@@ -98,9 +107,13 @@ export default function TicketPage() {
             />
           </div>
 
-          {ticket.status === "sent" || ticket.status === "in_progress" ? (
+          {!canWork && ticket.status !== "closed" ? (
+            <p className="rounded-md bg-zinc-100 px-3 py-2 text-center text-sm text-zinc-500">
+              Switch to the Maintenance role to work this ticket.
+            </p>
+          ) : ticket.status === "sent" || ticket.status === "in_progress" ? (
             <button
-              onClick={() => markRepaired(ticket.id, notes)}
+              onClick={() => void repairTicket(ticket.id, notes).catch(() => undefined)}
               className="w-full rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
             >
               Mark repaired
@@ -111,7 +124,7 @@ export default function TicketPage() {
                 Repaired — awaiting inspector reinspection.
               </p>
               <button
-                onClick={() => closeTicket(ticket.id)}
+                onClick={() => void closeTicket(ticket.id).catch(() => undefined)}
                 className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
               >
                 Close after reinspection

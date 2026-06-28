@@ -4,9 +4,12 @@ import type {
   Issue,
   IssueCategory,
   IssueDecision,
+  InspectionWindow,
+  RejectionReason,
   Severity,
   Ticket,
   TicketStatus,
+  UserRole,
 } from "./types";
 
 export const CATEGORY: Record<IssueCategory, string> = {
@@ -17,6 +20,31 @@ export const CATEGORY: Record<IssueCategory, string> = {
 };
 
 export const SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
+
+/** Human labels for the reject-modal RejectionReason dropdown (design §13). */
+export const REJECTION_REASON: Record<RejectionReason, string> = {
+  not_an_issue: "Not an issue",
+  wrong_category: "Wrong category",
+  duplicate: "Duplicate detection",
+  not_actionable: "Not actionable",
+  below_threshold: "Below action threshold",
+  image_unclear: "Image unclear",
+  already_known: "Already known / logged",
+  other: "Other",
+};
+
+/** Role-switcher labels. */
+export const ROLE: Record<UserRole, string> = {
+  admin: "Admin",
+  inspector: "Inspector",
+  maintenance: "Maintenance",
+};
+
+/** Inspection-window labels for the admin schedule form. */
+export const INSPECTION_WINDOW: Record<InspectionWindow, string> = {
+  daylight: "Daylight",
+  dusk_lit: "Dusk · lit",
+};
 
 export const SEVERITY: Record<Severity, { label: string; tone: Tone }> = {
   low: { label: "Low", tone: "gray" },

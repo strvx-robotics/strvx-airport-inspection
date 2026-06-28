@@ -1,91 +1,376 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import type { Issue, Severity, Ticket } from "./types";
-import { seedIssues } from "./seed";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import type {
+  IssueCandidate,
+  Runway,
+  RejectionReason,
+  Ticket,
+  UserRole,
+} from "./types";
+import * as api from "./api";
+import type { EditIssuePatch, Overview } from "./api";
 
-type Store = {
-  issues: Issue[];
-  tickets: Ticket[];
-  issue: (id: string) => Issue | undefined;
-  ticket: (id: string) => Ticket | undefined;
-  approveIssue: (id: string) => string; // returns new ticket id
-  rejectIssue: (id: string) => void;
-  manualReview: (id: string) => void;
-  setNotes: (id: string, value: string) => void;
-  setSeverity: (id: string, value: Severity) => void;
-  setDraft: (id: string, value: string) => void;
-  markRepaired: (ticketId: string, notes: string) => void;
-  closeTicket: (ticketId: string) => void;
-  reset: () => void;
-};
+// The store keeps the snappy single-page feel by holding normalized caches of
+// the entities the screens render. Reads come from the cache (so optimistic
+// mutations re-render instantly); loaders fetch from the API and reconcile the
+// cache; mutations patch the cache first, then replace with the server response
+// (or roll back by re-fetching on error).
+
+type Maybe<T> = T | undefined;
+
+interface Store {
+  // role switcher (advisory RBAC, drives which actions render)
+  role: UserRole;
+  setRole: (role: UserRole) => void;
+
+  // caches
+  overview: Maybe<Overview>;
+  issues: Record<string, IssueCandidate>;
+  tickets: Record<string, Ticket>;
+  runways: Record<string, Runway>;
+
+  // loaders (stable refs)
+  loadOverview: () => Promise<Maybe<Overview>>;
+  loadRunway: (id: string) => Promise<Maybe<api.RunwayWithIssues>>;
+  loadIssue: (id: string) => Promise<Maybe<IssueCandidate>>;
+  loadTicket: (id: string) => Promise<Maybe<api.TicketDetail>>;
+
+  // mutations (optimistic)
+  approveIssue: (id: string) => Promise<string>;
+  rejectIssue: (
+    id: string,
+    reason: RejectionReason,
+    note?: string,
+  ) => Promise<void>;
+  manualReview: (id: string) => Promise<void>;
+  editIssue: (id: string, patch: EditIssuePatch) => Promise<void>;
+  repairTicket: (id: string, notes?: string) => Promise<void>;
+  closeTicket: (id: string) => Promise<void>;
+}
 
 const StoreContext = createContext<Store | null>(null);
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [issues, setIssues] = useState<Issue[]>(() => seedIssues());
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [seq, setSeq] = useState(1041);
+const ROLE_KEY = "strvx.role";
 
-  const patchIssue = (id: string, p: Partial<Issue>) =>
-    setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, ...p } : i)));
-  const patchTicket = (id: string, p: Partial<Ticket>) =>
-    setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, ...p } : t)));
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [role, setRoleState] = useState<UserRole>("inspector");
+  const [overview, setOverview] = useState<Maybe<Overview>>(undefined);
+  const [issues, setIssues] = useState<Record<string, IssueCandidate>>({});
+  const [tickets, setTickets] = useState<Record<string, Ticket>>({});
+  const [runways, setRunways] = useState<Record<string, Runway>>({});
+
+  // Hydrate role from localStorage once (keeps the chosen role across reloads).
+  useEffect(() => {
+    const saved =
+      typeof window !== "undefined"
+        ? (window.localStorage.getItem(ROLE_KEY) as UserRole | null)
+        : null;
+    if (saved) {
+      setRoleState(saved);
+      api.setActiveRole(saved);
+    } else {
+      api.setActiveRole("inspector");
+    }
+  }, []);
+
+  const setRole = useCallback((next: UserRole) => {
+    setRoleState(next);
+    api.setActiveRole(next);
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(ROLE_KEY, next);
+  }, []);
+
+  const mergeIssue = useCallback(
+    (i: IssueCandidate) => setIssues((p) => ({ ...p, [i.id]: i })),
+    [],
+  );
+  const mergeTicket = useCallback(
+    (t: Ticket) => setTickets((p) => ({ ...p, [t.id]: t })),
+    [],
+  );
+  const mergeRunway = useCallback(
+    (r: Runway) => setRunways((p) => ({ ...p, [r.id]: r })),
+    [],
+  );
+
+  const loadOverview = useCallback(async () => {
+    const data = await api.getOverview();
+    setOverview(data);
+    setRunways((p) => {
+      const next = { ...p };
+      for (const r of data.runways) next[r.runway.id] = r.runway;
+      return next;
+    });
+    return data;
+  }, []);
+
+  const loadRunway = useCallback(
+    async (id: string) => {
+      const data = await api.getRunway(id);
+      mergeRunway(data.runway);
+      setIssues((p) => {
+        const next = { ...p };
+        for (const i of data.issues) next[i.id] = i;
+        return next;
+      });
+      return data;
+    },
+    [mergeRunway],
+  );
+
+  const loadIssue = useCallback(
+    async (id: string) => {
+      const issue = await api.getIssue(id);
+      mergeIssue(issue);
+      return issue;
+    },
+    [mergeIssue],
+  );
+
+  const loadTicket = useCallback(
+    async (id: string) => {
+      const data = await api.getTicket(id);
+      mergeTicket(data.ticket);
+      if (data.issue) mergeIssue(data.issue);
+      if (data.runway) mergeRunway(data.runway);
+      return data;
+    },
+    [mergeIssue, mergeTicket, mergeRunway],
+  );
+
+  // ── Optimistic mutations ───────────────────────────────────────────────────
+
+  const patchIssue = (id: string, patch: Partial<IssueCandidate>) =>
+    setIssues((p) => (p[id] ? { ...p, [id]: { ...p[id], ...patch } } : p));
+
+  const approveIssue = useCallback(
+    async (id: string): Promise<string> => {
+      const prev = issues[id];
+      patchIssue(id, { status: "approved" });
+      try {
+        const { issue, ticket } = await api.approveIssue(id);
+        mergeIssue(issue);
+        mergeTicket(ticket);
+        void loadOverview();
+        return ticket.id;
+      } catch (err) {
+        if (prev) mergeIssue(prev);
+        throw err;
+      }
+    },
+    [issues, mergeIssue, mergeTicket, loadOverview],
+  );
+
+  const rejectIssue = useCallback(
+    async (id: string, reason: RejectionReason, note?: string) => {
+      const prev = issues[id];
+      patchIssue(id, {
+        status: "rejected",
+        rejectionReason: reason,
+        rejectionNote: note,
+      });
+      try {
+        mergeIssue(await api.rejectIssue(id, reason, note));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeIssue(prev);
+        throw err;
+      }
+    },
+    [issues, mergeIssue, loadOverview],
+  );
+
+  const manualReview = useCallback(
+    async (id: string) => {
+      const prev = issues[id];
+      patchIssue(id, { status: "manual_review" });
+      try {
+        mergeIssue(await api.manualReviewIssue(id));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeIssue(prev);
+        throw err;
+      }
+    },
+    [issues, mergeIssue, loadOverview],
+  );
+
+  const editIssue = useCallback(
+    async (id: string, patch: EditIssuePatch) => {
+      const prev = issues[id];
+      patchIssue(id, {
+        ...(patch.category ? { category: patch.category } : {}),
+        ...(patch.severity ? { severity: patch.severity } : {}),
+        ...(patch.draft !== undefined ? { draft: patch.draft } : {}),
+        ...(patch.notes !== undefined ? { inspectorNotes: patch.notes } : {}),
+      });
+      try {
+        mergeIssue(await api.editIssue(id, patch));
+      } catch (err) {
+        if (prev) mergeIssue(prev);
+        throw err;
+      }
+    },
+    [issues, mergeIssue],
+  );
+
+  const repairTicket = useCallback(
+    async (id: string, notes?: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, {
+        status: "repaired",
+        ...(notes !== undefined ? { maintenanceNotes: notes } : {}),
+      });
+      try {
+        mergeTicket(await api.repairTicket(id, notes));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
+
+  const closeTicket = useCallback(
+    async (id: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, { status: "closed" });
+      try {
+        mergeTicket(await api.closeTicket(id));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
 
   const store: Store = {
+    role,
+    setRole,
+    overview,
     issues,
     tickets,
-    issue: (id) => issues.find((i) => i.id === id),
-    ticket: (id) => tickets.find((t) => t.id === id),
-
-    approveIssue: (id) => {
-      const found = issues.find((i) => i.id === id);
-      if (!found) return "";
-      if (found.ticketId) return found.ticketId;
-      const ticketId = `WO-${seq + 1}`;
-      setSeq((s) => s + 1);
-      setTickets((prev) => [
-        ...prev,
-        {
-          id: ticketId,
-          issueId: found.id,
-          runwayId: found.runwayId,
-          zone: found.zone,
-          category: found.category,
-          severity: found.severity,
-          description: found.draft,
-          status: "sent",
-          createdBy: "J. Rivera · Inspector",
-          assignedTo: "Field Maintenance",
-          maintenanceNotes: "",
-        },
-      ]);
-      patchIssue(id, { decision: "approved", ticketId });
-      return ticketId;
-    },
-
-    rejectIssue: (id) => patchIssue(id, { decision: "rejected" }),
-    manualReview: (id) => patchIssue(id, { decision: "manual_review" }),
-    setNotes: (id, value) => patchIssue(id, { inspectorNotes: value }),
-    setSeverity: (id, value) => patchIssue(id, { severity: value }),
-    setDraft: (id, value) => patchIssue(id, { draft: value }),
-
-    markRepaired: (ticketId, notes) =>
-      patchTicket(ticketId, { status: "repaired", maintenanceNotes: notes }),
-    closeTicket: (ticketId) => patchTicket(ticketId, { status: "closed" }),
-
-    reset: () => {
-      setIssues(seedIssues());
-      setTickets([]);
-      setSeq(1041);
-    },
+    runways,
+    loadOverview,
+    loadRunway,
+    loadIssue,
+    loadTicket,
+    approveIssue,
+    rejectIssue,
+    manualReview,
+    editIssue,
+    repairTicket,
+    closeTicket,
   };
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+}
+
+function patchTicketLocal(
+  setTickets: React.Dispatch<React.SetStateAction<Record<string, Ticket>>>,
+  id: string,
+  patch: Partial<Ticket>,
+) {
+  setTickets((p) => (p[id] ? { ...p, [id]: { ...p[id], ...patch } } : p));
 }
 
 export function useStore(): Store {
   const ctx = useContext(StoreContext);
   if (!ctx) throw new Error("useStore must be used within <StoreProvider>");
   return ctx;
+}
+
+// ── Resource hooks (fetch-on-mount + cache reads) ─────────────────────────────
+
+/** Dashboard overview. Re-fetches on mount; `refresh` re-pulls server state. */
+export function useOverview() {
+  const { overview, loadOverview } = useStore();
+  const [loading, setLoading] = useState(overview === undefined);
+  useEffect(() => {
+    let live = true;
+    loadOverview()
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [loadOverview]);
+  return { overview, loading, refresh: loadOverview };
+}
+
+export function useRunwayDetail(id: string) {
+  const { runways, issues, loadRunway } = useStore();
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    loadRunway(id)
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, loadRunway]);
+  const runway = runways[id];
+  const runwayIssues = Object.values(issues).filter((i) => i.runwayId === id);
+  return { runway, issues: runwayIssues, loading };
+}
+
+export function useIssueDetail(id: string) {
+  const { issues, loadIssue } = useStore();
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    loadIssue(id)
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, loadIssue]);
+  return { issue: issues[id], loading };
+}
+
+export function useTicketDetail(id: string) {
+  const { tickets, issues, runways, loadTicket } = useStore();
+  const [loading, setLoading] = useState(true);
+  const issueIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    loadTicket(id)
+      .then((d) => {
+        if (d) issueIdRef.current = d.ticket.issueId;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, loadTicket]);
+  const ticket = tickets[id];
+  const issue = ticket ? issues[ticket.issueId] : undefined;
+  const runway = ticket ? runways[ticket.runwayId] : undefined;
+  return { ticket, issue, runway, loading };
 }
