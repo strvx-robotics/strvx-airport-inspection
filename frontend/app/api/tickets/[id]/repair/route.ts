@@ -1,20 +1,26 @@
-// POST /api/tickets/[id]/repair — mark a ticket repaired (sent|in_progress →
-// repaired) with optional maintenance notes.
-
-import { repairTicket } from "@/lib/repo";
-import { actorFrom, json, readJson, route, type RouteContext } from "@/lib/http";
+// POST /api/tickets/[id]/repair — proxied to the Python backend.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface Body {
-  notes?: string;
-  actor?: { role?: string; name?: string; id?: string };
-}
+const BACKEND_URL = process.env.BACKEND_URL;
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
-export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-  const body = await readJson<Body>(req);
-  const ticket = await repairTicket(id, { notes: body.notes }, actorFrom(req, body));
-  return json({ ticket });
-});
+  const res = await fetch(`${BACKEND_URL}/tickets/${id}/repair`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-actor-role": req.headers.get("x-strvx-role") ?? "",
+    },
+    body: await req.text(),
+  });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}

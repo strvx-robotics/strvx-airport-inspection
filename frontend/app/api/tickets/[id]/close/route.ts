@@ -1,18 +1,26 @@
-// POST /api/tickets/[id]/close — close a ticket after reinspection.
-
-import { closeTicket } from "@/lib/repo";
-import { actorFrom, json, readJson, route, type RouteContext } from "@/lib/http";
+// POST /api/tickets/[id]/close — proxied to the Python backend.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface Body {
-  actor?: { role?: string; name?: string; id?: string };
-}
+const BACKEND_URL = process.env.BACKEND_URL;
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
-export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-  const body = await readJson<Body>(req);
-  const ticket = await closeTicket(id, actorFrom(req, body));
-  return json({ ticket });
-});
+  const res = await fetch(`${BACKEND_URL}/tickets/${id}/close`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-actor-role": req.headers.get("x-strvx-role") ?? "",
+    },
+    body: await req.text(),
+  });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}
