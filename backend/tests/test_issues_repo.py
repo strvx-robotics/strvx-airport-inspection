@@ -105,3 +105,57 @@ async def test_get_runway(seed):
         assert rw.length == "8,001 ft"
     finally:
         await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_reject_requires_reason(seed):
+    await seed_issue(seed)
+    await db.connect()
+    try:
+        with pytest.raises(AppError, match="rejection reason is required"):
+            await issues_repo.reject_issue("ic1", None, None, Actor(role="inspector"))
+        i = await issues_repo.reject_issue("ic1", "duplicate", "dupe of ic0", Actor(role="inspector"))
+        assert i.status == "rejected" and i.rejection_reason == "duplicate" and i.rejection_note == "dupe of ic0"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_manual_review(seed):
+    await seed_issue(seed)
+    await db.connect()
+    try:
+        i = await issues_repo.manual_review_issue("ic1", Actor(role="inspector"))
+        assert i.status == "manual_review"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_edit_records_category_change_and_blocks_after_decision(seed):
+    await seed_issue(seed)
+    await db.connect()
+    try:
+        i = await issues_repo.edit_issue("ic1", {"category": "marking", "draft": "New draft"}, Actor(role="inspector"))
+        assert i.category == "marking" and i.draft == "New draft"
+        h = await db.one("SELECT from_category, to_category FROM issue_status_history WHERE issue_id='ic1' AND action='edit'")
+        assert h["from_category"] == "pavement" and h["to_category"] == "marking"
+        await issues_repo.reject_issue("ic1", "not_an_issue", None, Actor(role="inspector"))
+        with pytest.raises(AppError, match="Cannot edit a rejected issue"):
+            await issues_repo.edit_issue("ic1", {"draft": "x"}, Actor(role="inspector"))
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_draft_diff_shape(seed):
+    await seed_issue(seed, ai="Repair spall in pavement.", draft="Repair the spall.")
+    await db.connect()
+    try:
+        d = await issues_repo.get_issue_draft_diff("ic1")
+        assert d["aiDraftText"] == "Repair spall in pavement."
+        assert d["finalText"] == "Repair the spall."
+        assert isinstance(d["parts"], list) and all({"value", "added", "removed"} <= set(p) for p in d["parts"])
+        assert isinstance(d["editDistance"], int)
+    finally:
+        await db.disconnect()
