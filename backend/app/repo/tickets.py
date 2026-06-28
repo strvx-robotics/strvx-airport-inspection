@@ -67,7 +67,8 @@ async def repair_ticket(id: str, notes: str | None, actor: Actor | None) -> Tick
             "Marked repaired with notes" if notes else "Marked repaired", actor,
         )
     result = await get_ticket(id)
-    assert result is not None
+    if result is None:
+        raise AppError(f"Ticket not found: {id}")
     return result
 
 
@@ -83,5 +84,6 @@ async def close_ticket(id: str, actor: Actor | None) -> Ticket:
             id, "close", ticket.status, "closed", "Closed after reinspection", actor,
         )
     result = await get_ticket(id)
-    assert result is not None
+    if result is None:
+        raise AppError(f"Ticket not found: {id}")
     return result

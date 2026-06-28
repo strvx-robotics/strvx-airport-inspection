@@ -65,6 +65,18 @@ async def test_repair_missing_raises_not_found(seed):
 
 
 @pytest.mark.asyncio
+async def test_repair_keeps_existing_notes_when_none(seed):
+    await _seed_issue_and_ticket(seed, status="sent")
+    await seed.execute("UPDATE tickets SET maintenance_notes = 'prior note' WHERE id = 'WO-1042'")
+    await db.connect()
+    try:
+        t = await repo.repair_ticket("WO-1042", None, Actor(role="maintenance"))
+        assert t.maintenance_notes == "prior note"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_close_is_idempotent(seed):
     await _seed_issue_and_ticket(seed, status="closed")
     await db.connect()
@@ -86,5 +98,7 @@ async def test_close_repaired_ticket(seed):
         t = await repo.close_ticket("WO-1042", Actor(role="inspector"))
         assert t.status == "closed"
         assert t.closed_at is not None
+        h = await db.one("SELECT action FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
+        assert h is not None and h["action"] == "close"
     finally:
         await db.disconnect()
