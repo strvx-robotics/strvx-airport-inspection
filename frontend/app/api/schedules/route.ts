@@ -15,15 +15,15 @@ interface Body {
   actor?: { role?: string; name?: string; id?: string };
 }
 
-export const GET = route((req) => {
+export const GET = route(async (req) => {
   const airportId = new URL(req.url).searchParams.get("airportId") ?? undefined;
-  return json({ schedules: listSchedules(airportId) });
+  return json({ schedules: await listSchedules(airportId) });
 });
 
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
   if (!body.airportId || !body.time) throw new Error("airportId and time are required");
-  const schedule = createSchedule({
+  const schedule = await createSchedule({
     airportId: body.airportId,
     time: body.time,
     window: body.window,

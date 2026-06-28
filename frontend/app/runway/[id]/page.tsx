@@ -43,7 +43,7 @@ export default function RunwayDetail() {
             CARD,
           )}
         >
-          <CheckCircle2 size={22} strokeWidth={1.6} className="text-[#56c98a]" />
+          <CheckCircle2 size={22} strokeWidth={1.6} className="text-[#737a7f]" />
           <p className="text-[13px] font-medium text-[#e7eaec]">No issues found</p>
           <p className={cn("text-[12px]", MUTED)}>
             The inspection pass for {runway.name} flagged no candidates.

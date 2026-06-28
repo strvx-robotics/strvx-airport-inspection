@@ -13,12 +13,12 @@ interface Body {
   timezone?: string;
 }
 
-export const GET = route(() => json({ airports: listAirports() }));
+export const GET = route(async () => json({ airports: await listAirports() }));
 
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
   if (!body.name || !body.code) throw new Error("name and code are required");
-  const airport = createAirport({
+  const airport = await createAirport({
     name: body.name,
     code: body.code,
     location: body.location,

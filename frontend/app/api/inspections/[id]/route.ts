@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = route<{ id: string }>(async (_req, { params }: RouteContext<{ id: string }>) => {
   const { id } = await params;
-  const result = getInspectionWithJobs(id);
+  const result = await getInspectionWithJobs(id);
   if (!result) return notFound(`Inspection not found: ${id}`);
   return json(result);
 });

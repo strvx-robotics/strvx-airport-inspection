@@ -7,8 +7,8 @@ import { json, route } from "@/lib/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const GET = route(() => {
-  const overview = getOverview();
-  const inspections = listInspections();
+export const GET = route(async () => {
+  const overview = await getOverview();
+  const inspections = await listInspections();
   return json({ overview, inspections });
 });

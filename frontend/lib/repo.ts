@@ -4,16 +4,24 @@
 // ticket_status_history (actor + role + timestamp + reason). aiDraftText is
 // preserved immutably; the editable `draft` is separate; draftEditDistance is
 // computed via jsdiff on approve (design §13.2).
+//
+// Backed by Postgres (lib/db.ts). All functions are async: db reads/writes go
+// through one()/all()/run(); multi-statement mutations run inside tx(), whose
+// AsyncLocalStorage-scoped client makes every nested call atomic.
 
 import { randomUUID } from "node:crypto";
 import { diffWords, type Change } from "diff";
-import { db } from "./db";
+import { all, one, run, tx } from "./db";
 import {
   bandFor,
   severityFor,
+  ISSUE_CATEGORIES,
+  ISSUE_STATUSES,
+  SEVERITY_VALUES,
   type Airport,
   type BadgeTone,
   type BBox,
+  type ConfidenceBand,
   type GeomConfidence,
   type Image,
   type Inspection,
@@ -22,6 +30,7 @@ import {
   type InspectionWindow,
   type IssueCandidate,
   type IssueCategory,
+  type IssueStatus,
   type LngLat,
   type RejectionReason,
   type Runway,
@@ -98,14 +107,37 @@ export interface RunwayOverview {
   pendingCount: number;
   ticketsOpen: number;
   ticketsCompleted: number;
+  bySeverity: Record<Severity, number>;
+  imageCount: number;
   status: { label: string; tone: BadgeTone };
+}
+
+/** Issue counts bucketed four ways (all real IssueCandidate fields). */
+export interface IssueBreakdown {
+  bySeverity: Record<Severity, number>;
+  byCategory: Record<IssueCategory, number>;
+  byStatus: Record<IssueStatus, number>;
+  byBand: Record<ConfidenceBand, number>;
 }
 
 export interface Overview {
   inspection?: Inspection;
   airport: Airport;
   runways: RunwayOverview[];
-  totals: { issues: number; ticketsOpen: number; ticketsCompleted: number };
+  totals: {
+    issues: number;
+    pending: number;
+    manualReview: number;
+    approved: number;
+    rejected: number;
+    ticketsOpen: number;
+    ticketsCompleted: number;
+    ticketsTotal: number;
+    images: number;
+  };
+  issueBreakdown: IssueBreakdown;
+  recentTickets: Ticket[];
+  inspections: Inspection[];
 }
 
 export interface InspectionReport {
@@ -200,10 +232,10 @@ function toUser(r: UserRow): User {
 const gid = (prefix: string): string => `${prefix}_${randomUUID().slice(0, 8)}`;
 const now = (): string => new Date().toISOString();
 
-function actorName(actor?: Actor): string {
+async function actorName(actor?: Actor): Promise<string> {
   if (actor?.name) return actor.name;
   if (actor?.role) {
-    const row = db.prepare("SELECT name FROM users WHERE role = ? LIMIT 1").get(actor.role) as { name: string } | undefined;
+    const row = await one<{ name: string }>("SELECT name FROM users WHERE role = ? LIMIT 1", [actor.role]);
     if (row) return row.name;
     return actor.role.charAt(0).toUpperCase() + actor.role.slice(1);
   }
@@ -233,147 +265,178 @@ function runwayStatusOf(
 
 const TICKET_OPEN = new Set(["sent", "in_progress", "repaired"]);
 
+const CONFIDENCE_BANDS: ConfidenceBand[] = ["high", "medium", "low"];
+
+const zeroCounts = <K extends string>(keys: readonly K[]): Record<K, number> =>
+  Object.fromEntries(keys.map((k) => [k, 0])) as Record<K, number>;
+
+/** Bucket a set of candidates by severity / category / status / confidence band. */
+function buildBreakdown(issues: IssueCandidate[]): IssueBreakdown {
+  const bd: IssueBreakdown = {
+    bySeverity: zeroCounts(SEVERITY_VALUES),
+    byCategory: zeroCounts(ISSUE_CATEGORIES),
+    byStatus: zeroCounts(ISSUE_STATUSES),
+    byBand: zeroCounts(CONFIDENCE_BANDS),
+  };
+  for (const i of issues) {
+    bd.bySeverity[i.severity]++;
+    bd.byCategory[i.category]++;
+    bd.byStatus[i.status]++;
+    bd.byBand[i.confidenceBand]++;
+  }
+  return bd;
+}
+
 // ── Airports / runways / zones ────────────────────────────────────────────────
 
-export function listAirports(): Airport[] {
-  return (db.prepare("SELECT * FROM airports ORDER BY created_at").all() as AirportRow[]).map(toAirport);
+export async function listAirports(): Promise<Airport[]> {
+  return (await all<AirportRow>("SELECT * FROM airports ORDER BY created_at")).map(toAirport);
 }
-export function getAirport(id: string): Airport | undefined {
-  const r = db.prepare("SELECT * FROM airports WHERE id = ?").get(id) as AirportRow | undefined;
+export async function getAirport(id: string): Promise<Airport | undefined> {
+  const r = await one<AirportRow>("SELECT * FROM airports WHERE id = ?", [id]);
   return r ? toAirport(r) : undefined;
 }
-export function getDefaultAirport(): Airport {
-  const r = db.prepare("SELECT * FROM airports ORDER BY created_at LIMIT 1").get() as AirportRow | undefined;
+export async function getDefaultAirport(): Promise<Airport> {
+  const r = await one<AirportRow>("SELECT * FROM airports ORDER BY created_at LIMIT 1");
   if (!r) throw new Error("No airport seeded");
   return toAirport(r);
 }
-export function createAirport(input: { name: string; code: string; location?: string; timezone?: string }): Airport {
+export async function createAirport(input: { name: string; code: string; location?: string; timezone?: string }): Promise<Airport> {
   const id = gid("apt");
   const createdAt = now();
-  db.prepare(
+  await run(
     `INSERT INTO airports (id, name, code, location, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.name, input.code, input.location ?? "", input.timezone ?? "", createdAt);
-  return getAirport(id)!;
+    [id, input.name, input.code, input.location ?? "", input.timezone ?? "", createdAt],
+  );
+  return (await getAirport(id))!;
 }
 
-export function listRunways(airportId?: string): Runway[] {
+export async function listRunways(airportId?: string): Promise<Runway[]> {
   const rows = airportId
-    ? (db.prepare("SELECT * FROM runways WHERE airport_id = ? ORDER BY created_at").all(airportId) as RunwayRow[])
-    : (db.prepare("SELECT * FROM runways ORDER BY created_at").all() as RunwayRow[]);
+    ? await all<RunwayRow>("SELECT * FROM runways WHERE airport_id = ? ORDER BY created_at", [airportId])
+    : await all<RunwayRow>("SELECT * FROM runways ORDER BY created_at");
   return rows.map(toRunway);
 }
-export function getRunway(id: string): Runway | undefined {
-  const r = db.prepare("SELECT * FROM runways WHERE id = ?").get(id) as RunwayRow | undefined;
+export async function getRunway(id: string): Promise<Runway | undefined> {
+  const r = await one<RunwayRow>("SELECT * FROM runways WHERE id = ?", [id]);
   return r ? toRunway(r) : undefined;
 }
-export function createRunway(input: { airportId: string; name: string; designation: string; length?: string; lengthM?: number; description?: string }): Runway {
+export async function createRunway(input: { airportId: string; name: string; designation: string; length?: string; lengthM?: number; description?: string }): Promise<Runway> {
   const id = gid("rwy");
-  db.prepare(
+  await run(
     `INSERT INTO runways (id, airport_id, name, designation, length, length_m, description, active_status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-  ).run(id, input.airportId, input.name, input.designation, input.length ?? "", input.lengthM ?? null, input.description ?? null, now());
-  return getRunway(id)!;
+    [id, input.airportId, input.name, input.designation, input.length ?? "", input.lengthM ?? null, input.description ?? null, now()],
+  );
+  return (await getRunway(id))!;
 }
 
-export function listZones(runwayId: string): Zone[] {
-  return (db.prepare("SELECT * FROM zones WHERE runway_id = ? ORDER BY station_start_m").all(runwayId) as ZoneRow[]).map(toZone);
+export async function listZones(runwayId: string): Promise<Zone[]> {
+  return (await all<ZoneRow>("SELECT * FROM zones WHERE runway_id = ? ORDER BY station_start_m", [runwayId])).map(toZone);
 }
-export function getZone(id: string): Zone | undefined {
-  const r = db.prepare("SELECT * FROM zones WHERE id = ?").get(id) as ZoneRow | undefined;
+export async function getZone(id: string): Promise<Zone | undefined> {
+  const r = await one<ZoneRow>("SELECT * FROM zones WHERE id = ?", [id]);
   return r ? toZone(r) : undefined;
 }
-export function createZone(input: { runwayId: string; name: string; stationStartM?: number; stationEndM?: number; notes?: string }): Zone {
+export async function createZone(input: { runwayId: string; name: string; stationStartM?: number; stationEndM?: number; notes?: string }): Promise<Zone> {
   const id = gid("zone");
-  db.prepare(
+  await run(
     `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.runwayId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, input.notes ?? null, now());
-  return getZone(id)!;
+    [id, input.runwayId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, input.notes ?? null, now()],
+  );
+  return (await getZone(id))!;
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-export function listUsers(): User[] {
-  return (db.prepare("SELECT * FROM users ORDER BY created_at").all() as UserRow[]).map(toUser);
+export async function listUsers(): Promise<User[]> {
+  return (await all<UserRow>("SELECT * FROM users ORDER BY created_at")).map(toUser);
 }
-export function getUserByRole(role: UserRole): User | undefined {
-  const r = db.prepare("SELECT * FROM users WHERE role = ? LIMIT 1").get(role) as UserRow | undefined;
+export async function getUserByRole(role: UserRole): Promise<User | undefined> {
+  const r = await one<UserRow>("SELECT * FROM users WHERE role = ? LIMIT 1", [role]);
   return r ? toUser(r) : undefined;
 }
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
 
-export function listSchedules(airportId?: string): InspectionSchedule[] {
+export async function listSchedules(airportId?: string): Promise<InspectionSchedule[]> {
   const rows = airportId
-    ? (db.prepare("SELECT * FROM inspection_schedules WHERE airport_id = ? ORDER BY time").all(airportId) as ScheduleRow[])
-    : (db.prepare("SELECT * FROM inspection_schedules ORDER BY time").all() as ScheduleRow[]);
+    ? await all<ScheduleRow>("SELECT * FROM inspection_schedules WHERE airport_id = ? ORDER BY time", [airportId])
+    : await all<ScheduleRow>("SELECT * FROM inspection_schedules ORDER BY time");
   return rows.map(toSchedule);
 }
-export function createSchedule(input: { airportId: string; time: string; window?: InspectionWindow; enabled?: boolean; actor?: Actor }): InspectionSchedule {
+export async function createSchedule(input: { airportId: string; time: string; window?: InspectionWindow; enabled?: boolean; actor?: Actor }): Promise<InspectionSchedule> {
   const id = gid("sch");
-  db.prepare(
+  await run(
     `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.airportId, input.time, input.window ?? "daylight", input.enabled === false ? 0 : 1, actorName(input.actor), now());
-  const r = db.prepare("SELECT * FROM inspection_schedules WHERE id = ?").get(id) as ScheduleRow;
-  return toSchedule(r);
+    [id, input.airportId, input.time, input.window ?? "daylight", input.enabled === false ? 0 : 1, await actorName(input.actor), now()],
+  );
+  const r = await one<ScheduleRow>("SELECT * FROM inspection_schedules WHERE id = ?", [id]);
+  return toSchedule(r!);
 }
 
 // ── Inspections ───────────────────────────────────────────────────────────────
 
-export function listInspections(airportId?: string): Inspection[] {
+export async function listInspections(airportId?: string): Promise<Inspection[]> {
   const rows = airportId
-    ? (db.prepare("SELECT * FROM inspections WHERE airport_id = ? ORDER BY scheduled_time DESC").all(airportId) as InspectionRow[])
-    : (db.prepare("SELECT * FROM inspections ORDER BY scheduled_time DESC").all() as InspectionRow[]);
+    ? await all<InspectionRow>("SELECT * FROM inspections WHERE airport_id = ? ORDER BY scheduled_time DESC", [airportId])
+    : await all<InspectionRow>("SELECT * FROM inspections ORDER BY scheduled_time DESC");
   return rows.map(toInspection);
 }
-export function getInspection(id: string): Inspection | undefined {
-  const r = db.prepare("SELECT * FROM inspections WHERE id = ?").get(id) as InspectionRow | undefined;
+export async function getInspection(id: string): Promise<Inspection | undefined> {
+  const r = await one<InspectionRow>("SELECT * FROM inspections WHERE id = ?", [id]);
   return r ? toInspection(r) : undefined;
 }
-export function getLatestInspection(airportId?: string): Inspection | undefined {
-  const aid = airportId ?? getDefaultAirport().id;
-  const r = db.prepare("SELECT * FROM inspections WHERE airport_id = ? ORDER BY scheduled_time DESC LIMIT 1").get(aid) as InspectionRow | undefined;
+export async function getLatestInspection(airportId?: string): Promise<Inspection | undefined> {
+  const aid = airportId ?? (await getDefaultAirport()).id;
+  const r = await one<InspectionRow>("SELECT * FROM inspections WHERE airport_id = ? ORDER BY scheduled_time DESC LIMIT 1", [aid]);
   return r ? toInspection(r) : undefined;
 }
-export function listJobs(inspectionId: string): InspectionJob[] {
-  return (db.prepare("SELECT * FROM inspection_jobs WHERE inspection_id = ? ORDER BY created_at").all(inspectionId) as JobRow[]).map(toJob);
+export async function listJobs(inspectionId: string): Promise<InspectionJob[]> {
+  return (await all<JobRow>("SELECT * FROM inspection_jobs WHERE inspection_id = ? ORDER BY created_at", [inspectionId])).map(toJob);
 }
-export function getInspectionWithJobs(
+export async function getInspectionWithJobs(
   id: string,
-): { inspection: Inspection; jobs: Array<InspectionJob & { runway?: Runway }> } | undefined {
-  const inspection = getInspection(id);
+): Promise<{ inspection: Inspection; jobs: Array<InspectionJob & { runway?: Runway }> } | undefined> {
+  const inspection = await getInspection(id);
   if (!inspection) return undefined;
-  const jobs = listJobs(id).map((job) => ({ ...job, runway: getRunway(job.runwayId) }));
+  const jobs = await Promise.all(
+    (await listJobs(id)).map(async (job) => ({ ...job, runway: await getRunway(job.runwayId) })),
+  );
   return { inspection, jobs };
 }
 
 /** Materialize today's 6 AM inspection + one job per runway. Records only; idempotent per day. */
-export function runInspectionNow(airportId?: string): Inspection {
-  const airport = airportId ? getAirport(airportId) : getDefaultAirport();
+export async function runInspectionNow(airportId?: string): Promise<Inspection> {
+  const airport = airportId ? await getAirport(airportId) : await getDefaultAirport();
   if (!airport) throw new Error("Airport not found");
   const d = new Date();
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const scheduled = `${day}T06:00:00.000Z`;
 
-  const existing = db
-    .prepare("SELECT * FROM inspections WHERE airport_id = ? AND substr(scheduled_time, 1, 10) = ? ORDER BY scheduled_time DESC LIMIT 1")
-    .get(airport.id, day) as InspectionRow | undefined;
+  const existing = await one<InspectionRow>(
+    "SELECT * FROM inspections WHERE airport_id = ? AND substr(scheduled_time, 1, 10) = ? ORDER BY scheduled_time DESC LIMIT 1",
+    [airport.id, day],
+  );
   if (existing) return toInspection(existing);
 
   const id = gid("insp");
   const createdAt = now();
-  const tx = db.transaction(() => {
-    db.prepare(
+  await tx(async () => {
+    await run(
       `INSERT INTO inspections (id, airport_id, scheduled_time, "window", status, created_by, created_at)
        VALUES (?, ?, ?, 'daylight', 'not_started', 'scheduler', ?)`,
-    ).run(id, airport.id, scheduled, createdAt);
-    const insJob = db.prepare(
-      `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
-       VALUES (?, ?, ?, 'not_started', 0, 0, ?)`,
+      [id, airport.id, scheduled, createdAt],
     );
-    for (const rw of listRunways(airport.id)) insJob.run(gid("job"), id, rw.id, createdAt);
+    for (const rw of await listRunways(airport.id)) {
+      await run(
+        `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
+         VALUES (?, ?, ?, 'not_started', 0, 0, ?)`,
+        [gid("job"), id, rw.id, createdAt],
+      );
+    }
   });
-  tx();
-  return getInspection(id)!;
+  return (await getInspection(id))!;
 }
 
 // ── Issue candidates ──────────────────────────────────────────────────────────
@@ -381,183 +444,192 @@ export function runInspectionNow(airportId?: string): Inspection {
 const ISSUE_SELECT =
   "SELECT ic.*, z.name AS zone_name FROM issue_candidates ic LEFT JOIN zones z ON z.id = ic.zone_id";
 
-export function getIssue(id: string): IssueCandidate | undefined {
-  const r = db.prepare(`${ISSUE_SELECT} WHERE ic.id = ?`).get(id) as IssueRow | undefined;
+export async function getIssue(id: string): Promise<IssueCandidate | undefined> {
+  const r = await one<IssueRow>(`${ISSUE_SELECT} WHERE ic.id = ?`, [id]);
   return r ? toIssue(r) : undefined;
 }
-export function listIssuesByRunway(runwayId: string, inspectionId?: string): IssueCandidate[] {
+export async function listIssuesByRunway(runwayId: string, inspectionId?: string): Promise<IssueCandidate[]> {
   const rows = inspectionId
-    ? (db.prepare(`${ISSUE_SELECT} WHERE ic.runway_id = ? AND ic.inspection_id = ? ORDER BY ic.confidence DESC`).all(runwayId, inspectionId) as IssueRow[])
-    : (db.prepare(`${ISSUE_SELECT} WHERE ic.runway_id = ? ORDER BY ic.confidence DESC`).all(runwayId) as IssueRow[]);
+    ? await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.runway_id = ? AND ic.inspection_id = ? ORDER BY ic.confidence DESC`, [runwayId, inspectionId])
+    : await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.runway_id = ? ORDER BY ic.confidence DESC`, [runwayId]);
   return rows.map(toIssue);
 }
-export function listIssuesByInspection(inspectionId: string): IssueCandidate[] {
-  return (db.prepare(`${ISSUE_SELECT} WHERE ic.inspection_id = ? ORDER BY ic.confidence DESC`).all(inspectionId) as IssueRow[]).map(toIssue);
+export async function listIssuesByInspection(inspectionId: string): Promise<IssueCandidate[]> {
+  return (await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.inspection_id = ? ORDER BY ic.confidence DESC`, [inspectionId])).map(toIssue);
 }
-export function getRunwayWithIssues(
+export async function getRunwayWithIssues(
   runwayId: string,
   inspectionId?: string,
-): { runway: Runway; issues: IssueCandidate[] } | undefined {
-  const runway = getRunway(runwayId);
+): Promise<{ runway: Runway; issues: IssueCandidate[] } | undefined> {
+  const runway = await getRunway(runwayId);
   if (!runway) return undefined;
-  return { runway, issues: listIssuesByRunway(runwayId, inspectionId) };
+  return { runway, issues: await listIssuesByRunway(runwayId, inspectionId) };
 }
 
-export function createIssueCandidate(input: NewIssueCandidate): IssueCandidate {
+export async function createIssueCandidate(input: NewIssueCandidate): Promise<IssueCandidate> {
   const id = gid("iss");
   const draft = input.draft ?? input.aiDraftText;
   const severity = input.severity ?? severityFor(input.confidence);
-  db.prepare(
+  await run(
     `INSERT INTO issue_candidates
        (id, inspection_id, runway_id, zone_id, image_id, issue_type, confidence, confidence_band,
         severity, severity_model, status, station_m, lateral_offset_m, size_m, bbox_json, gps_lat, gps_lng,
         ai_draft_text, draft, inspector_notes, model_notes, created_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`,
-  ).run(
-    id, input.inspectionId, input.runwayId, input.zoneId ?? null, input.imageId ?? null, input.category,
-    input.confidence, bandFor(input.confidence), severity, severity, input.stationM ?? null,
-    input.lateralOffsetM ?? null, input.sizeM ?? null, JSON.stringify(input.bbox), input.gps?.lat ?? null,
-    input.gps?.lng ?? null, input.aiDraftText, draft, input.modelNotes ?? null, input.createdBy ?? "STRVX Detector", now(),
+    [
+      id, input.inspectionId, input.runwayId, input.zoneId ?? null, input.imageId ?? null, input.category,
+      input.confidence, bandFor(input.confidence), severity, severity, input.stationM ?? null,
+      input.lateralOffsetM ?? null, input.sizeM ?? null, JSON.stringify(input.bbox), input.gps?.lat ?? null,
+      input.gps?.lng ?? null, input.aiDraftText, draft, input.modelNotes ?? null, input.createdBy ?? "STRVX Detector", now(),
+    ],
   );
-  db.prepare(
+  await run(
     `INSERT INTO issue_status_history (id, issue_id, action, to_status, note, actor, actor_role, ts)
      VALUES (?, ?, 'create', 'pending', 'Detected by STRVX inspection pass', 'STRVX Detector', 'admin', ?)`,
-  ).run(gid("ish"), id, now());
-  return getIssue(id)!;
+    [gid("ish"), id, now()],
+  );
+  return (await getIssue(id))!;
 }
 
-export function createImage(input: {
+export async function createImage(input: {
   runwayId: string; zoneId?: string; jobId?: string; fileUrl: string; sourceFile?: string;
   gps?: LngLat; geomConfidence?: GeomConfidence; timestamp?: string;
-}): Image {
+}): Promise<Image> {
   const id = gid("img");
-  db.prepare(
+  await run(
     `INSERT INTO images (id, job_id, runway_id, zone_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id, input.jobId ?? null, input.runwayId, input.zoneId ?? null, input.fileUrl, input.gps?.lat ?? null,
-    input.gps?.lng ?? null, input.geomConfidence ?? (input.gps ? "gps" : "manual"), input.timestamp ?? now(),
-    input.sourceFile ?? null, now(),
+    [
+      id, input.jobId ?? null, input.runwayId, input.zoneId ?? null, input.fileUrl, input.gps?.lat ?? null,
+      input.gps?.lng ?? null, input.geomConfidence ?? (input.gps ? "gps" : "manual"), input.timestamp ?? now(),
+      input.sourceFile ?? null, now(),
+    ],
   );
-  const r = db.prepare("SELECT * FROM images WHERE id = ?").get(id) as ImageRow;
-  return toImage(r);
+  const r = await one<ImageRow>("SELECT * FROM images WHERE id = ?", [id]);
+  return toImage(r!);
 }
 
 /** Persist an uploaded image + its stub-detected candidates; bumps job counts. */
-export function ingestUpload(input: UploadInput): { image: Image; candidates: IssueCandidate[] } {
-  const runway = getRunway(input.runwayId);
+export async function ingestUpload(input: UploadInput): Promise<{ image: Image; candidates: IssueCandidate[] }> {
+  const runway = await getRunway(input.runwayId);
   if (!runway) throw new Error(`Runway not found: ${input.runwayId}`);
-  const inspectionId = input.inspectionId ?? getLatestInspection(runway.airportId)?.id ?? runInspectionNow(runway.airportId).id;
+  const inspectionId =
+    input.inspectionId ??
+    (await getLatestInspection(runway.airportId))?.id ??
+    (await runInspectionNow(runway.airportId)).id;
 
   // Resolve (or create) the per-runway job for this inspection.
   let jobId = input.jobId;
   if (!jobId) {
-    const job = db.prepare("SELECT id FROM inspection_jobs WHERE inspection_id = ? AND runway_id = ? LIMIT 1").get(inspectionId, input.runwayId) as { id: string } | undefined;
+    const job = await one<{ id: string }>("SELECT id FROM inspection_jobs WHERE inspection_id = ? AND runway_id = ? LIMIT 1", [inspectionId, input.runwayId]);
     if (job) jobId = job.id;
     else {
       jobId = gid("job");
-      db.prepare(`INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) VALUES (?, ?, ?, 'processing', 0, 0, ?)`).run(jobId, inspectionId, input.runwayId, now());
+      await run(`INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) VALUES (?, ?, ?, 'processing', 0, 0, ?)`, [jobId, inspectionId, input.runwayId, now()]);
     }
   }
 
-  const tx = db.transaction(() => {
-    const image = createImage({ runwayId: input.runwayId, zoneId: input.zoneId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence });
-    const candidates = input.detections.map((det) =>
-      createIssueCandidate({
-        inspectionId, runwayId: input.runwayId, zoneId: input.zoneId, imageId: image.id, category: det.category,
-        confidence: det.confidence, severity: det.severity, bbox: det.bbox, gps: input.gps, stationM: det.stationM,
-        lateralOffsetM: det.lateralOffsetM, sizeM: det.sizeM, aiDraftText: det.aiDraftText, draft: det.draft, modelNotes: det.modelNotes,
-      }),
-    );
-    db.prepare("UPDATE inspection_jobs SET image_count = image_count + 1, issue_count = issue_count + ?, status = 'completed', completed_at = ? WHERE id = ?").run(candidates.length, now(), jobId);
-    const insp = getInspection(inspectionId);
+  return tx(async () => {
+    const image = await createImage({ runwayId: input.runwayId, zoneId: input.zoneId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence });
+    // Sequential: every query inside a tx shares one connection and can't overlap.
+    const candidates: IssueCandidate[] = [];
+    for (const det of input.detections) {
+      candidates.push(
+        await createIssueCandidate({
+          inspectionId, runwayId: input.runwayId, zoneId: input.zoneId, imageId: image.id, category: det.category,
+          confidence: det.confidence, severity: det.severity, bbox: det.bbox, gps: input.gps, stationM: det.stationM,
+          lateralOffsetM: det.lateralOffsetM, sizeM: det.sizeM, aiDraftText: det.aiDraftText, draft: det.draft, modelNotes: det.modelNotes,
+        }),
+      );
+    }
+    await run("UPDATE inspection_jobs SET image_count = image_count + 1, issue_count = issue_count + ?, status = 'completed', completed_at = ? WHERE id = ?", [candidates.length, now(), jobId]);
+    const insp = await getInspection(inspectionId);
     if (insp && (insp.status === "not_started" || insp.status === "processing")) {
-      db.prepare("UPDATE inspections SET status = ? WHERE id = ?").run(candidates.length > 0 ? "needs_review" : "no_issues", inspectionId);
+      await run("UPDATE inspections SET status = ? WHERE id = ?", [candidates.length > 0 ? "needs_review" : "no_issues", inspectionId]);
     }
     return { image, candidates };
   });
-  return tx();
 }
 
 // ── State-machine transitions ─────────────────────────────────────────────────
 
-function appendIssueHistory(row: {
+async function appendIssueHistory(row: {
   issueId: string; action: "approve" | "reject" | "manual_review" | "edit";
   fromStatus?: string; toStatus?: string; fromCategory?: string; toCategory?: string;
   reason?: RejectionReason; reasonNote?: string; note?: string; actor?: Actor;
-}): void {
-  db.prepare(
+}): Promise<void> {
+  await run(
     `INSERT INTO issue_status_history (id, issue_id, action, from_status, to_status, from_category, to_category, reason, reason_note, note, actor, actor_role, ts)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(gid("ish"), row.issueId, row.action, row.fromStatus ?? null, row.toStatus ?? null, row.fromCategory ?? null, row.toCategory ?? null, row.reason ?? null, row.reasonNote ?? null, row.note ?? null, actorName(row.actor), actorRole(row.actor), now());
+    [gid("ish"), row.issueId, row.action, row.fromStatus ?? null, row.toStatus ?? null, row.fromCategory ?? null, row.toCategory ?? null, row.reason ?? null, row.reasonNote ?? null, row.note ?? null, await actorName(row.actor), actorRole(row.actor), now()],
+  );
 }
 
-function appendTicketHistory(row: {
+async function appendTicketHistory(row: {
   ticketId: string; action: "create" | "repair" | "close"; fromStatus?: string; toStatus?: string; note?: string; actor?: Actor;
-}): void {
-  db.prepare(
+}): Promise<void> {
+  await run(
     `INSERT INTO ticket_status_history (id, ticket_id, action, from_status, to_status, note, actor, actor_role, ts)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(gid("tsh"), row.ticketId, row.action, row.fromStatus ?? null, row.toStatus ?? null, row.note ?? null, actorName(row.actor), actorRole(row.actor), now());
+    [gid("tsh"), row.ticketId, row.action, row.fromStatus ?? null, row.toStatus ?? null, row.note ?? null, await actorName(row.actor), actorRole(row.actor), now()],
+  );
 }
 
 /** Approve a candidate → create a maintenance Ticket from the final (edited) text. */
-export function approveIssue(id: string, actor?: Actor): { issue: IssueCandidate; ticket: Ticket } {
-  const issue = getIssue(id);
+export async function approveIssue(id: string, actor?: Actor): Promise<{ issue: IssueCandidate; ticket: Ticket }> {
+  const issue = await getIssue(id);
   if (!issue) throw new Error(`Issue not found: ${id}`);
   if (issue.status === "approved" && issue.ticketId) {
-    const existing = getTicket(issue.ticketId);
+    const existing = await getTicket(issue.ticketId);
     if (existing) return { issue, ticket: existing };
   }
 
-  const count = (db.prepare("SELECT COUNT(*) AS n FROM tickets").get() as { n: number }).n;
-  const ticketId = `WO-${1042 + count}`;
+  const countRow = await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM tickets");
+  const ticketId = `WO-${1042 + (countRow?.n ?? 0)}`;
   const editDistance = computeDraftEditDistance(issue.aiDraftText, issue.draft);
-  const assignedTo = getUserByRole("maintenance")?.name ?? "Field Maintenance";
-  const createdBy = actorName(actor);
+  const assignedTo = (await getUserByRole("maintenance"))?.name ?? "Field Maintenance";
+  const createdBy = await actorName(actor);
   const ts = now();
 
-  const tx = db.transaction(() => {
-    db.prepare(
+  await tx(async () => {
+    await run(
       `INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, assigned_to, created_by, maintenance_notes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, '', ?)`,
-    ).run(ticketId, issue.id, issue.runwayId, issue.zoneId ?? null, issue.zone ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts);
-    db.prepare("UPDATE issue_candidates SET status = 'approved', ticket_id = ?, draft_edit_distance = ? WHERE id = ?").run(ticketId, editDistance, id);
-    appendIssueHistory({ issueId: id, action: "approve", fromStatus: issue.status, toStatus: "approved", note: `Created ticket ${ticketId} (edit distance ${editDistance})`, actor });
-    appendTicketHistory({ ticketId, action: "create", toStatus: "sent", note: "Approved & sent to maintenance", actor });
+      [ticketId, issue.id, issue.runwayId, issue.zoneId ?? null, issue.zone ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts],
+    );
+    await run("UPDATE issue_candidates SET status = 'approved', ticket_id = ?, draft_edit_distance = ? WHERE id = ?", [ticketId, editDistance, id]);
+    await appendIssueHistory({ issueId: id, action: "approve", fromStatus: issue.status, toStatus: "approved", note: `Created ticket ${ticketId} (edit distance ${editDistance})`, actor });
+    await appendTicketHistory({ ticketId, action: "create", toStatus: "sent", note: "Approved & sent to maintenance", actor });
   });
-  tx();
-  return { issue: getIssue(id)!, ticket: getTicket(ticketId)! };
+  return { issue: (await getIssue(id))!, ticket: (await getTicket(ticketId))! };
 }
 
 /** Reject a candidate. A RejectionReason is REQUIRED (design §13.1). */
-export function rejectIssue(id: string, input: { reason: RejectionReason; note?: string }, actor?: Actor): IssueCandidate {
-  const issue = getIssue(id);
+export async function rejectIssue(id: string, input: { reason: RejectionReason; note?: string }, actor?: Actor): Promise<IssueCandidate> {
+  const issue = await getIssue(id);
   if (!issue) throw new Error(`Issue not found: ${id}`);
   if (!input?.reason) throw new Error("A rejection reason is required");
 
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE issue_candidates SET status = 'rejected', rejection_reason = ?, rejection_note = ? WHERE id = ?").run(input.reason, input.note ?? null, id);
-    appendIssueHistory({ issueId: id, action: "reject", fromStatus: issue.status, toStatus: "rejected", reason: input.reason, reasonNote: input.note, note: "Rejected candidate", actor });
+  await tx(async () => {
+    await run("UPDATE issue_candidates SET status = 'rejected', rejection_reason = ?, rejection_note = ? WHERE id = ?", [input.reason, input.note ?? null, id]);
+    await appendIssueHistory({ issueId: id, action: "reject", fromStatus: issue.status, toStatus: "rejected", reason: input.reason, reasonNote: input.note, note: "Rejected candidate", actor });
   });
-  tx();
-  return getIssue(id)!;
+  return (await getIssue(id))!;
 }
 
-export function manualReviewIssue(id: string, actor?: Actor): IssueCandidate {
-  const issue = getIssue(id);
+export async function manualReviewIssue(id: string, actor?: Actor): Promise<IssueCandidate> {
+  const issue = await getIssue(id);
   if (!issue) throw new Error(`Issue not found: ${id}`);
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE issue_candidates SET status = 'manual_review' WHERE id = ?").run(id);
-    appendIssueHistory({ issueId: id, action: "manual_review", fromStatus: issue.status, toStatus: "manual_review", note: "Flagged for manual inspection", actor });
+  await tx(async () => {
+    await run("UPDATE issue_candidates SET status = 'manual_review' WHERE id = ?", [id]);
+    await appendIssueHistory({ issueId: id, action: "manual_review", fromStatus: issue.status, toStatus: "manual_review", note: "Flagged for manual inspection", actor });
   });
-  tx();
-  return getIssue(id)!;
+  return (await getIssue(id))!;
 }
 
 /** Edit category / severity / draft text / notes (PRD §9.5). Category change is recorded. */
-export function editIssue(id: string, patch: EditIssuePatch, actor?: Actor): IssueCandidate {
-  const issue = getIssue(id);
+export async function editIssue(id: string, patch: EditIssuePatch, actor?: Actor): Promise<IssueCandidate> {
+  const issue = await getIssue(id);
   if (!issue) throw new Error(`Issue not found: ${id}`);
   if (issue.status === "approved" || issue.status === "rejected") throw new Error(`Cannot edit a ${issue.status} issue`);
 
@@ -567,16 +639,15 @@ export function editIssue(id: string, patch: EditIssuePatch, actor?: Actor): Iss
   const inspectorNotes = patch.notes ?? issue.inspectorNotes;
   const categoryChanged = patch.category != null && patch.category !== issue.category;
 
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE issue_candidates SET issue_type = ?, severity = ?, draft = ?, inspector_notes = ? WHERE id = ?").run(category, severity, draft, inspectorNotes, id);
-    appendIssueHistory({
+  await tx(async () => {
+    await run("UPDATE issue_candidates SET issue_type = ?, severity = ?, draft = ?, inspector_notes = ? WHERE id = ?", [category, severity, draft, inspectorNotes, id]);
+    await appendIssueHistory({
       issueId: id, action: "edit", fromStatus: issue.status, toStatus: issue.status,
       fromCategory: categoryChanged ? issue.category : undefined, toCategory: categoryChanged ? category : undefined,
       note: categoryChanged ? `Recategorized ${issue.category} → ${category}` : "Edited candidate", actor,
     });
   });
-  tx();
-  return getIssue(id)!;
+  return (await getIssue(id))!;
 }
 
 // ── Tickets ───────────────────────────────────────────────────────────────────
@@ -584,53 +655,57 @@ export function editIssue(id: string, patch: EditIssuePatch, actor?: Actor): Iss
 const TICKET_SELECT =
   "SELECT t.*, z.name AS zone_name FROM tickets t LEFT JOIN zones z ON z.id = t.zone_id";
 
-export function getTicket(id: string): Ticket | undefined {
-  const r = db.prepare(`${TICKET_SELECT} WHERE t.id = ?`).get(id) as TicketRow | undefined;
+export async function getTicket(id: string): Promise<Ticket | undefined> {
+  const r = await one<TicketRow>(`${TICKET_SELECT} WHERE t.id = ?`, [id]);
   return r ? toTicket(r) : undefined;
 }
-export function getTicketDetail(
+export async function getTicketDetail(
   id: string,
-): { ticket: Ticket; issue?: IssueCandidate; runway?: Runway } | undefined {
-  const ticket = getTicket(id);
+): Promise<{ ticket: Ticket; issue?: IssueCandidate; runway?: Runway } | undefined> {
+  const ticket = await getTicket(id);
   if (!ticket) return undefined;
-  return { ticket, issue: getIssue(ticket.issueId), runway: getRunway(ticket.runwayId) };
+  return { ticket, issue: await getIssue(ticket.issueId), runway: await getRunway(ticket.runwayId) };
 }
-export function listTicketsByInspection(inspectionId: string): Ticket[] {
-  return (db.prepare(`${TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id WHERE ic.inspection_id = ?`).all(inspectionId) as TicketRow[]).map(toTicket);
+export async function listTicketsByInspection(inspectionId: string): Promise<Ticket[]> {
+  return (await all<TicketRow>(`${TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id WHERE ic.inspection_id = ?`, [inspectionId])).map(toTicket);
 }
 
-export function repairTicket(id: string, input: { notes?: string }, actor?: Actor): Ticket {
-  const ticket = getTicket(id);
+export async function repairTicket(id: string, input: { notes?: string }, actor?: Actor): Promise<Ticket> {
+  const ticket = await getTicket(id);
   if (!ticket) throw new Error(`Ticket not found: ${id}`);
   if (ticket.status !== "sent" && ticket.status !== "in_progress") throw new Error(`Cannot repair a ${ticket.status} ticket`);
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE tickets SET status = 'repaired', repaired_at = ?, maintenance_notes = ? WHERE id = ?").run(now(), input.notes ?? ticket.maintenanceNotes, id);
-    appendTicketHistory({ ticketId: id, action: "repair", fromStatus: ticket.status, toStatus: "repaired", note: input.notes ? "Marked repaired with notes" : "Marked repaired", actor });
+  await tx(async () => {
+    await run("UPDATE tickets SET status = 'repaired', repaired_at = ?, maintenance_notes = ? WHERE id = ?", [now(), input.notes ?? ticket.maintenanceNotes, id]);
+    await appendTicketHistory({ ticketId: id, action: "repair", fromStatus: ticket.status, toStatus: "repaired", note: input.notes ? "Marked repaired with notes" : "Marked repaired", actor });
   });
-  tx();
-  return getTicket(id)!;
+  return (await getTicket(id))!;
 }
 
-export function closeTicket(id: string, actor?: Actor): Ticket {
-  const ticket = getTicket(id);
+export async function closeTicket(id: string, actor?: Actor): Promise<Ticket> {
+  const ticket = await getTicket(id);
   if (!ticket) throw new Error(`Ticket not found: ${id}`);
   if (ticket.status === "closed") return ticket;
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?").run(now(), id);
-    appendTicketHistory({ ticketId: id, action: "close", fromStatus: ticket.status, toStatus: "closed", note: "Closed after reinspection", actor });
+  await tx(async () => {
+    await run("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?", [now(), id]);
+    await appendTicketHistory({ ticketId: id, action: "close", fromStatus: ticket.status, toStatus: "closed", note: "Closed after reinspection", actor });
   });
-  tx();
-  return getTicket(id)!;
+  return (await getTicket(id))!;
 }
 
 // ── Overview + report ─────────────────────────────────────────────────────────
 
-export function getOverview(inspectionId?: string): Overview {
-  const airport = getDefaultAirport();
-  const inspection = inspectionId ? getInspection(inspectionId) : getLatestInspection(airport.id);
-  const runways = listRunways(airport.id);
-  const issues = inspection ? listIssuesByInspection(inspection.id) : [];
-  const tickets = inspection ? listTicketsByInspection(inspection.id) : [];
+export async function getOverview(inspectionId?: string): Promise<Overview> {
+  const airport = await getDefaultAirport();
+  const inspection = inspectionId ? await getInspection(inspectionId) : await getLatestInspection(airport.id);
+  const runways = await listRunways(airport.id);
+  const issues = inspection ? await listIssuesByInspection(inspection.id) : [];
+  const tickets = inspection ? await listTicketsByInspection(inspection.id) : [];
+  const jobs = inspection ? await listJobs(inspection.id) : [];
+
+  // Images scanned per runway, summed from this inspection's jobs.
+  const imagesByRunway = new Map<string, number>();
+  for (const j of jobs)
+    imagesByRunway.set(j.runwayId, (imagesByRunway.get(j.runwayId) ?? 0) + j.imageCount);
 
   const runwayRows: RunwayOverview[] = runways.map((runway) => {
     const ri = issues.filter((i) => i.runwayId === runway.id);
@@ -641,9 +716,15 @@ export function getOverview(inspectionId?: string): Overview {
       pendingCount: ri.filter((i) => i.status === "pending" || i.status === "manual_review").length,
       ticketsOpen: rt.filter((t) => TICKET_OPEN.has(t.status)).length,
       ticketsCompleted: rt.filter((t) => t.status === "closed").length,
+      bySeverity: buildBreakdown(ri).bySeverity,
+      imageCount: imagesByRunway.get(runway.id) ?? 0,
       status: runwayStatusOf(ri, rt),
     };
   });
+
+  const countStatus = (s: IssueStatus) => issues.filter((i) => i.status === s).length;
+  const ticketsOpen = tickets.filter((t) => TICKET_OPEN.has(t.status)).length;
+  const ticketsCompleted = tickets.filter((t) => t.status === "closed").length;
 
   return {
     inspection,
@@ -651,19 +732,30 @@ export function getOverview(inspectionId?: string): Overview {
     runways: runwayRows,
     totals: {
       issues: issues.length,
-      ticketsOpen: tickets.filter((t) => TICKET_OPEN.has(t.status)).length,
-      ticketsCompleted: tickets.filter((t) => t.status === "closed").length,
+      pending: countStatus("pending"),
+      manualReview: countStatus("manual_review"),
+      approved: countStatus("approved"),
+      rejected: countStatus("rejected"),
+      ticketsOpen,
+      ticketsCompleted,
+      ticketsTotal: ticketsOpen + ticketsCompleted,
+      images: jobs.reduce((n, j) => n + j.imageCount, 0),
     },
+    issueBreakdown: buildBreakdown(issues),
+    recentTickets: [...tickets]
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+      .slice(0, 5),
+    inspections: await listInspections(airport.id),
   };
 }
 
-export function getInspectionReport(id: string): InspectionReport | undefined {
-  const inspection = getInspection(id);
+export async function getInspectionReport(id: string): Promise<InspectionReport | undefined> {
+  const inspection = await getInspection(id);
   if (!inspection) return undefined;
-  const airport = getAirport(inspection.airportId) ?? getDefaultAirport();
-  const issues = listIssuesByInspection(id);
-  const tickets = listTicketsByInspection(id);
-  const runways = listRunways(airport.id).map((runway) => ({
+  const airport = (await getAirport(inspection.airportId)) ?? (await getDefaultAirport());
+  const issues = await listIssuesByInspection(id);
+  const tickets = await listTicketsByInspection(id);
+  const runways = (await listRunways(airport.id)).map((runway) => ({
     runway,
     issues: issues.filter((i) => i.runwayId === runway.id),
     tickets: tickets.filter((t) => t.runwayId === runway.id),
@@ -710,12 +802,12 @@ ${rows}
 
 // ── Diff view + feedback export (design §13) ──────────────────────────────────
 
-export function getIssueDraftDiff(
+export async function getIssueDraftDiff(
   id: string,
-): { aiDraftText: string; draft: string; finalText: string; parts: Change[]; editDistance: number } | undefined {
-  const issue = getIssue(id);
+): Promise<{ aiDraftText: string; draft: string; finalText: string; parts: Change[]; editDistance: number } | undefined> {
+  const issue = await getIssue(id);
   if (!issue) return undefined;
-  const finalText = issue.ticketId ? getTicket(issue.ticketId)?.description ?? issue.draft : issue.draft;
+  const finalText = issue.ticketId ? (await getTicket(issue.ticketId))?.description ?? issue.draft : issue.draft;
   return {
     aiDraftText: issue.aiDraftText,
     draft: issue.draft,
@@ -725,36 +817,37 @@ export function getIssueDraftDiff(
   };
 }
 
-export function getRejectionRecords(): RejectionRecord[] {
-  const rows = db
-    .prepare(`${ISSUE_SELECT} WHERE ic.status = 'rejected'`)
-    .all() as IssueRow[];
-  return rows.map((r) => {
-    const issue = toIssue(r);
-    const corrected = db
-      .prepare("SELECT to_category FROM issue_status_history WHERE issue_id = ? AND to_category IS NOT NULL ORDER BY ts DESC LIMIT 1")
-      .get(issue.id) as { to_category: string } | undefined;
-    return {
-      issueId: issue.id,
-      imageId: issue.imageId,
-      bbox: issue.bbox,
-      category: issue.category,
-      confidence: issue.confidence,
-      reason: issue.rejectionReason,
-      reasonNote: issue.rejectionNote,
-      correctedCategory: corrected?.to_category as IssueCategory | undefined,
-    };
-  });
+export async function getRejectionRecords(): Promise<RejectionRecord[]> {
+  const rows = await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.status = 'rejected'`);
+  return Promise.all(
+    rows.map(async (r) => {
+      const issue = toIssue(r);
+      const corrected = await one<{ to_category: string }>(
+        "SELECT to_category FROM issue_status_history WHERE issue_id = ? AND to_category IS NOT NULL ORDER BY ts DESC LIMIT 1",
+        [issue.id],
+      );
+      return {
+        issueId: issue.id,
+        imageId: issue.imageId,
+        bbox: issue.bbox,
+        category: issue.category,
+        confidence: issue.confidence,
+        reason: issue.rejectionReason,
+        reasonNote: issue.rejectionNote,
+        correctedCategory: corrected?.to_category as IssueCategory | undefined,
+      };
+    }),
+  );
 }
 
-export function getDraftPairs(): DraftPair[] {
-  const rows = db.prepare(`${ISSUE_SELECT}`).all() as IssueRow[];
+export async function getDraftPairs(): Promise<DraftPair[]> {
+  const rows = await all<IssueRow>(`${ISSUE_SELECT}`);
   const pairs: DraftPair[] = [];
   for (const r of rows) {
     const issue = toIssue(r);
-    const finalText = issue.ticketId ? getTicket(issue.ticketId)?.description ?? issue.draft : issue.draft;
+    const finalText = issue.ticketId ? (await getTicket(issue.ticketId))?.description ?? issue.draft : issue.draft;
     if (!issue.ticketId && finalText === issue.aiDraftText) continue; // no signal yet
-    const runway = getRunway(issue.runwayId);
+    const runway = await getRunway(issue.runwayId);
     pairs.push({
       issueId: issue.id,
       issueContext: `${issue.category} | RWY ${runway?.designation ?? issue.runwayId} | ${issue.zone ?? "-"} | conf ${issue.confidence.toFixed(2)} | severity ${issue.severity}`,
@@ -767,9 +860,9 @@ export function getDraftPairs(): DraftPair[] {
 }
 
 /** Admin feedback export: one JSONL line per learning record (design §13.4). */
-export function exportFeedbackJsonl(): string {
+export async function exportFeedbackJsonl(): Promise<string> {
   const lines: string[] = [];
-  for (const rec of getRejectionRecords()) lines.push(JSON.stringify({ type: "rejection", ...rec }));
-  for (const pair of getDraftPairs()) lines.push(JSON.stringify({ type: "draft_pair", ...pair }));
+  for (const rec of await getRejectionRecords()) lines.push(JSON.stringify({ type: "rejection", ...rec }));
+  for (const pair of await getDraftPairs()) lines.push(JSON.stringify({ type: "draft_pair", ...pair }));
   return lines.join("\n");
 }

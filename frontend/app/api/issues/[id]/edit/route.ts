@@ -14,10 +14,10 @@ interface Body extends EditIssuePatch {
 export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
   const { id } = await params;
   const body = await readJson<Body>(req);
-  const issue = editIssue(
+  const issue = await editIssue(
     id,
     { category: body.category, severity: body.severity, draft: body.draft, notes: body.notes },
     actorFrom(req, body),
   );
-  return json({ issue, diff: getIssueDraftDiff(id) });
+  return json({ issue, diff: await getIssueDraftDiff(id) });
 });

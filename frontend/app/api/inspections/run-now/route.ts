@@ -16,6 +16,6 @@ interface Body {
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
   void actorFrom(req, body); // role is advisory here; scheduler owns the records
-  const inspection = runInspectionNow(body.airportId);
-  return json({ inspection, overview: getOverview(inspection.id) });
+  const inspection = await runInspectionNow(body.airportId);
+  return json({ inspection, overview: await getOverview(inspection.id) });
 });

@@ -10,8 +10,8 @@ import { route } from "@/lib/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const GET = route(() => {
-  const body = exportFeedbackJsonl();
+export const GET = route(async () => {
+  const body = await exportFeedbackJsonl();
   return new Response(body, {
     headers: {
       "content-type": "application/x-ndjson; charset=utf-8",

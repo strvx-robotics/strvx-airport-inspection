@@ -3,8 +3,8 @@
 import { diffWordsWithSpace, type Change } from "diff";
 
 // Git-style diff of the immutable AI draft vs. the inspector's edited text
-// (design §13.3). Removed words from the AI draft render red/struck-through,
-// added words render emerald — reusing the existing color tokens.
+// (design §13.3). Monochrome: added words read bright with a dotted underline
+// (presence), removed words read faint and struck through (absence).
 export default function DiffView({
   aiDraftText,
   editedText,
@@ -29,16 +29,16 @@ export default function DiffView({
         {parts.map((part, idx) => {
           if (part.added)
             return (
-              <span key={idx} className="rounded-sm bg-[#0f2419] text-[#56c98a]">
+              <span
+                key={idx}
+                className="rounded-sm bg-[#16191c] text-[#e7eaec] underline decoration-dotted underline-offset-2"
+              >
                 {part.value}
               </span>
             );
           if (part.removed)
             return (
-              <span
-                key={idx}
-                className="rounded-sm bg-[#2a1311] text-[#e2685c] line-through"
-              >
+              <span key={idx} className="rounded-sm text-[#5b6166] line-through">
                 {part.value}
               </span>
             );
@@ -47,10 +47,10 @@ export default function DiffView({
       </pre>
       <div className="flex items-center gap-3 font-mono text-[11px] text-[#737a7f]">
         <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-sm bg-[#2a1311] ring-1 ring-inset ring-[#5c2420]" /> removed
+          <span className="h-2 w-2 rounded-sm ring-1 ring-inset ring-[#343a3f]" /> removed
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-sm bg-[#0f2419] ring-1 ring-inset ring-[#1f4631]" /> added
+          <span className="h-2 w-2 rounded-sm bg-[#16191c] ring-1 ring-inset ring-[#5b6166]" /> added
         </span>
       </div>
     </div>

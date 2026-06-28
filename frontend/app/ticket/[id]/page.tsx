@@ -13,6 +13,7 @@ import {
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
 import { useStore, useTicketDetail } from "@/lib/store";
+import { buildWorkOrder } from "@/lib/workOrder";
 import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import {
@@ -24,7 +25,6 @@ import {
   H2,
   MUTED,
   LINK,
-  METRIC_CELL,
   DOT,
 } from "@/lib/vstyle";
 
@@ -61,7 +61,9 @@ export default function TicketPage() {
   }
 
   const status = TICKET_STATUS[ticket.status];
+  const severity = SEVERITY[ticket.severity];
   const canWork = role === "maintenance" || role === "admin";
+  const workOrder = buildWorkOrder(ticket, issue, runway);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
@@ -79,58 +81,39 @@ export default function TicketPage() {
             <Wrench size={17} strokeWidth={2} />
             <span className="font-mono">{ticket.id}</span>
           </h1>
-          <p className={cn("mt-1 text-[13px]", MUTED)}>
-            {CATEGORY[ticket.category]} · {runway?.name} · {ticket.zone}
+          <p className={cn("mt-1 flex flex-wrap items-center gap-2 text-[13px]", MUTED)}>
+            <span>
+              {CATEGORY[ticket.category]} · {runway?.name} · {ticket.zone}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[ticket.severity])}
+              />
+              <Badge tone={severity.tone}>{severity.label}</Badge>
+            </span>
           </p>
         </div>
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
 
-      {/* field strip */}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[#262b2f] bg-[#262b2f] sm:grid-cols-4">
-        <div className={METRIC_CELL}>
-          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
-            Severity
-          </div>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span
-              className={cn(
-                "h-1.5 w-1.5 shrink-0 rounded-full",
-                DOT[ticket.severity],
-              )}
-            />
-            <Badge tone={SEVERITY[ticket.severity].tone}>
-              {SEVERITY[ticket.severity].label}
-            </Badge>
-          </div>
+      {/* work order — derived airfield fields (see lib/workOrder.ts) */}
+      <section className={cn("overflow-hidden rounded-md", CARD)}>
+        <div className={cn("px-4 py-3", BAR)}>
+          <h3 className="text-[13px] font-semibold text-[#e7eaec]">Work order</h3>
         </div>
-        <div className={METRIC_CELL}>
-          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
-            Created by
-          </div>
-          <div className="mt-1.5 text-[13px] text-[#e7eaec]">
-            {ticket.createdBy}
-          </div>
-        </div>
-        <div className={METRIC_CELL}>
-          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
-            Assigned to
-          </div>
-          <div className="mt-1.5 text-[13px] text-[#e7eaec]">
-            {ticket.assignedTo}
-          </div>
-        </div>
-        <div className={METRIC_CELL}>
-          <div className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
-            Location
-          </div>
-          <div className="mt-1.5 font-mono text-[12px] text-[#9aa1a6]">
-            {issue?.gps
-              ? `${issue.gps.lat.toFixed(4)}, ${issue.gps.lng.toFixed(4)}`
-              : "—"}
-          </div>
-        </div>
-      </div>
+        <dl className="grid grid-cols-1 gap-px bg-[#262b2f] sm:grid-cols-2">
+          {workOrder.map((f) => (
+            <div key={f.label} className="bg-[#121517] px-4 py-2.5">
+              <dt className="font-mono text-[10px] uppercase tracking-wide text-[#737a7f]">
+                {f.label}
+              </dt>
+              <dd className="mt-1 text-[13px] leading-relaxed text-[#c2c8cc]">
+                {f.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
         {/* evidence */}
@@ -195,7 +178,7 @@ export default function TicketPage() {
             </button>
           ) : ticket.status === "repaired" ? (
             <div className="space-y-2">
-              <p className="flex items-center justify-center gap-2 rounded-md border border-[#382a5c] bg-[#1b1430] px-3 py-2 text-center text-[12px] text-[#b08cf5]">
+              <p className="flex items-center justify-center gap-2 rounded-md border border-dashed border-[#5b6166] bg-[#1a1e21] px-3 py-2 text-center text-[12px] text-[#e7eaec]">
                 <ClipboardCheck size={13} strokeWidth={2} />
                 Repaired — awaiting inspector reinspection.
               </p>
@@ -207,7 +190,7 @@ export default function TicketPage() {
               </button>
             </div>
           ) : (
-            <p className="flex items-center justify-center gap-2 rounded-md border border-[#1f4631] bg-[#0f2419] px-3 py-2 text-center text-[12px] text-[#56c98a]">
+            <p className="flex items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#121517] px-3 py-2 text-center text-[12px] text-[#737a7f]">
               <CheckCircle2 size={13} strokeWidth={2} /> Ticket closed.
             </p>
           )}

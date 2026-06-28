@@ -30,10 +30,11 @@
   --color-ink-faint: #737a7f;
   --color-ink-ghost: #5b6166;
 
-  /* signal */
+  /* signal — strictly monochrome: emphasis carries meaning, not hue.
+     critical = loudest ink, good = neutral mid-ink (no green). */
   --color-accent: #ffffff;
-  --color-critical: #b64a43;
-  --color-good: #56c98a;
+  --color-critical: #e7eaec;
+  --color-good: #9aa1a6;
 }
 
 @layer base {

@@ -14,6 +14,6 @@ interface Body {
 export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
   const { id } = await params;
   const body = await readJson<Body>(req);
-  const { issue, ticket } = approveIssue(id, actorFrom(req, body));
+  const { issue, ticket } = await approveIssue(id, actorFrom(req, body));
   return json({ issue, ticket, ticketId: ticket.id });
 });

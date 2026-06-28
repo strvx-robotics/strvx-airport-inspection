@@ -1,25 +1,141 @@
-// SQLite singleton for the runway-inspection app (better-sqlite3, Node runtime).
+// Postgres data layer for the runway-inspection app (node-postgres, Node runtime).
 //
-// - DB file at frontend/data/airport.db (gitignored; dir created on boot).
-// - Full CREATE TABLE IF NOT EXISTS schema applied once, on first import.
-// - WAL journal + foreign keys on.
-// - Idempotent seed runs after the schema (no-op if already populated).
+// Why Postgres (not the previous better-sqlite3): the app deploys to Vercel,
+// whose serverless filesystem is read-only and ephemeral — a SQLite file can't
+// persist there. Standard Postgres runs identically on local dev, Vercel
+// (Supabase/Neon/Vercel-Postgres), and AWS RDS/Aurora later: the only thing that
+// changes between environments is DATABASE_URL.
 //
-// The connection is cached on globalThis so Next's dev HMR reuses one handle.
+// Helpers keep the call sites in repo.ts/seed.ts almost identical to the old
+// sync code:
+//   - q/one/all/run take SQLite-style `?` placeholders and rewrite them to `$n`,
+//     so the existing SQL strings are reused verbatim.
+//   - tx() runs a function inside a single transaction. An AsyncLocalStorage-
+//     scoped client makes every nested q/one/all/run inside the callback use that
+//     transaction's connection automatically — no client threaded through args.
 
-import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { seedDatabase } from "./seed";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 
-export type DB = Database.Database;
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error(
+    "DATABASE_URL is not set. Local dev: see .env.local. Vercel: add a Postgres " +
+      "integration (Supabase/Neon/Vercel Postgres) and set DATABASE_URL.",
+  );
+}
 
-const DB_PATH =
-  process.env.AIRPORT_DB_PATH ?? join(process.cwd(), "data", "airport.db");
+const isLocal = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString);
 
-// CREATE TABLE IF NOT EXISTS — full domain (PRD §11 + design §4/§13).
-// `created_by` / `assigned_to` / `actor` are soft TEXT refs (design §4 [GAP 2]).
-const SCHEMA = `
+// TLS is secure by default in production: full certificate verification against
+// the system trust store (works for Neon/Supabase public chains). For providers
+// whose chain isn't in the system store — notably AWS RDS — pin the provider CA
+// via DATABASE_CA_CERT (PEM). DATABASE_SSL_NO_VERIFY=1 is a deliberate, last-
+// resort escape hatch; it disables verification (MITM risk) and must be a
+// conscious choice, never the default.
+type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
+function sslConfig(): SslConfig {
+  if (isLocal) return false;
+  const ca = process.env.DATABASE_CA_CERT;
+  if (ca) return { rejectUnauthorized: true, ca };
+  if (process.env.DATABASE_SSL_NO_VERIFY === "1") return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true };
+}
+
+function createPool(): Pool {
+  return new Pool({
+    connectionString,
+    ssl: sslConfig(),
+    max: process.env.PG_POOL_MAX ? Number(process.env.PG_POOL_MAX) : 5,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  });
+}
+
+// Cache the pool on globalThis so Next dev HMR and warm serverless invocations
+// reuse one pool instead of leaking a new one per reload/request.
+const globalForDb = globalThis as unknown as { __airportPool?: Pool };
+export const pool: Pool = globalForDb.__airportPool ?? createPool();
+if (!globalForDb.__airportPool) globalForDb.__airportPool = pool;
+
+// ── Transaction-scoped executor ───────────────────────────────────────────────
+
+const txStore = new AsyncLocalStorage<PoolClient>();
+
+/** The active connection: the transaction client if inside tx(), else the pool. */
+function executor(): Pool | PoolClient {
+  return txStore.getStore() ?? pool;
+}
+
+/** Rewrite SQLite-style `?` placeholders to Postgres `$1, $2, …` positional ones. */
+// ponytail: assumes no literal '?' inside the SQL strings — true for every query here.
+function toPositional(sql: string): string {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+export function query<R extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  params: readonly unknown[] = [],
+): Promise<QueryResult<R>> {
+  return executor().query<R>(toPositional(sql), params as unknown[]);
+}
+
+// one()/all() are intentionally unconstrained (no `extends QueryResultRow`) so
+// callers can pass plain row `interface` types — interfaces don't satisfy pg's
+// index-signature constraint, but they're correct row shapes. We cast the rows.
+
+/** First row, or undefined. */
+export async function one<R = QueryResultRow>(
+  sql: string,
+  params: readonly unknown[] = [],
+): Promise<R | undefined> {
+  const res = await executor().query(toPositional(sql), params as unknown[]);
+  return res.rows[0] as R | undefined;
+}
+
+/** All rows. */
+export async function all<R = QueryResultRow>(
+  sql: string,
+  params: readonly unknown[] = [],
+): Promise<R[]> {
+  const res = await executor().query(toPositional(sql), params as unknown[]);
+  return res.rows as R[];
+}
+
+/** Execute a statement, ignoring the result. */
+export async function run(sql: string, params: readonly unknown[] = []): Promise<void> {
+  await query(sql, params);
+}
+
+/**
+ * Run `fn` inside a single transaction. Every q/one/all/run executed within `fn`
+ * (including those in nested repo functions) uses the transaction's connection.
+ * A nested tx() call joins the outer transaction rather than opening a second one.
+ */
+export async function tx<T>(fn: () => Promise<T>): Promise<T> {
+  if (txStore.getStore()) return fn(); // ponytail: nested tx() joins the outer transaction.
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await txStore.run(client, fn);
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Schema (applied once by scripts/db-setup.ts, not on import) ────────────────
+// PRD §11 + design §4/§13. Postgres-compatible: TEXT/INTEGER/REAL are native
+// types, `IF NOT EXISTS`, quoted `"window"`, and TEXT-ref columns all carry over
+// unchanged from the original SQLite schema.
+
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS airports (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
@@ -197,24 +313,3 @@ CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
 `;
-
-function createDb(): DB {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  const conn = new Database(DB_PATH);
-  conn.pragma("journal_mode = WAL");
-  conn.pragma("foreign_keys = ON");
-  // Wait for the write lock instead of erroring — `next build` collects page
-  // data with parallel workers that each import this module and open the same
-  // fresh file (otherwise SQLITE_BUSY).
-  conn.pragma("busy_timeout = 5000");
-  conn.exec(SCHEMA);
-  // BEGIN IMMEDIATE so concurrent workers serialize the idempotent seed: the
-  // first acquires the write lock and seeds; the rest wait, then see it populated.
-  conn.transaction(() => seedDatabase(conn)).immediate();
-  return conn;
-}
-
-const globalForDb = globalThis as unknown as { __airportDb?: DB };
-
-export const db: DB = globalForDb.__airportDb ?? createDb();
-if (!globalForDb.__airportDb) globalForDb.__airportDb = db;

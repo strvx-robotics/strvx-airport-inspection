@@ -8,12 +8,12 @@ export const dynamic = "force-dynamic";
 
 export const GET = route<{ id: string }>(async (req, { params }: RouteContext<{ id: string }>) => {
   const { id } = await params;
-  const report = getInspectionReport(id);
+  const report = await getInspectionReport(id);
   if (!report) return notFound(`Inspection not found: ${id}`);
 
   const format = new URL(req.url).searchParams.get("format") ?? "json";
   if (format === "html") {
-    return new Response(renderReportHtml(report), {
+    return new Response(await renderReportHtml(report), {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }

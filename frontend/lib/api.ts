@@ -1,15 +1,17 @@
 // Client-side typed wrapper over the JSON API contract (app/api/**).
 //
 // IMPORTANT: this file is imported by client components, so it must NOT import
-// from lib/repo.ts or lib/db.ts (those pull in better-sqlite3, a server-only
-// native module). The response shapes below mirror the repo return types but
-// are redeclared here using only the client-safe types from lib/types.ts.
+// from lib/repo.ts or lib/db.ts (those pull in pg, a server-only module). The
+// response shapes below mirror the repo return types but are redeclared here
+// using only the client-safe types from lib/types.ts.
 
 import type {
   Airport,
   BadgeTone,
+  ConfidenceBand,
   IssueCandidate,
   IssueCategory,
+  IssueStatus,
   Inspection,
   InspectionJob,
   InspectionWindow,
@@ -29,14 +31,36 @@ export interface RunwayOverview {
   pendingCount: number;
   ticketsOpen: number;
   ticketsCompleted: number;
+  bySeverity: Record<Severity, number>;
+  imageCount: number;
   status: { label: string; tone: BadgeTone };
+}
+
+export interface IssueBreakdown {
+  bySeverity: Record<Severity, number>;
+  byCategory: Record<IssueCategory, number>;
+  byStatus: Record<IssueStatus, number>;
+  byBand: Record<ConfidenceBand, number>;
 }
 
 export interface Overview {
   inspection?: Inspection;
   airport: Airport;
   runways: RunwayOverview[];
-  totals: { issues: number; ticketsOpen: number; ticketsCompleted: number };
+  totals: {
+    issues: number;
+    pending: number;
+    manualReview: number;
+    approved: number;
+    rejected: number;
+    ticketsOpen: number;
+    ticketsCompleted: number;
+    ticketsTotal: number;
+    images: number;
+  };
+  issueBreakdown: IssueBreakdown;
+  recentTickets: Ticket[];
+  inspections: Inspection[];
 }
 
 export interface InspectionWithJobs {

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = route<{ id: string }>(async (_req, { params }: RouteContext<{ id: string }>) => {
   const { id } = await params;
-  const issue = getIssue(id);
+  const issue = await getIssue(id);
   if (!issue) return notFound(`Issue not found: ${id}`);
-  return json({ issue, diff: getIssueDraftDiff(id) });
+  return json({ issue, diff: await getIssueDraftDiff(id) });
 });

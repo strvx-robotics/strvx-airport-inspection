@@ -180,7 +180,7 @@ export default function UploadPage() {
                     <ImagePlus size={22} strokeWidth={1.6} className="text-[#5b6166]" />
                     <span>
                       Drop an image here, or{" "}
-                      <span className="text-[#69b0ff]">browse</span>
+                      <span className="text-[#e7eaec] underline underline-offset-2">browse</span>
                     </span>
                   </span>
                 )}
@@ -195,7 +195,7 @@ export default function UploadPage() {
             </div>
 
             {error && (
-              <p className="rounded-md border border-[#5c2420] bg-[#2a1311] px-3 py-2 text-[13px] text-[#e2685c]">
+              <p className="rounded-md border border-[#5b6166] bg-[#16191c] px-3 py-2 text-[13px] font-medium text-[#e7eaec]">
                 {error}
               </p>
             )}
@@ -227,9 +227,9 @@ export default function UploadPage() {
                 </p>
               </div>
             ) : result.candidates.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-[#1f4631] bg-[#0f2419] p-10 text-center">
-                <CheckCircle2 size={22} strokeWidth={1.8} className="text-[#56c98a]" />
-                <p className="text-[13px] font-medium text-[#56c98a]">
+              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-[#262b2f] bg-[#121517] p-10 text-center">
+                <CheckCircle2 size={22} strokeWidth={1.8} className="text-[#737a7f]" />
+                <p className="text-[13px] font-medium text-[#e7eaec]">
                   No issues detected in this image.
                 </p>
               </div>

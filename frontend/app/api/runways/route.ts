@@ -15,9 +15,9 @@ interface Body {
   description?: string;
 }
 
-export const GET = route((req) => {
+export const GET = route(async (req) => {
   const airportId = new URL(req.url).searchParams.get("airportId") ?? undefined;
-  return json({ runways: listRunways(airportId) });
+  return json({ runways: await listRunways(airportId) });
 });
 
 export const POST = route(async (req) => {
@@ -25,7 +25,7 @@ export const POST = route(async (req) => {
   if (!body.airportId || !body.name || !body.designation) {
     throw new Error("airportId, name and designation are required");
   }
-  const runway = createRunway({
+  const runway = await createRunway({
     airportId: body.airportId,
     name: body.name,
     designation: body.designation,

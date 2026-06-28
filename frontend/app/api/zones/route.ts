@@ -14,16 +14,16 @@ interface Body {
   notes?: string;
 }
 
-export const GET = route((req) => {
+export const GET = route(async (req) => {
   const runwayId = new URL(req.url).searchParams.get("runwayId");
   if (!runwayId) throw new Error("runwayId query parameter is required");
-  return json({ zones: listZones(runwayId) });
+  return json({ zones: await listZones(runwayId) });
 });
 
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
   if (!body.runwayId || !body.name) throw new Error("runwayId and name are required");
-  const zone = createZone({
+  const zone = await createZone({
     runwayId: body.runwayId,
     name: body.name,
     stationStartM: body.stationStartM,

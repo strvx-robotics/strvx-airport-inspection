@@ -338,8 +338,8 @@ function FormShell({
         >
           {busy ? "Saving…" : "Create"}
         </button>
-        {ok && <span className="font-mono text-[11px] text-[#56c98a]">Saved.</span>}
-        {err && <span className="font-mono text-[11px] text-[#e2685c]">Failed.</span>}
+        {ok && <span className="font-mono text-[11px] text-[#9aa1a6]">Saved.</span>}
+        {err && <span className="font-mono text-[11px] font-semibold text-[#e7eaec]">Failed.</span>}
       </div>
     </div>
   );

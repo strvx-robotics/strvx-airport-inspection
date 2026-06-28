@@ -4,6 +4,7 @@ import type {
   Issue,
   IssueCategory,
   IssueDecision,
+  InspectionStatus,
   InspectionWindow,
   RejectionReason,
   Severity,
@@ -69,6 +70,21 @@ export const TICKET_STATUS: Record<TicketStatus, { label: string; tone: Tone }> 
     closed: { label: "Closed", tone: "green" },
     rejected: { label: "Rejected", tone: "red" },
   };
+
+/** Inspection lifecycle (PRD §8.1) → label + tone. Tones resolve to grayscale. */
+export const INSPECTION_STATUS: Record<
+  InspectionStatus,
+  { label: string; tone: Tone }
+> = {
+  not_started: { label: "Not started", tone: "gray" },
+  in_progress: { label: "In progress", tone: "blue" },
+  processing: { label: "Processing", tone: "blue" },
+  no_issues: { label: "No issues", tone: "green" },
+  needs_review: { label: "Needs review", tone: "amber" },
+  tickets_created: { label: "Tickets created", tone: "blue" },
+  completed: { label: "Completed", tone: "green" },
+  failed: { label: "Failed", tone: "red" },
+};
 
 /** PRD §10.4 confidence bands. */
 export function confidenceBand(c: number): { label: string; tone: Tone } {

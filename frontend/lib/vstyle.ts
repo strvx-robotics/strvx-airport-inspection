@@ -12,35 +12,48 @@ export const BTN =
 // Primary = inverted, matching LogsView's active filter tab.
 export const BTN_PRIMARY =
   "inline-flex items-center justify-center gap-1.5 rounded-md bg-[#e7eaec] font-medium text-[#0b0d0e] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40";
+// Destructive action — signalled by the verb/icon + heavier weight, not red.
 export const BTN_DANGER =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#5c2420] bg-[#2a1311] font-medium text-[#e2685c] transition-colors hover:bg-[#341714] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#5b6166] bg-[#16191c] font-semibold text-[#e7eaec] transition-colors hover:bg-[#1b2024] disabled:cursor-not-allowed disabled:opacity-40";
 
 export const CHIP =
   "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide font-mono";
+// Monochrome chip scale — meaning by emphasis (fill / outline / weight), never hue.
+// Keys are kept verbatim so every ui.ts tone assignment recolors here centrally:
+//   green  → S1 idle  (settled: approved/closed/no-issues — recede)
+//   gray   → S2 normal (neutral/medium/draft)
+//   blue   → S3 active, solid edge  (in-flight: sent/in_progress)
+//   purple → S3 active, dashed edge (needs human: manual_review/repaired)
+//   amber  → S3 active, bright outline (loud: pending/high/needs_review)
+//   black / red → S4 alert, solid white fill (loudest: critical/rejected/failed)
 export const CHIP_TONE = {
-  green: "border-[#1f4631] bg-[#0f2419] text-[#56c98a]",
+  green: "border-[#343a3f] bg-[#121517] text-[#868d92]",
   gray: "border-[#343a3f] bg-[#1a1e21] text-[#c2c8cc]",
   black: "border-[#e7eaec] bg-[#e7eaec] text-[#0b0d0e]",
-  blue: "border-[#1d3a5c] bg-[#0e1f33] text-[#69b0ff]",
-  purple: "border-[#382a5c] bg-[#1b1430] text-[#b08cf5]",
-  amber: "border-[#4a350f] bg-[#271b08] text-[#dca64f]",
-  red: "border-[#5c2420] bg-[#2a1311] text-[#e2685c]",
+  blue: "border-[#5b6166] bg-[#16191c] text-[#c2c8cc]",
+  purple: "border-dashed border-[#5b6166] bg-[#1a1e21] text-[#e7eaec]",
+  amber: "border-[#9aa1a6] bg-[#1a1e21] text-[#e7eaec]",
+  red: "border-[#e7eaec] bg-[#e7eaec] text-[#0b0d0e]",
 } as const;
 export type ChipTone = keyof typeof CHIP_TONE;
 
-// severity / status dots
+// severity / status dots — monotonic brightness ramp; critical adds weight (ring),
+// not a brighter shade, since high+critical both sit near white.
 export const DOT: Record<string, string> = {
   low: "bg-[#6b7378]",
-  medium: "bg-[#d9a441]",
-  high: "bg-[#dca64f]",
-  critical: "bg-[#e2685c]",
+  medium: "bg-[#9aa1a6]",
+  high: "bg-[#c2c8cc]",
+  critical: "bg-[#e7eaec] ring-2 ring-[#e7eaec]/30",
 };
 
 export const EYEBROW =
   "font-mono text-[11px] uppercase tracking-[0.16em] text-[#737a7f]";
 export const H2 = "text-[18px] font-semibold text-[#e7eaec]";
 export const MUTED = "text-[#737a7f]";
-export const LINK = "font-mono text-[11px] text-[#69b0ff] hover:underline";
+// Monochrome link affordance — brighten on hover (no blue, no underline noise on
+// the icon nav links these are used for).
+export const LINK =
+  "font-mono text-[11px] text-[#9aa1a6] transition-colors hover:text-[#e7eaec]";
 
 // metric-strip cell (use inside a `grid gap-px bg-[#262b2f] rounded-md overflow-hidden`)
 export const METRIC_CELL = "bg-[#121517] px-4 py-3";

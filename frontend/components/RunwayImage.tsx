@@ -24,13 +24,13 @@ export default function RunwayImage({
         className="pointer-events-none absolute inset-y-0 left-1/2 w-1.5 -translate-x-1/2"
         style={{
           background:
-            "repeating-linear-gradient(#d9a441 0 26px, transparent 26px 52px)",
+            "repeating-linear-gradient(#c2c8cc 0 26px, transparent 26px 52px)",
           opacity: 0.7,
         }}
       />
       {bbox && (
         <div
-          className="absolute border-2 border-[#e2685c] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+          className="absolute border-2 border-[#e7eaec] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
           style={{
             left: `${bbox.x}%`,
             top: `${bbox.y}%`,
@@ -39,7 +39,7 @@ export default function RunwayImage({
           }}
         >
           {label && (
-            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-[#e2685c] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-[#0b0d0e]">
+            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-[#e7eaec] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-[#0b0d0e]">
               {label}
             </span>
           )}

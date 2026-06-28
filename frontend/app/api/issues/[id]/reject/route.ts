@@ -21,6 +21,6 @@ export const POST = route<{ id: string }>(async (req, { params }: RouteContext<{
   if (!body.reason || !(REJECTION_REASONS as string[]).includes(body.reason)) {
     throw new Error("A valid rejection reason is required");
   }
-  const issue = rejectIssue(id, { reason: body.reason as RejectionReason, note: body.note }, actorFrom(req, body));
+  const issue = await rejectIssue(id, { reason: body.reason as RejectionReason, note: body.note }, actorFrom(req, body));
   return json({ issue });
 });
