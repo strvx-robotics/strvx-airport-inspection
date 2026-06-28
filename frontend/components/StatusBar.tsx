@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { rel } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { systemState, SYSTEM_DOT, SYSTEM_TEXT, type SystemState } from "@/lib/vstyle";
 
 // Build stamp — surfaced so an operator can always name the running version.
 const BUILD = process.env.NEXT_PUBLIC_BUILD || "dev";
@@ -41,6 +42,7 @@ export default function StatusBar() {
   const fresh =
     lastSyncAt == null || now === null ? "—" : rel(new Date(lastSyncAt).toISOString(), now);
   const env = overview ? `${overview.airport.code} · OPS` : "— · OPS";
+  const state = systemState(online);
 
   return (
     <footer className="z-30 flex h-[28px] shrink-0 items-center gap-3 border-t border-[#0c0e10] bg-[#181b1e] px-4 font-mono text-[11px] text-[#888f95]">
@@ -51,9 +53,9 @@ export default function StatusBar() {
 
       <div className="ml-auto flex items-center gap-3">
         <Segment>
-          <Dot online={online} />
-          <span className="text-[#c6cbcf]">
-            {online === undefined ? "LINKING" : online ? "CONNECTED" : "OFFLINE"}
+          <Dot state={state} />
+          <span className={SYSTEM_TEXT[state]}>
+            {state === "init" ? "LINKING" : state === "up" ? "CONNECTED" : "OFFLINE"}
           </span>
         </Segment>
         <Sep />
@@ -80,18 +82,7 @@ function Sep({ className }: { className?: string }) {
   return <span className={cn("h-3 w-px bg-[#2b3035]", className)} />;
 }
 
-/** Connection lamp — steady, monochrome. Filled = up, hollow ring = down. */
-function Dot({ online }: { online: boolean | undefined }) {
-  return (
-    <span
-      className={cn(
-        "h-1.5 w-1.5 rounded-full",
-        online === undefined
-          ? "bg-[#5b6166]"
-          : online
-            ? "bg-[#c6cbcf]"
-            : "border border-[#888f95] bg-transparent",
-      )}
-    />
-  );
+/** Connection lamp — steady. Green = up, red = down, neutral until known. */
+function Dot({ state }: { state: SystemState }) {
+  return <span className={cn("h-1.5 w-1.5 rounded-full", SYSTEM_DOT[state])} />;
 }

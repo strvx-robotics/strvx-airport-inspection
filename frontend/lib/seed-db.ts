@@ -193,3 +193,29 @@ export async function seedDatabase(): Promise<void> {
       FOD_DRAFT, TS, TS);
   });
 }
+
+/**
+ * Seed the fleet roster. Gated on the drones count (not airports) so it
+ * backfills any already-seeded database. last_seen is relative to setup time so
+ * the roster reads "live" against the rel() formatter.
+ */
+export async function seedDrones(): Promise<void> {
+  const seeded = await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM drones");
+  if ((seeded?.n ?? 0) > 0) return;
+
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+  const insDrone = (
+    id: string, model: string, status: string,
+    battery: number | null, assignment: string | null, lastSeen: string,
+  ) =>
+    run(
+      `INSERT INTO drones (id, airport_id, model, status, battery, assignment, last_seen, created_at)
+       VALUES (?, 'ags', ?, ?, ?, ?, ?, ?)`,
+      [id, model, status, battery, assignment, lastSeen, TS],
+    );
+  await insDrone("VLR-01", "DJI Mavic 3 Enterprise", "in_flight", 78, "Runway 1", ago(20_000));
+  await insDrone("VLR-02", "DJI Mavic 3 Enterprise", "idle", 100, "Standby", ago(12 * 60_000));
+  await insDrone("VLR-03", "DJI Matrice 350 RTK", "charging", 46, "Hangar dock 2", ago(3 * 60_000));
+  await insDrone("VLR-04", "DJI Matrice 350 RTK", "maintenance", 0, "Service bay", ago(2 * 86_400_000));
+  await insDrone("VLR-05", "DJI Mavic 3 Enterprise", "offline", null, null, ago(5 * 86_400_000));
+}

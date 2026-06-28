@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -109,11 +108,6 @@ const columns = [
     sortingFn: "alphanumeric",
     cell: (c) => <Badge tone={c.row.original.status.tone}>{c.row.original.status.label}</Badge>,
     meta: { tdClass: "whitespace-nowrap" },
-  }),
-  col.display({
-    id: "chevron",
-    header: "",
-    cell: () => <ChevronRight size={15} strokeWidth={2} className="text-[#9aa1a6]" />,
   }),
 ];
 

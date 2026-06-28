@@ -329,6 +329,17 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS drones (
+  id          TEXT PRIMARY KEY,
+  airport_id  TEXT NOT NULL REFERENCES airports(id),
+  model       TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'idle',
+  battery     INTEGER,
+  assignment  TEXT,
+  last_seen   TEXT,
+  created_at  TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_runway      ON issue_candidates(runway_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);

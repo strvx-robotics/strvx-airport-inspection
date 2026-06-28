@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { ROLE } from "@/lib/ui";
 import { USER_ROLES } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { systemState, SYSTEM_DOT, SYSTEM_TEXT, type SystemState } from "@/lib/vstyle";
 
 /** The upper instrument rail — a fixed matte-slate band that, with the status
  *  bar below, brackets the light workspace into one accountable console. */
@@ -17,12 +18,13 @@ export default function Header() {
   const showLive = role === "inspector" || role === "admin";
   const showAdmin = role === "admin";
   const isMaintenance = role === "maintenance";
+  const state = systemState(online);
 
   return (
-    <header className="relative z-30 flex h-[52px] shrink-0 items-center gap-4 border-b border-[#0c0e10] bg-[#181b1e] px-4">
+    <header className="relative z-30 flex h-[72px] shrink-0 items-center gap-4 border-b border-[#0c0e10] bg-[#181b1e] px-6">
       {/* brand */}
       <Link href="/" className="flex items-center gap-3">
-        <img src="/valanor-wordmark.png" alt="Valanor" className="h-[26px] w-auto" />
+        <img src="/valanor-wordmark.png" alt="Valanor" className="h-[34px] w-auto" />
         <span className="hidden h-4 w-px bg-[#2b3035] sm:block" />
         <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-[#888f95] sm:inline">
           Airfield Inspection
@@ -30,7 +32,7 @@ export default function Header() {
       </Link>
 
       {/* view nav — centered. Maintenance's home is the work-order tracker. */}
-      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-[#121517] p-0.5 ring-1 ring-inset ring-[#2b3035]">
+      <div className="absolute left-1/2 flex -translate-x-1/2 items-center divide-x divide-[#2b3035] rounded-md bg-[#121517] p-0.5 ring-1 ring-inset ring-[#2b3035]">
         {isMaintenance ? (
           <NavTab href="/" active={pathname === "/"} icon={Wrench} label="Work orders" />
         ) : (
@@ -40,7 +42,9 @@ export default function Header() {
           <NavTab href="/live" active={pathname === "/live"} icon={Radio} label="Live" />
         )}
         <NavTab href="/map" active={pathname === "/map"} icon={MapIcon} label="Map" />
-        <NavTab href="/fleet" active={pathname === "/fleet"} icon={PlaneTakeoff} label="Fleet" />
+        {!isMaintenance && (
+          <NavTab href="/fleet" active={pathname === "/fleet"} icon={PlaneTakeoff} label="Fleet" />
+        )}
         {!isMaintenance && (
           <NavTab href="/logs" active={pathname === "/logs"} icon={ScrollText} label="Logs" />
         )}
@@ -51,7 +55,7 @@ export default function Header() {
 
       {/* right cluster — system lamp + role */}
       <div className="ml-auto flex items-center gap-3">
-        <SystemLamp online={online} />
+        <SystemLamp state={state} />
         <span className="hidden h-4 w-px bg-[#2b3035] md:block" />
         <ProfileMenu role={role} setRole={setRole} />
       </div>
@@ -59,19 +63,15 @@ export default function Header() {
   );
 }
 
-/** Steady (never pulsing) master-status lamp. Monochrome: state reads from
- *  fill vs. ring vs. dimness, not hue. */
-function SystemLamp({ online }: { online: boolean | undefined }) {
-  const { dot, label } =
-    online === undefined
-      ? { dot: "bg-[#5b6166]", label: "Initializing" }
-      : online
-        ? { dot: "bg-[#c6cbcf]", label: "System nominal" }
-        : { dot: "border border-[#888f95] bg-transparent", label: "Reconnecting" };
+/** Steady (never pulsing) master-status lamp. Green = systems up, red = down,
+ *  neutral until the first API reply. */
+function SystemLamp({ state }: { state: SystemState }) {
+  const label =
+    state === "init" ? "Initializing" : state === "up" ? "System nominal" : "Systems down";
   return (
     <span className="hidden items-center gap-1.5 md:inline-flex">
-      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#888f95]">
+      <span className={cn("h-1.5 w-1.5 rounded-full", SYSTEM_DOT[state])} />
+      <span className={cn("font-mono text-[10px] uppercase tracking-[0.16em]", SYSTEM_TEXT[state])}>
         {label}
       </span>
     </span>

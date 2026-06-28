@@ -289,6 +289,25 @@ export interface User {
   createdAt: string;
 }
 
+/** Fleet aircraft telemetry state. */
+export type DroneStatus =
+  | "in_flight"
+  | "idle"
+  | "charging"
+  | "maintenance"
+  | "offline";
+
+export interface Drone {
+  id: string; // tail number, e.g. "VLR-01"
+  airportId: string;
+  model: string;
+  status: DroneStatus;
+  battery?: number; // 0–100; absent when offline / unknown
+  assignment?: string; // free-text post (runway, dock, bay)
+  lastSeen?: string; // ISO — last telemetry contact
+  createdAt: string;
+}
+
 // ── Immutable audit history (design §4, §13.1) ───────────────────────────────
 
 /** What a status-history row records (used by the feedback export). */

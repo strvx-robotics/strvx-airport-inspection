@@ -20,32 +20,32 @@ export const BTN_DANGER =
 
 export const CHIP =
   "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide font-mono";
-// Monochrome chip scale — meaning by emphasis (fill / outline / weight), never hue.
-// Keys are kept verbatim so every ui.ts tone assignment recolors here centrally:
-//   green  → S1 idle  (settled: approved/closed/no-issues — recede)
-//   gray   → S2 normal (neutral/medium/draft)
-//   blue   → S3 active, solid edge  (in-flight: sent/in_progress)
-//   purple → S3 active, dashed edge (needs human: manual_review/repaired)
-//   amber  → S3 active, bright outline (loud: pending/high/needs_review)
-//   black / red → S4 alert, solid ink fill (loudest: critical/rejected/failed)
+// Semantic status palette — the chrome stays monochrome, but status badges carry
+// restrained, desaturated meaning-color (every ui.ts tone resolves here):
+//   green  → settled / good      (approved, closed, no-issues, completed)
+//   gray   → neutral             (draft, low, not-started)
+//   blue   → in-flight / active  (sent, in-progress, processing)
+//   purple → needs human         (manual-review, repaired)
+//   amber  → attention / pending (pending, needs-review, medium/high severity)
+//   red    → alert (loudest, solid fill) — critical, rejected, failed, likely-issue
 export const CHIP_TONE = {
-  green: "border-[#c7cdd2] bg-[#fbfcfd] text-[#6b7176]",
-  gray: "border-[#c7cdd2] bg-[#e4e8ec] text-[#3f4448]",
-  black: "border-[#181b1e] bg-[#181b1e] text-[#eef1f4]",
-  blue: "border-[#9aa1a6] bg-[#eef1f4] text-[#3f4448]",
-  purple: "border-dashed border-[#9aa1a6] bg-[#e4e8ec] text-[#181b1e]",
-  amber: "border-[#5b6166] bg-[#e4e8ec] text-[#181b1e]",
-  red: "border-[#181b1e] bg-[#181b1e] text-[#eef1f4]",
+  green: "border-[#bcd6c4] bg-[#e4efe8] text-[#356b4c]",
+  gray: "border-[#cdd2d7] bg-[#e9ecef] text-[#4f5358]",
+  blue: "border-[#bcd0e4] bg-[#e0e9f3] text-[#2f5b85]",
+  purple: "border-[#cabfe0] bg-[#e8e3f1] text-[#574a82]",
+  amber: "border-[#e2cfa0] bg-[#f5ecd7] text-[#866018]",
+  red: "border-[#a8392f] bg-[#b23b32] text-[#fbeae8]",
+  black: "border-[#a8392f] bg-[#b23b32] text-[#fbeae8]",
 } as const;
 export type ChipTone = keyof typeof CHIP_TONE;
 
-// severity / status dots — monotonic brightness ramp; critical adds weight (ring),
-// not a brighter shade, since high+critical both sit near ink.
+// severity dots — escalating ramp (neutral → ochre → orange → red); critical
+// also carries a ring so it reads at a glance even out of context.
 export const DOT: Record<string, string> = {
-  low: "bg-[#b4b9bd]",
-  medium: "bg-[#5b6166]",
-  high: "bg-[#3f4448]",
-  critical: "bg-[#181b1e] ring-2 ring-[#181b1e]/30",
+  low: "bg-[#9aa1a6]",
+  medium: "bg-[#caa44e]",
+  high: "bg-[#c8762f]",
+  critical: "bg-[#b23b32] ring-2 ring-[#b23b32]/25",
 };
 
 export const EYEBROW =
@@ -59,3 +59,21 @@ export const LINK =
 
 // metric-strip cell (use inside a `grid gap-px bg-[#dbdfe3] rounded-md overflow-hidden`)
 export const METRIC_CELL = "bg-[#fbfcfd] px-4 py-3";
+
+// ── System up/down signal ─────────────────────────────────────────────────────
+// API reachability, shown as a LOCALIZED lamp only (dot + word) on the header and
+// status bar. The rails themselves stay flat slate — no whole-bar glow.
+// up = green, down = red, init = neutral (not yet known).
+export type SystemState = "init" | "up" | "down";
+export const systemState = (online: boolean | undefined): SystemState =>
+  online === undefined ? "init" : online ? "up" : "down";
+export const SYSTEM_DOT: Record<SystemState, string> = {
+  init: "bg-[#5b6166]",
+  up: "bg-[#44b07f]",
+  down: "bg-[#d05a52]",
+};
+export const SYSTEM_TEXT: Record<SystemState, string> = {
+  init: "text-[#888f95]",
+  up: "text-[#7fd0ab]",
+  down: "text-[#e89a92]",
+};
