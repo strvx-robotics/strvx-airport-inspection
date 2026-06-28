@@ -6,6 +6,15 @@ class _Camel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
+class Airport(_Camel):
+    id: str
+    name: str
+    code: str
+    location: str = ""
+    timezone: str = ""
+    created_at: str
+
+
 class Drone(_Camel):
     id: str
     airport_id: str
@@ -14,6 +23,21 @@ class Drone(_Camel):
     battery: int | None = None
     assignment: str | None = None
     last_seen: str | None = None
+    created_at: str
+
+
+class Runway(_Camel):
+    id: str
+    airport_id: str
+    name: str
+    designation: str
+    length: str
+    description: str | None = None
+    length_m: float | None = None
+    threshold_heading_deg: float | None = None
+    threshold_lat: float | None = None
+    threshold_lng: float | None = None
+    active_status: str | None = None
     created_at: str
 
 
