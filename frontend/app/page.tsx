@@ -3,17 +3,25 @@
 import type { ReactNode } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
 import Badge from "@/components/Badge";
-import DistributionBand from "@/components/dashboard/DistributionBand";
 import RunwayTable from "@/components/dashboard/RunwayTable";
+import DistributionBand from "@/components/dashboard/DistributionBand";
 import { RecentPasses, RecentWorkOrders, ZoningMapSlot } from "@/components/dashboard/RightRail";
 import type { Overview } from "@/lib/api";
-import { useOverview } from "@/lib/store";
+import { useOverview, useStore } from "@/lib/store";
+import MaintenanceTracker from "@/components/MaintenanceTracker";
 import { INSPECTION_STATUS, INSPECTION_WINDOW } from "@/lib/ui";
 import { fmtInTz } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, BTN, EYEBROW, H2, MUTED, METRIC_CELL } from "@/lib/vstyle";
 
-export default function Dashboard() {
+// Maintenance just tracks work orders → a flat table. Everyone else gets the
+// full inspection dashboard.
+export default function Home() {
+  const { role } = useStore();
+  return role === "maintenance" ? <MaintenanceTracker /> : <Dashboard />;
+}
+
+function Dashboard() {
   const { overview, refresh } = useOverview();
 
   if (!overview) return <Skeleton />;
@@ -31,13 +39,12 @@ export default function Dashboard() {
     needRw ? `${needRw} need review` : null,
     activeRw ? `${activeRw} in progress` : null,
   ].filter(Boolean);
-  const donePct = t.ticketsTotal > 0 ? Math.round((t.ticketsCompleted / t.ticketsTotal) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
+    <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-3 px-6 py-5">
       <CommandStrip overview={overview} onRefresh={() => void refresh()} />
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] lg:grid-cols-4">
         <Stat
           label="Needs review"
           value={needsReview}
@@ -46,34 +53,26 @@ export default function Dashboard() {
         <Stat label="Issues found" value={t.issues} secondary={`${highCrit} high + critical`} />
         <Stat label="Tickets open" value={t.ticketsOpen} secondary={`of ${t.ticketsTotal} total`} />
         <Stat
-          label="Tickets resolved"
-          value={t.ticketsCompleted}
-          secondary={
-            <span className="flex items-center gap-1.5">
-              <Ring pct={donePct} />
-              {donePct}% resolved
-            </span>
-          }
-        />
-        <Stat
           label="Runways clear"
           value={`${clear}/${overview.runways.length}`}
           secondary={clearParts.length ? clearParts.join(" · ") : "all clear"}
         />
-        <Stat label="Images analyzed" value={t.images} secondary="this pass" />
       </div>
 
-      <DistributionBand breakdown={bd} total={t.issues} />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <RunwayTable rows={overview.runways} />
+      {/* Two-column ops view that fills the viewport: work queue + distribution
+          on the left, glanceable context rail on the right. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[1.7fr_minmax(330px,1fr)]">
+        <div className="flex min-h-0 flex-col gap-3">
+          <div className="min-h-0 flex-1">
+            <RunwayTable rows={overview.runways} />
+          </div>
+          <DistributionBand breakdown={bd} total={t.issues} />
         </div>
-        <div className="flex flex-col gap-4 lg:col-span-4">
-          <ZoningMapSlot runways={overview.runways} />
+        <aside className="flex min-h-0 flex-col gap-3 overflow-auto pb-1">
           <RecentWorkOrders tickets={overview.recentTickets} />
+          <ZoningMapSlot runways={overview.runways} />
           <RecentPasses inspections={overview.inspections} currentId={overview.inspection?.id} />
-        </div>
+        </aside>
       </div>
     </div>
   );
@@ -146,42 +145,16 @@ function Stat({
   );
 }
 
-/** Tiny grayscale completion ring (stroke-only). */
-function Ring({ pct }: { pct: number }) {
-  const r = 7;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg width="16" height="16" viewBox="0 0 18 18" className="-rotate-90">
-      <circle cx="9" cy="9" r={r} fill="none" stroke="#262b2f" strokeWidth="2" />
-      <circle
-        cx="9"
-        cy="9"
-        r={r}
-        fill="none"
-        stroke="#e7eaec"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={c * (1 - pct / 100)}
-      />
-    </svg>
-  );
-}
-
 function Skeleton() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
       <div className={cn("h-[72px] animate-pulse rounded-md", CARD)} />
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#262b2f] lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-[68px] animate-pulse bg-[#121517]" />
         ))}
       </div>
-      <div className={cn("h-40 animate-pulse rounded-md", CARD)} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className={cn("h-64 animate-pulse rounded-md lg:col-span-8", CARD)} />
-        <div className={cn("h-64 animate-pulse rounded-md lg:col-span-4", CARD)} />
-      </div>
+      <div className={cn("h-64 animate-pulse rounded-md", CARD)} />
     </div>
   );
 }

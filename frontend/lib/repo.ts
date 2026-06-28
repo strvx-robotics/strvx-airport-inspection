@@ -176,13 +176,13 @@ const gps = (lat: Num, lng: Num): LngLat | undefined =>
   lat == null || lng == null ? undefined : { lat, lng };
 
 interface AirportRow { id: string; name: string; code: string; location: Str; timezone: Str; created_at: string }
-interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; active_status: Str; created_at: string }
+interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; active_status: Str; created_at: string }
 interface ZoneRow { id: string; runway_id: string; name: string; station_start_m: Num; station_end_m: Num; polygon_json: Str; notes: Str; created_at: string }
 interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; status: string; started_at: Str; completed_at: Str; created_by: Str; created_at: string }
 interface JobRow { id: string; inspection_id: string; runway_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
 interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; created_by: Str; created_at: string }
 interface ImageRow { id: string; job_id: Str; runway_id: string; zone_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
-interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; created_by: Str; created_at: string; zone_name?: Str }
+interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; created_by: Str; created_at: string; zone_name?: Str; image_url?: Str }
 interface TicketRow { id: string; issue_id: string; runway_id: string; zone_id: Str; zone: Str; category: string; status: string; description: string; severity: string; assigned_to: Str; created_by: Str; maintenance_notes: string; created_at: string; repaired_at: Str; closed_at: Str; zone_name?: Str }
 interface UserRow { id: string; username: string; name: string; role: string; airport_id: Str; created_at: string }
 
@@ -190,7 +190,7 @@ function toAirport(r: AirportRow): Airport {
   return { id: r.id, name: r.name, code: r.code, location: r.location ?? "", timezone: r.timezone ?? "", createdAt: r.created_at };
 }
 function toRunway(r: RunwayRow): Runway {
-  return { id: r.id, airportId: r.airport_id, name: r.name, designation: r.designation, length: r.length ?? "", description: u(r.description), lengthM: u(r.length_m), thresholdHeadingDeg: u(r.threshold_heading_deg), activeStatus: u(r.active_status), createdAt: r.created_at };
+  return { id: r.id, airportId: r.airport_id, name: r.name, designation: r.designation, length: r.length ?? "", description: u(r.description), lengthM: u(r.length_m), thresholdHeadingDeg: u(r.threshold_heading_deg), thresholdLat: u(r.threshold_lat), thresholdLng: u(r.threshold_lng), activeStatus: u(r.active_status), createdAt: r.created_at };
 }
 function toZone(r: ZoneRow): Zone {
   return { id: r.id, runwayId: r.runway_id, name: r.name, stationStartM: u(r.station_start_m), stationEndM: u(r.station_end_m), polygon: r.polygon_json ? (JSON.parse(r.polygon_json) as LngLat[]) : undefined, notes: u(r.notes), createdAt: r.created_at };
@@ -217,7 +217,7 @@ function toIssue(r: IssueRow): IssueCandidate {
     lateralOffsetM: u(r.lateral_offset_m), sizeM: u(r.size_m), aiDraftText: r.ai_draft_text, draft: r.draft,
     inspectorNotes: r.inspector_notes, modelNotes: u(r.model_notes), rejectionReason: u(r.rejection_reason) as RejectionReason | undefined,
     rejectionNote: u(r.rejection_note), draftEditDistance: u(r.draft_edit_distance), ticketId: u(r.ticket_id),
-    createdBy: u(r.created_by), createdAt: r.created_at,
+    createdBy: u(r.created_by), createdAt: r.created_at, imageUrl: r.image_url ? r.image_url : undefined,
   };
 }
 function toTicket(r: TicketRow): Ticket {
@@ -231,6 +231,11 @@ function toUser(r: UserRow): User {
 
 const gid = (prefix: string): string => `${prefix}_${randomUUID().slice(0, 8)}`;
 const now = (): string => new Date().toISOString();
+
+/** True for a Postgres unique-violation error (SQLSTATE 23505). */
+function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "23505";
+}
 
 async function actorName(actor?: Actor): Promise<string> {
   if (actor?.name) return actor.name;
@@ -415,34 +420,45 @@ export async function runInspectionNow(airportId?: string): Promise<Inspection> 
   const scheduled = `${day}T06:00:00.000Z`;
 
   const existing = await one<InspectionRow>(
-    "SELECT * FROM inspections WHERE airport_id = ? AND substr(scheduled_time, 1, 10) = ? ORDER BY scheduled_time DESC LIMIT 1",
-    [airport.id, day],
+    "SELECT * FROM inspections WHERE airport_id = ? AND scheduled_time = ? LIMIT 1",
+    [airport.id, scheduled],
   );
   if (existing) return toInspection(existing);
 
   const id = gid("insp");
   const createdAt = now();
-  await tx(async () => {
+  // Idempotent under concurrency: UNIQUE(airport_id, scheduled_time) +
+  // UNIQUE(inspection_id, runway_id) mean a racing caller's rows win, ours no-op,
+  // and jobs attach to the canonical inspection id (theirs or ours).
+  const inspectionId = await tx(async () => {
     await run(
       `INSERT INTO inspections (id, airport_id, scheduled_time, "window", status, created_by, created_at)
-       VALUES (?, ?, ?, 'daylight', 'not_started', 'scheduler', ?)`,
+       VALUES (?, ?, ?, 'daylight', 'not_started', 'scheduler', ?)
+       ON CONFLICT (airport_id, scheduled_time) DO NOTHING`,
       [id, airport.id, scheduled, createdAt],
     );
+    const canon = await one<{ id: string }>(
+      "SELECT id FROM inspections WHERE airport_id = ? AND scheduled_time = ?",
+      [airport.id, scheduled],
+    );
+    const cid = canon!.id;
     for (const rw of await listRunways(airport.id)) {
       await run(
         `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
-         VALUES (?, ?, ?, 'not_started', 0, 0, ?)`,
-        [gid("job"), id, rw.id, createdAt],
+         VALUES (?, ?, ?, 'not_started', 0, 0, ?)
+         ON CONFLICT (inspection_id, runway_id) DO NOTHING`,
+        [gid("job"), cid, rw.id, createdAt],
       );
     }
+    return cid;
   });
-  return (await getInspection(id))!;
+  return (await getInspection(inspectionId))!;
 }
 
 // ── Issue candidates ──────────────────────────────────────────────────────────
 
 const ISSUE_SELECT =
-  "SELECT ic.*, z.name AS zone_name FROM issue_candidates ic LEFT JOIN zones z ON z.id = ic.zone_id";
+  "SELECT ic.*, z.name AS zone_name, im.file_url AS image_url FROM issue_candidates ic LEFT JOIN zones z ON z.id = ic.zone_id LEFT JOIN images im ON im.id = ic.image_id";
 
 export async function getIssue(id: string): Promise<IssueCandidate | undefined> {
   const r = await one<IssueRow>(`${ISSUE_SELECT} WHERE ic.id = ?`, [id]);
@@ -518,15 +534,19 @@ export async function ingestUpload(input: UploadInput): Promise<{ image: Image; 
     (await getLatestInspection(runway.airportId))?.id ??
     (await runInspectionNow(runway.airportId)).id;
 
-  // Resolve (or create) the per-runway job for this inspection.
+  // Resolve (or create) the per-runway job for this inspection. ON CONFLICT +
+  // UNIQUE(inspection_id, runway_id) make this race-safe (no duplicate jobs that
+  // would split image/issue tallies); then read back the canonical job id.
   let jobId = input.jobId;
   if (!jobId) {
+    await run(
+      `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
+       VALUES (?, ?, ?, 'processing', 0, 0, ?)
+       ON CONFLICT (inspection_id, runway_id) DO NOTHING`,
+      [gid("job"), inspectionId, input.runwayId, now()],
+    );
     const job = await one<{ id: string }>("SELECT id FROM inspection_jobs WHERE inspection_id = ? AND runway_id = ? LIMIT 1", [inspectionId, input.runwayId]);
-    if (job) jobId = job.id;
-    else {
-      jobId = gid("job");
-      await run(`INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) VALUES (?, ?, ?, 'processing', 0, 0, ?)`, [jobId, inspectionId, input.runwayId, now()]);
-    }
+    jobId = job!.id;
   }
 
   return tx(async () => {
@@ -584,24 +604,38 @@ export async function approveIssue(id: string, actor?: Actor): Promise<{ issue: 
     if (existing) return { issue, ticket: existing };
   }
 
-  const countRow = await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM tickets");
-  const ticketId = `WO-${1042 + (countRow?.n ?? 0)}`;
   const editDistance = computeDraftEditDistance(issue.aiDraftText, issue.draft);
   const assignedTo = (await getUserByRole("maintenance"))?.name ?? "Field Maintenance";
   const createdBy = await actorName(actor);
   const ts = now();
 
-  await tx(async () => {
-    await run(
-      `INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, assigned_to, created_by, maintenance_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, '', ?)`,
-      [ticketId, issue.id, issue.runwayId, issue.zoneId ?? null, issue.zone ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts],
-    );
-    await run("UPDATE issue_candidates SET status = 'approved', ticket_id = ?, draft_edit_distance = ? WHERE id = ?", [ticketId, editDistance, id]);
-    await appendIssueHistory({ issueId: id, action: "approve", fromStatus: issue.status, toStatus: "approved", note: `Created ticket ${ticketId} (edit distance ${editDistance})`, actor });
-    await appendTicketHistory({ ticketId, action: "create", toStatus: "sent", note: "Approved & sent to maintenance", actor });
-  });
-  return { issue: (await getIssue(id))!, ticket: (await getTicket(ticketId))! };
+  try {
+    const ticketId = await tx(async () => {
+      // Monotonic WO number from a sequence — race-free, no COUNT read-modify-write
+      // that two concurrent approvals could both read and collide on.
+      const seq = await one<{ id: string }>("SELECT 'WO-' || nextval('ticket_seq') AS id");
+      const tid = seq!.id;
+      await run(
+        `INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, assigned_to, created_by, maintenance_notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, '', ?)`,
+        [tid, issue.id, issue.runwayId, issue.zoneId ?? null, issue.zone ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts],
+      );
+      await run("UPDATE issue_candidates SET status = 'approved', ticket_id = ?, draft_edit_distance = ? WHERE id = ?", [tid, editDistance, id]);
+      await appendIssueHistory({ issueId: id, action: "approve", fromStatus: issue.status, toStatus: "approved", note: `Created ticket ${tid} (edit distance ${editDistance})`, actor });
+      await appendTicketHistory({ ticketId: tid, action: "create", toStatus: "sent", note: "Approved & sent to maintenance", actor });
+      return tid;
+    });
+    return { issue: (await getIssue(id))!, ticket: (await getTicket(ticketId))! };
+  } catch (e) {
+    // A concurrent approval of the SAME issue already created its ticket
+    // (UNIQUE issue_id) — return that one instead of failing the double-submit.
+    if (isUniqueViolation(e)) {
+      const fresh = await getIssue(id);
+      const ticket = fresh?.ticketId ? await getTicket(fresh.ticketId) : undefined;
+      if (fresh && ticket) return { issue: fresh, ticket };
+    }
+    throw e;
+  }
 }
 
 /** Reject a candidate. A RejectionReason is REQUIRED (design §13.1). */
@@ -668,6 +702,10 @@ export async function getTicketDetail(
 }
 export async function listTicketsByInspection(inspectionId: string): Promise<Ticket[]> {
   return (await all<TicketRow>(`${TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id WHERE ic.inspection_id = ?`, [inspectionId])).map(toTicket);
+}
+/** Every work order, newest first — the maintenance tracker. */
+export async function listTickets(): Promise<Ticket[]> {
+  return (await all<TicketRow>(`${TICKET_SELECT} ORDER BY t.created_at DESC`)).map(toTicket);
 }
 
 export async function repairTicket(id: string, input: { notes?: string }, actor?: Actor): Promise<Ticket> {

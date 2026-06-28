@@ -1,0 +1,6 @@
+ultralytics==8.4.80
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pillow>=10.0
+python-multipart>=0.0.9
+huggingface_hub>=0.25

@@ -16,15 +16,28 @@ type Handler<P> = (
   ctx: RouteContext<P>,
 ) => Promise<Response> | Response;
 
+/** Errors we must NOT surface verbatim: pg/db errors leak schema, programming errors leak internals. */
+function isInternalError(e: unknown): boolean {
+  if (e instanceof TypeError || e instanceof RangeError || e instanceof ReferenceError) return true;
+  const code = (e as { code?: unknown })?.code; // pg errors carry a 5-char SQLSTATE
+  return typeof code === "string" && /^[0-9A-Z]{5}$/.test(code);
+}
+
 /** Wrap a route handler so thrown Errors become structured JSON responses. */
 export function route<P = Record<string, never>>(handler: Handler<P>): Handler<P> {
   return async (req, ctx) => {
     try {
       return await handler(req, ctx);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Internal error";
-      const status = /not found/i.test(message) ? 404 : 400;
-      return NextResponse.json({ error: message }, { status });
+      // App-level validation errors carry safe messages → surface them (404/400).
+      // DB (pg) and programming errors are logged server-side and returned generic
+      // so we never leak schema internals or stack details to the client.
+      if (e instanceof Error && !isInternalError(e)) {
+        const status = /not found/i.test(e.message) ? 404 : 400;
+        return NextResponse.json({ error: e.message }, { status });
+      }
+      console.error("[api] unhandled error:", e);
+      return NextResponse.json({ error: "Internal error" }, { status: 500 });
     }
   };
 }

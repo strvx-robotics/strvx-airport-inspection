@@ -17,16 +17,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error(
-    "DATABASE_URL is not set. Local dev: see .env.local. Vercel: add a Postgres " +
-      "integration (Supabase/Neon/Vercel Postgres) and set DATABASE_URL.",
-  );
-}
-
-const isLocal = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString);
-
 // TLS is secure by default in production: full certificate verification against
 // the system trust store (works for Neon/Supabase public chains). For providers
 // whose chain isn't in the system store — notably AWS RDS — pin the provider CA
@@ -34,8 +24,8 @@ const isLocal = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString);
 // resort escape hatch; it disables verification (MITM risk) and must be a
 // conscious choice, never the default.
 type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
-function sslConfig(): SslConfig {
-  if (isLocal) return false;
+function sslConfig(connectionString: string): SslConfig {
+  if (/@(localhost|127\.0\.0\.1)[:/]/.test(connectionString)) return false;
   const ca = process.env.DATABASE_CA_CERT;
   if (ca) return { rejectUnauthorized: true, ca };
   if (process.env.DATABASE_SSL_NO_VERIFY === "1") return { rejectUnauthorized: false };
@@ -43,20 +33,34 @@ function sslConfig(): SslConfig {
 }
 
 function createPool(): Pool {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL is not set. Local dev: see .env.local. Vercel: add a Postgres " +
+        "integration (Supabase/Neon/Vercel Postgres) and set DATABASE_URL.",
+    );
+  }
   return new Pool({
     connectionString,
-    ssl: sslConfig(),
-    max: process.env.PG_POOL_MAX ? Number(process.env.PG_POOL_MAX) : 5,
+    ssl: sslConfig(connectionString),
+    // Serverless (Vercel) fans out across many instances, so keep each instance's
+    // pool tiny and point DATABASE_URL at the provider's transaction pooler
+    // (Supabase :6543 / Neon -pooler host). A long-running server can afford more.
+    max: process.env.PG_POOL_MAX ? Number(process.env.PG_POOL_MAX) : process.env.VERCEL ? 1 : 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });
 }
 
-// Cache the pool on globalThis so Next dev HMR and warm serverless invocations
-// reuse one pool instead of leaking a new one per reload/request.
+// Lazily create + cache the pool on globalThis. Lazy so module import never
+// requires DATABASE_URL (so `next build` succeeds without it — routes are only
+// imported, not executed, at build); cached so Next dev HMR and warm serverless
+// invocations reuse one pool instead of leaking a new one per reload/request.
 const globalForDb = globalThis as unknown as { __airportPool?: Pool };
-export const pool: Pool = globalForDb.__airportPool ?? createPool();
-if (!globalForDb.__airportPool) globalForDb.__airportPool = pool;
+export function getPool(): Pool {
+  if (!globalForDb.__airportPool) globalForDb.__airportPool = createPool();
+  return globalForDb.__airportPool;
+}
 
 // ── Transaction-scoped executor ───────────────────────────────────────────────
 
@@ -64,7 +68,7 @@ const txStore = new AsyncLocalStorage<PoolClient>();
 
 /** The active connection: the transaction client if inside tx(), else the pool. */
 function executor(): Pool | PoolClient {
-  return txStore.getStore() ?? pool;
+  return txStore.getStore() ?? getPool();
 }
 
 /** Rewrite SQLite-style `?` placeholders to Postgres `$1, $2, …` positional ones. */
@@ -116,24 +120,35 @@ export async function run(sql: string, params: readonly unknown[] = []): Promise
 export async function tx<T>(fn: () => Promise<T>): Promise<T> {
   if (txStore.getStore()) return fn(); // ponytail: nested tx() joins the outer transaction.
 
-  const client = await pool.connect();
+  const client = await getPool().connect();
+  let rollbackFailed = false;
   try {
     await client.query("BEGIN");
     const result = await txStore.run(client, fn);
     await client.query("COMMIT");
     return result;
   } catch (e) {
-    await client.query("ROLLBACK");
+    // Roll back, but never let a failing ROLLBACK mask the original error.
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      rollbackFailed = true;
+    }
     throw e;
   } finally {
-    client.release();
+    // Passing an error to release() makes node-postgres DISCARD the connection
+    // rather than return a poisoned (un-rolled-back/aborted) one to the pool.
+    client.release(rollbackFailed ? new Error("rollback failed; discarding connection") : undefined);
   }
 }
 
 // ── Schema (applied once by scripts/db-setup.ts, not on import) ────────────────
-// PRD §11 + design §4/§13. Postgres-compatible: TEXT/INTEGER/REAL are native
-// types, `IF NOT EXISTS`, quoted `"window"`, and TEXT-ref columns all carry over
-// unchanged from the original SQLite schema.
+// PRD §11 + design §4/§13. Postgres-adapted from the original SQLite schema:
+// geospatial/measurement columns use DOUBLE PRECISION because SQLite DOUBLE PRECISION is an
+// 8-byte double, whereas Postgres DOUBLE PRECISION is single-precision float4 and would
+// silently drop sub-meter GPS precision. `IF NOT EXISTS`, quoted `"window"`,
+// TEXT-ref columns, a ticket_seq sequence, and UNIQUE constraints carry the
+// integrity rules.
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS airports (
@@ -153,8 +168,10 @@ CREATE TABLE IF NOT EXISTS runways (
   designation           TEXT NOT NULL,
   length                TEXT,
   description           TEXT,
-  length_m              REAL,
-  threshold_heading_deg REAL,
+  length_m              DOUBLE PRECISION,
+  threshold_heading_deg DOUBLE PRECISION,
+  threshold_lat         DOUBLE PRECISION,
+  threshold_lng         DOUBLE PRECISION,
   active_status         TEXT,
   created_at            TEXT NOT NULL
 );
@@ -163,8 +180,8 @@ CREATE TABLE IF NOT EXISTS zones (
   id              TEXT PRIMARY KEY,
   runway_id       TEXT NOT NULL REFERENCES runways(id),
   name            TEXT NOT NULL,
-  station_start_m REAL,
-  station_end_m   REAL,
+  station_start_m DOUBLE PRECISION,
+  station_end_m   DOUBLE PRECISION,
   polygon_json    TEXT,
   notes           TEXT,
   created_at      TEXT NOT NULL
@@ -189,7 +206,8 @@ CREATE TABLE IF NOT EXISTS inspections (
   started_at     TEXT,
   completed_at   TEXT,
   created_by     TEXT,
-  created_at     TEXT NOT NULL
+  created_at     TEXT NOT NULL,
+  UNIQUE (airport_id, scheduled_time)
 );
 
 CREATE TABLE IF NOT EXISTS inspection_jobs (
@@ -201,7 +219,8 @@ CREATE TABLE IF NOT EXISTS inspection_jobs (
   completed_at  TEXT,
   image_count   INTEGER NOT NULL DEFAULT 0,
   issue_count   INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  UNIQUE (inspection_id, runway_id)
 );
 
 CREATE TABLE IF NOT EXISTS images (
@@ -210,10 +229,10 @@ CREATE TABLE IF NOT EXISTS images (
   runway_id        TEXT NOT NULL REFERENCES runways(id),
   zone_id          TEXT REFERENCES zones(id),
   file_url         TEXT NOT NULL,
-  gps_lat          REAL,
-  gps_lng          REAL,
-  station_m        REAL,
-  lateral_offset_m REAL,
+  gps_lat          DOUBLE PRECISION,
+  gps_lng          DOUBLE PRECISION,
+  station_m        DOUBLE PRECISION,
+  lateral_offset_m DOUBLE PRECISION,
   geom_confidence  TEXT NOT NULL DEFAULT 'manual',
   timestamp        TEXT NOT NULL,
   source_file      TEXT,
@@ -228,17 +247,17 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
   zone_id             TEXT REFERENCES zones(id),
   image_id            TEXT REFERENCES images(id),
   issue_type          TEXT NOT NULL,
-  confidence          REAL NOT NULL,
+  confidence          DOUBLE PRECISION NOT NULL,
   confidence_band     TEXT NOT NULL,
   severity            TEXT NOT NULL,
   severity_model      TEXT,
   status              TEXT NOT NULL DEFAULT 'pending',
-  station_m           REAL,
-  lateral_offset_m    REAL,
-  size_m              REAL,
+  station_m           DOUBLE PRECISION,
+  lateral_offset_m    DOUBLE PRECISION,
+  size_m              DOUBLE PRECISION,
   bbox_json           TEXT NOT NULL,
-  gps_lat             REAL,
-  gps_lng             REAL,
+  gps_lat             DOUBLE PRECISION,
+  gps_lng             DOUBLE PRECISION,
   ai_draft_text       TEXT NOT NULL,
   draft               TEXT NOT NULL,
   inspector_notes     TEXT NOT NULL DEFAULT '',
@@ -253,7 +272,7 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
 
 CREATE TABLE IF NOT EXISTS tickets (
   id                TEXT PRIMARY KEY,
-  issue_id          TEXT NOT NULL REFERENCES issue_candidates(id),
+  issue_id          TEXT NOT NULL UNIQUE REFERENCES issue_candidates(id),
   runway_id         TEXT NOT NULL REFERENCES runways(id),
   zone_id           TEXT REFERENCES zones(id),
   zone              TEXT,
@@ -268,6 +287,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   repaired_at       TEXT,
   closed_at         TEXT
 );
+
+-- WO ticket numbers come from a sequence: race-free and monotonic (gaps on
+-- rollback are fine). START 1042 → the first approved ticket is WO-1042.
+CREATE SEQUENCE IF NOT EXISTS ticket_seq START 1042;
 
 CREATE TABLE IF NOT EXISTS issue_status_history (
   id            TEXT PRIMARY KEY,

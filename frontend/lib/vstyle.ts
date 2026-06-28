@@ -8,13 +8,13 @@ export const BAR = "border-b border-[#262b2f] bg-[#16191c]";
 export const INPUT =
   "rounded-md border border-[#343a3f] bg-[#0f1214] text-[12px] text-[#e7eaec] placeholder:text-[#5b6166] focus:border-[#5b6166] focus:outline-none";
 export const BTN =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#343a3f] bg-[#121517] font-medium text-[#9aa1a6] transition-colors hover:bg-[#1b2024] hover:text-[#e7eaec] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#343a3f] bg-[#121517] font-medium text-[#9aa1a6] transition-colors hover:bg-[#1b1f22] hover:text-[#e7eaec] disabled:cursor-not-allowed disabled:opacity-40";
 // Primary = inverted, matching LogsView's active filter tab.
 export const BTN_PRIMARY =
   "inline-flex items-center justify-center gap-1.5 rounded-md bg-[#e7eaec] font-medium text-[#0b0d0e] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40";
 // Destructive action — signalled by the verb/icon + heavier weight, not red.
 export const BTN_DANGER =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#5b6166] bg-[#16191c] font-semibold text-[#e7eaec] transition-colors hover:bg-[#1b2024] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#5b6166] bg-[#16191c] font-semibold text-[#e7eaec] transition-colors hover:bg-[#1b1f22] disabled:cursor-not-allowed disabled:opacity-40";
 
 export const CHIP =
   "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide font-mono";

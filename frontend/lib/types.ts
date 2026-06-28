@@ -158,6 +158,8 @@ export interface Runway {
   description?: string;
   lengthM?: number;
   thresholdHeadingDeg?: number;
+  thresholdLat?: number; // threshold anchor — origin for station_m → map projection
+  thresholdLng?: number;
   activeStatus?: string;
   createdAt?: string;
 }
@@ -234,6 +236,7 @@ export interface IssueCandidate {
   runwayId: string;
   zoneId?: string;
   imageId?: string;
+  imageUrl?: string; // real captured photo URL (object storage), when present
   category: IssueCategory; // DB column issue_type
   zone?: string; // display label, joined from Zone.name
   confidence: number; // 0–1

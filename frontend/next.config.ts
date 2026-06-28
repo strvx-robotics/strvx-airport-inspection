@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Keep the native better-sqlite3 binding out of the bundler (Node runtime only).
-  serverExternalPackages: ["better-sqlite3"],
+  // pg is externalized by Next's built-in default server-external-packages list.
 };
 
 export default nextConfig;

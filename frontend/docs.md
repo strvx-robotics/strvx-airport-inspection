@@ -11,7 +11,6 @@ cd frontend
 npm install   # first time
 npm run dev   # http://localhost:3000
 ```
-
 ## Layout
 
 - `app/` — routes: `/` overview, `/runway/[id]`, `/issue/[id]`, `/ticket/[id]`

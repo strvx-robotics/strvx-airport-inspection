@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Upload, ImagePlus, ChevronRight, CheckCircle2 } from "lucide-react";
 import Badge from "@/components/Badge";
+import RunwayImage from "@/components/RunwayImage";
 import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
 import { CATEGORY, confidenceBand, pct } from "@/lib/ui";
-import { RUNWAYS } from "@/lib/seed";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, INPUT, BTN, BTN_PRIMARY, EYEBROW, H2 } from "@/lib/vstyle";
 import type { UploadResult } from "@/lib/api";
@@ -18,7 +18,7 @@ export default function UploadPage() {
   const router = useRouter();
   const { overview } = useOverview();
   const { role, loadOverview } = useStore();
-  const runways = overview?.runways.map((r) => r.runway) ?? RUNWAYS;
+  const runways = overview?.runways.map((r) => r.runway) ?? [];
 
   const [runwayId, setRunwayId] = useState("");
   const [zoneId, setZoneId] = useState("");
@@ -235,6 +235,14 @@ export default function UploadPage() {
               </div>
             ) : (
               <div className="space-y-2">
+                {result.image.fileUrl && (
+                  <RunwayImage
+                    src={result.image.fileUrl}
+                    bbox={result.candidates[0]?.bbox}
+                    label={result.candidates[0] ? CATEGORY[result.candidates[0].category] : undefined}
+                    heightClass="h-44"
+                  />
+                )}
                 {result.candidates.map((c) => {
                   const band = confidenceBand(c.confidence);
                   return (

@@ -49,6 +49,13 @@ export async function putImage(
   contentType: string,
 ): Promise<string> {
   if (!BUCKET) {
+    // No bucket is only valid in local dev. In production this would write to the
+    // read-only/ephemeral serverless filesystem and silently lose images, so fail loudly.
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      throw new Error(
+        "S3_BUCKET is not configured. Set S3_BUCKET (+ S3_* credentials and S3_PUBLIC_BASE_URL) for production image storage.",
+      );
+    }
     // ponytail: local-dev fallback to public/uploads — no bucket needed for dev.
     const dir = join(process.cwd(), "public", "uploads");
     await mkdir(dir, { recursive: true });
@@ -65,10 +72,16 @@ export async function putImage(
     }),
   );
 
+  // The browser-loadable public URL scheme differs per provider (R2 r2.dev/custom
+  // domain, Supabase /storage/v1/object/public/...), and is NOT the S3 API
+  // endpoint — so require it explicitly rather than guessing and persisting a
+  // broken URL into images.file_url.
   const base = process.env.S3_PUBLIC_BASE_URL;
-  if (base) return `${base.replace(/\/+$/, "")}/${key}`;
-  // Best-effort public URL when no CDN/base is configured. Setting
-  // S3_PUBLIC_BASE_URL (the bucket's public domain) is recommended in prod.
-  const endpoint = process.env.S3_ENDPOINT?.replace(/\/+$/, "");
-  return endpoint ? `${endpoint}/${BUCKET}/${key}` : `/${BUCKET}/${key}`;
+  if (!base) {
+    throw new Error(
+      "S3_PUBLIC_BASE_URL is required when S3_BUCKET is set — the bucket's public URL base " +
+        "(e.g. an R2 r2.dev/custom domain, or Supabase /storage/v1/object/public/<bucket>).",
+    );
+  }
+  return `${base.replace(/\/+$/, "")}/${key}`;
 }

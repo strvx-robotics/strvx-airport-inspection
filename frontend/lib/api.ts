@@ -209,6 +209,8 @@ export function uploadImage(input: {
 
 export const getTicket = (id: string) =>
   jsonReq<TicketDetail>(`/api/tickets/${id}`);
+export const listTickets = () =>
+  jsonReq<{ tickets: Ticket[] }>("/api/tickets").then((r) => r.tickets);
 export const repairTicket = (id: string, notes?: string) =>
   post<{ ticket: Ticket }>(`/api/tickets/${id}/repair`, {
     notes,

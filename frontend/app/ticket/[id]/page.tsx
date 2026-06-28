@@ -125,7 +125,7 @@ export default function TicketPage() {
               </h3>
             </div>
             <div className="p-3">
-              <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} />
+              <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} src={issue.imageUrl} />
             </div>
           </section>
         )}

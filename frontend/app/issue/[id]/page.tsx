@@ -135,7 +135,7 @@ export default function IssueDetail() {
       <div className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
         {/* left — the evidence */}
         <div className="space-y-3">
-          <RunwayImage bbox={issue.bbox} label={CATEGORY[issue.category]} />
+          <RunwayImage bbox={issue.bbox} label={CATEGORY[issue.category]} src={issue.imageUrl} />
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={band.tone}>{band.label}</Badge>
             <span className="font-mono text-[12px] text-[#9aa1a6]">

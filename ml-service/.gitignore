@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+install.log
+# YOLO weights — downloaded on boot / baked into the image; don't commit large binaries.
+*.pt
+models/
+runs/

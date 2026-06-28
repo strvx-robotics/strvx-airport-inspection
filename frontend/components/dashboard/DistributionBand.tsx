@@ -1,25 +1,13 @@
 import type { ReactNode } from "react";
 import type { IssueBreakdown } from "@/lib/api";
-import type {
-  ConfidenceBand,
-  IssueCategory,
-  IssueStatus,
-  Severity,
-} from "@/lib/types";
-import { CATEGORY, DECISION, SEVERITY } from "@/lib/ui";
+import type { IssueStatus, Severity } from "@/lib/types";
+import { DECISION, SEVERITY } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, EYEBROW, MUTED, DOT } from "@/lib/vstyle";
 
 // Fixed display order, loudest first where it matters.
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low"];
 const STATUS_ORDER: IssueStatus[] = ["pending", "manual_review", "approved", "rejected"];
-const CATEGORY_ORDER: IssueCategory[] = ["fod", "pavement", "marking", "lighting"];
-const BAND_ORDER: ConfidenceBand[] = ["high", "medium", "low"];
-const BAND_LABEL: Record<ConfidenceBand, string> = {
-  high: "Likely issue",
-  medium: "Needs review",
-  low: "Low confidence",
-};
 
 /** One labelled magnitude bar — width is the only signal (no hue). */
 function DistBar({
@@ -76,7 +64,7 @@ export default function DistributionBand({
           No issues detected this pass.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-px bg-[#262b2f] sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-px bg-[#262b2f] sm:grid-cols-2">
           <Panel caption="By severity">
             {SEVERITY_ORDER.map((s) => (
               <DistBar
@@ -91,16 +79,6 @@ export default function DistributionBand({
           <Panel caption="By review status">
             {STATUS_ORDER.map((s) => (
               <DistBar key={s} label={DECISION[s].label} value={breakdown.byStatus[s]} total={total} />
-            ))}
-          </Panel>
-          <Panel caption="By category">
-            {CATEGORY_ORDER.map((c) => (
-              <DistBar key={c} label={CATEGORY[c]} value={breakdown.byCategory[c]} total={total} />
-            ))}
-          </Panel>
-          <Panel caption="By confidence">
-            {BAND_ORDER.map((b) => (
-              <DistBar key={b} label={BAND_LABEL[b]} value={breakdown.byBand[b]} total={total} />
             ))}
           </Panel>
         </div>

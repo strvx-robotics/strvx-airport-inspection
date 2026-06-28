@@ -16,8 +16,9 @@ const TS = "2026-06-22T06:30:00.000Z";
 /**
  * Idempotent seed: one airport (Augusta Regional / AGS), 3 runways matching the
  * Phase-0 fixtures, zones, demo users, a 6 AM inspection with per-runway jobs,
- * and the two pending issue candidates on RWY 08-26 (each with immutable
- * ai_draft_text). No tickets — the demo starts clean. No-op if already seeded.
+ * the two pending issue candidates on RWY 08-26 (each with immutable
+ * ai_draft_text), and three work orders (sent / repaired / closed) backed by
+ * approved issues. No-op if already seeded.
  */
 export async function seedDatabase(): Promise<void> {
   const seeded = await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM airports");
@@ -40,15 +41,21 @@ export async function seedDatabase(): Promise<void> {
     await insUser("u_inspector", "jrivera", "J. Rivera · Inspector", "inspector");
     await insUser("u_maint", "maintenance", "Field Maintenance", "maintenance");
 
-    const insRunway = (id: string, name: string, designation: string, length: string, lengthM: number) =>
+    // Threshold anchors are demo coordinates near Augusta Regional (AGS) so the
+    // map renders; swap for surveyed thresholds when available. Heading is derived
+    // from the designation (17→170°, 08→80°, 11→110°), so it isn't stored here.
+    const insRunway = (
+      id: string, name: string, designation: string, length: string, lengthM: number,
+      thrLat: number, thrLng: number,
+    ) =>
       run(
-        `INSERT INTO runways (id, airport_id, name, designation, length, length_m, active_status, created_at)
-         VALUES (?, 'ags', ?, ?, ?, ?, 'active', ?)`,
-        [id, name, designation, length, lengthM, TS],
+        `INSERT INTO runways (id, airport_id, name, designation, length, length_m, threshold_lat, threshold_lng, active_status, created_at)
+         VALUES (?, 'ags', ?, ?, ?, ?, ?, ?, 'active', ?)`,
+        [id, name, designation, length, lengthM, thrLat, thrLng, TS],
       );
-    await insRunway("r1", "Runway 1", "17 – 35", "8,001 ft", 2439);
-    await insRunway("r2", "Runway 2", "08 – 26", "6,000 ft", 1829);
-    await insRunway("r3", "Runway 3", "11 – 29", "5,001 ft", 1524);
+    await insRunway("r1", "Runway 1", "17 – 35", "8,001 ft", 2439, 33.371, -81.967);
+    await insRunway("r2", "Runway 2", "08 – 26", "6,000 ft", 1829, 33.3675, -81.9665);
+    await insRunway("r3", "Runway 3", "11 – 29", "5,001 ft", 1524, 33.372, -81.965);
 
     const insZone = (id: string, runwayId: string, name: string, start: number, end: number) =>
       run(
@@ -131,5 +138,58 @@ export async function seedDatabase(): Promise<void> {
       );
     await insHist("ish_i1", "i1");
     await insHist("ish_i2", "i2");
+
+    // ── Work orders ───────────────────────────────────────────────────────
+    // Three approved issues → maintenance tickets spanning the lifecycle (sent,
+    // repaired/awaiting reinspection, closed). i1/i2 stay pending for the review
+    // demo. Ticket ids come from ticket_seq, exactly like approveIssue().
+    const insApprovedIssue = (
+      id: string, runwayId: string, zoneId: string | null, category: string,
+      confidence: number, severity: string, draft: string,
+    ) =>
+      run(
+        `INSERT INTO issue_candidates
+           (id, inspection_id, runway_id, zone_id, image_id, issue_type, confidence, confidence_band,
+            severity, severity_model, status, bbox_json, ai_draft_text, draft, inspector_notes,
+            model_notes, created_by, created_at)
+         VALUES
+           (?, 'insp_seed', ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', '{"x":40,"y":40,"w":14,"h":14}',
+            ?, ?, '', 'STRVX Detector', 'STRVX Detector', ?)`,
+        [id, runwayId, zoneId, category, confidence, bandFor(confidence), severity, severity, draft, draft, TS],
+      );
+
+    const insTicket = async (
+      issueId: string, runwayId: string, zoneId: string | null, zone: string,
+      category: string, severity: string, status: string, description: string,
+      repairedAt: string | null, closedAt: string | null,
+    ) => {
+      const seq = await one<{ id: string }>("SELECT 'WO-' || nextval('ticket_seq') AS id");
+      const tid = seq!.id;
+      await run(
+        `INSERT INTO tickets
+           (id, issue_id, runway_id, zone_id, zone, category, status, description, severity,
+            assigned_to, created_by, maintenance_notes, created_at, repaired_at, closed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Field Maintenance', 'u_inspector', '', ?, ?, ?)`,
+        [tid, issueId, runwayId, zoneId, zone, category, status, description, severity, TS, repairedAt, closedAt],
+      );
+      await run("UPDATE issue_candidates SET ticket_id = ? WHERE id = ?", [tid, issueId]);
+      await run(
+        `INSERT INTO ticket_status_history (id, ticket_id, action, from_status, to_status, note, actor, actor_role, ts)
+         VALUES (?, ?, 'create', NULL, 'sent', 'Approved & sent to maintenance', 'J. Rivera · Inspector', 'inspector', ?)`,
+        [`tsh_${tid}`, tid, TS],
+      );
+    };
+
+    await insApprovedIssue("wo_iss_1", "r1", null, "marking", 0.78, "medium",
+      "Faded centerline marking near midpoint; recommend remarking before next operating window.");
+    await insApprovedIssue("wo_iss_2", "r1", "z_r1_b", "pavement", 0.9, "high", PAVEMENT_DRAFT);
+    await insApprovedIssue("wo_iss_3", "r3", "z_r3_a", "fod", 0.71, "medium", FOD_DRAFT);
+
+    await insTicket("wo_iss_1", "r1", null, "", "marking", "medium", "sent",
+      "Faded centerline marking near midpoint; recommend remarking before next operating window.", null, null);
+    await insTicket("wo_iss_2", "r1", "z_r1_b", "Zone B · midfield", "pavement", "high", "repaired",
+      PAVEMENT_DRAFT, TS, null);
+    await insTicket("wo_iss_3", "r3", "z_r3_a", "Zone A · threshold", "fod", "medium", "closed",
+      FOD_DRAFT, TS, TS);
   });
 }

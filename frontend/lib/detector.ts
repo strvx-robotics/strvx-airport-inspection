@@ -13,7 +13,7 @@ export interface Detection {
   confidence: number;
   bbox: BBox;
   severity: Severity;
-  sizeM: number;
+  sizeM?: number; // unknown without ground scale (the CV model omits it)
   modelNotes: string;
 }
 

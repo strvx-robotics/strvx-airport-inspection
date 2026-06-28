@@ -31,18 +31,52 @@ Every human decision is captured as a training signal:
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind · SQLite · server-side LLM drafting
-(Anthropic, with a templated fallback so it runs with no API key).
+Next.js (App Router) · TypeScript · Tailwind · Postgres (node-postgres) ·
+S3-compatible object storage · server-side LLM drafting (Anthropic, with a
+templated fallback so it runs with no API key).
 
 ## Run
 
+Requires a Postgres database. The same code runs against a local Postgres in dev,
+Supabase / Neon / Vercel Postgres in the cloud, and AWS RDS later — only
+`DATABASE_URL` changes. A one-line local container:
+
 ```bash
-npm run setup     # installs frontend deps
-npm run dev       # → http://localhost:3000
+docker run -d --name strvx-pg -e POSTGRES_PASSWORD=strvx -e POSTGRES_DB=strvx -p 54432:5432 postgres:17-alpine
 ```
 
-Optional, for real LLM-drafted tickets: set `ANTHROPIC_API_KEY` in `frontend/.env.local`
-(otherwise drafts use a deterministic template).
+```bash
+npm run setup       # installs frontend deps
+# create frontend/.env.local with:
+#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
+npm run db:setup    # apply schema + idempotent seed
+npm run dev         # → http://localhost:3000
+```
+
+Optional `frontend/.env.local` settings:
+- `ANTHROPIC_API_KEY` — real LLM-drafted tickets (else a deterministic template).
+- `S3_BUCKET` (+ `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
+  `S3_PUBLIC_BASE_URL`) — durable image storage. Unset in dev → uploads write to `public/uploads`.
+- `NEXT_PUBLIC_DRONE_STREAM_URL` — HLS URL for the **Live** drone-POV view. Unset → "No signal".
+
+### Live drone feed (DJI Mavic → RTMP → HLS)
+
+Browsers can't play raw RTMP, so a media server republishes the drone's RTMP as HLS.
+[MediaMTX](https://github.com/bluenviron/mediamtx) is a single binary that does this with no config:
+
+```bash
+./mediamtx                                   # RTMP in :1935, HLS out :8888
+```
+
+In the DJI Fly app, set Live Streaming → **RTMP** → `rtmp://<host>:1935/drone`, then:
+
+```bash
+# frontend/.env.local
+NEXT_PUBLIC_DRONE_STREAM_URL=http://<host>:8888/drone/index.m3u8
+```
+
+The **Live** tab (Inspector/Admin) plays it — native HLS on Safari, hls.js elsewhere — and
+auto-reconnects until the drone starts streaming.
 
 ## Status
 

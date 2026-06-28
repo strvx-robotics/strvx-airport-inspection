@@ -5,10 +5,11 @@
 //   npm run db:setup
 // against whatever DATABASE_URL points at (local container, Supabase, RDS).
 
-import { pool, SCHEMA } from "../lib/db";
+import { getPool, SCHEMA } from "../lib/db";
 import { seedDatabase } from "../lib/seed-db";
 
 async function main(): Promise<void> {
+  const pool = getPool();
   // SCHEMA is a multi-statement, parameter-free DDL string — valid as one query.
   await pool.query(SCHEMA);
   console.log("✓ schema applied");
