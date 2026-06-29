@@ -94,15 +94,17 @@ export async function seedDatabase(): Promise<void> {
     await insJob("job_r3", "r3", 5, 0);
 
     const insImage = (
-      id: string, jobId: string, runwayId: string, zoneId: string, lat: number, lng: number, sourceFile: string,
+      id: string, jobId: string, runwayId: string, zoneId: string, lat: number, lng: number,
+      sourceFile: string, fileUrl: string,
     ) =>
       run(
         `INSERT INTO images (id, job_id, runway_id, zone_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_at)
-         VALUES (?, ?, ?, ?, '', ?, ?, 'gps', ?, ?, ?)`,
-        [id, jobId, runwayId, zoneId, lat, lng, TS_COMPLETED, sourceFile, TS],
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'gps', ?, ?, ?)`,
+        [id, jobId, runwayId, zoneId, fileUrl, lat, lng, TS_COMPLETED, sourceFile, TS],
       );
-    await insImage("img1", "job_r2", "r2", "z_r2_b", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.jpg");
-    await insImage("img2", "job_r2", "r2", "z_r2_a", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.jpg");
+    // Captured-frame stand-ins shipped in public/seed (real uploads replace these).
+    await insImage("img1", "job_r2", "r2", "z_r2_b", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.jpg", "/seed/pavement.svg");
+    await insImage("img2", "job_r2", "r2", "z_r2_a", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.jpg", "/seed/fod.svg");
 
     const insIssue = (
       id: string, runwayId: string, zoneId: string, imageId: string, category: string,

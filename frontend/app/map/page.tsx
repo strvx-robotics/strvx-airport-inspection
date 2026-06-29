@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Map as MapIcon } from "lucide-react";
 import * as api from "@/lib/api";
 import type { RunwayLayer } from "@/components/map/AirportMap";
+import type { Drone } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { EYEBROW, MUTED } from "@/lib/vstyle";
 
@@ -16,6 +17,7 @@ const AirportMap = dynamic(() => import("@/components/map/AirportMap"), {
 
 export default function MapPage() {
   const [layers, setLayers] = useState<RunwayLayer[] | null>(null);
+  const [drones, setDrones] = useState<Drone[]>([]);
   const [airportLabel, setAirportLabel] = useState("");
 
   useEffect(() => {
@@ -23,6 +25,8 @@ export default function MapPage() {
     (async () => {
       const overview = await api.getOverview();
       if (live) setAirportLabel(`${overview.airport.name} · ${overview.airport.code}`);
+      // Live aircraft positions — fetched in parallel, non-blocking for the layers.
+      api.listDrones().then((ds) => live && setDrones(ds)).catch(() => undefined);
       const ids = overview.runways.map((r) => r.runway.id);
       const built = await Promise.all(
         ids.map(async (id) => {
@@ -58,7 +62,7 @@ export default function MapPage() {
         {layers === null ? (
           <div className="h-full w-full animate-pulse rounded-md bg-[#f3f5f7]" />
         ) : (
-          <AirportMap layers={layers} />
+          <AirportMap layers={layers} drones={drones} />
         )}
       </div>
     </div>

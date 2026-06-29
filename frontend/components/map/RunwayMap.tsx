@@ -6,7 +6,7 @@ import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
 import type { IssueCandidate, LngLat, Runway, Severity, Zone } from "@/lib/types";
-import { CATEGORY, SEVERITY } from "@/lib/ui";
+import { CATEGORY, DECISION, SEVERITY } from "@/lib/ui";
 import {
   centerline,
   issuePosition,
@@ -16,8 +16,10 @@ import {
 } from "@/lib/runwayGeom";
 import { basemapStyle } from "./mapStyle";
 
-// Pin radius grows with severity; fill stays white (monochrome) — size carries rank.
+// Pin radius grows with severity; color (below) also carries severity. Matches
+// AirportMap so pins read identically across both maps.
 const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, critical: 8 };
+const SEV_COLOR: Record<Severity, string> = { low: "#9aa1a6", medium: "#caa44e", high: "#c8762f", critical: "#b23b32" };
 
 const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
 const ring = (pts: LngLat[]): [number, number][] => pts.map(pos);
@@ -55,17 +57,25 @@ function buildSources(runway: Runway, issues: IssueCandidate[], zones: Zone[]) {
     issues
       .map((i) => {
         const p = issuePosition(runway, i);
-        return p
-          ? ({
-              type: "Feature",
-              properties: {
-                id: i.id,
-                radius: SEV_RADIUS[i.severity],
-                label: `${CATEGORY[i.category]} · ${SEVERITY[i.severity].label}`,
-              },
-              geometry: { type: "Point", coordinates: pos(p) },
-            } as Feature<Geometry>)
-          : null;
+        if (!p) return null;
+        const color = SEV_COLOR[i.severity];
+        const pending = i.status === "pending" || i.status === "manual_review";
+        const rejected = i.status === "rejected";
+        return {
+          type: "Feature",
+          properties: {
+            id: i.id,
+            radius: SEV_RADIUS[i.severity],
+            // color carries severity; fill-style carries status — solid disc =
+            // approved, colored ring on white = awaiting review, muted = rejected.
+            fill: rejected ? "#c7cdd2" : pending ? "#fbfcfd" : color,
+            stroke: rejected ? "#9aa1a6" : pending ? color : "#fbfcfd",
+            strokeWidth: pending ? 2.5 : 1.5,
+            alpha: rejected ? 0.55 : 0.95,
+            label: `${CATEGORY[i.category]} · ${SEVERITY[i.severity].label} · ${DECISION[i.status].label}`,
+          },
+          geometry: { type: "Point", coordinates: pos(p) },
+        } as Feature<Geometry>;
       })
       .filter((f): f is Feature<Geometry> => f != null),
   );
@@ -137,10 +147,11 @@ export default function RunwayMap({
         source: "pins",
         paint: {
           "circle-radius": ["get", "radius"],
-          "circle-color": "#181b1e",
-          "circle-stroke-color": "#e9ecef",
-          "circle-stroke-width": 1.5,
-          "circle-opacity": 0.95,
+          "circle-color": ["get", "fill"],
+          "circle-stroke-color": ["get", "stroke"],
+          "circle-stroke-width": ["get", "strokeWidth"],
+          "circle-opacity": ["get", "alpha"],
+          "circle-stroke-opacity": ["get", "alpha"],
         },
       });
 

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Runway threshold inspection frame — foreign object debris">
+  <defs>
+    <linearGradient id="asph2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a3d41"/>
+      <stop offset="0.55" stop-color="#2e3135"/>
+      <stop offset="1" stop-color="#34373b"/>
+    </linearGradient>
+    <radialGradient id="metal" cx="0.4" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#f4f6f8"/>
+      <stop offset="0.45" stop-color="#b9c0c6"/>
+      <stop offset="1" stop-color="#6c747b"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#asph2)"/>
+  <!-- aggregate speckle (fixed positions — deterministic) -->
+  <g fill="#cfd2d4" opacity="0.10">
+    <circle cx="70" cy="60" r="2"/><circle cx="150" cy="290" r="2.4"/><circle cx="520" cy="70" r="2"/>
+    <circle cx="580" cy="300" r="3"/><circle cx="300" cy="50" r="1.6"/><circle cx="90" cy="210" r="1.8"/>
+    <circle cx="540" cy="200" r="2.2"/><circle cx="430" cy="310" r="1.6"/><circle cx="220" cy="300" r="2"/>
+    <circle cx="600" cy="140" r="1.6"/><circle cx="40" cy="130" r="2"/><circle cx="350" cy="320" r="1.8"/>
+  </g>
+  <!-- threshold bar markings, faint -->
+  <g fill="#cfd2d4" opacity="0.14">
+    <rect x="40" y="40" width="14" height="90" rx="2"/><rect x="70" y="40" width="14" height="90" rx="2"/>
+  </g>
+  <!-- metallic FOD object with cast shadow + specular glint -->
+  <ellipse cx="352" cy="208" rx="34" ry="14" fill="#0d0f11" opacity="0.55"/>
+  <path d="M322 196 l40 -10 l26 16 l-14 22 l-44 6 z" fill="url(#metal)" stroke="#e8edf1" stroke-width="1" stroke-opacity="0.5"/>
+  <ellipse cx="338" cy="194" rx="8" ry="3.4" fill="#ffffff" opacity="0.85"/>
+  <!-- AI detection box (medium severity → #caa44e) -->
+  <rect x="300" y="168" width="120" height="84" fill="none" stroke="#caa44e" stroke-width="3" stroke-dasharray="11 6" rx="3"/>
+  <rect x="300" y="144" width="116" height="22" fill="#caa44e"/>
+  <text x="309" y="160" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="700" fill="#1c1605">FOD · 68%</text>
+</svg>

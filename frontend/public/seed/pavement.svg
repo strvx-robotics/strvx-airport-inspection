@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Runway pavement inspection frame — transverse crack">
+  <defs>
+    <linearGradient id="asph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b3e42"/>
+      <stop offset="0.55" stop-color="#2f3236"/>
+      <stop offset="1" stop-color="#35383c"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#asph)"/>
+  <!-- aggregate speckle (fixed positions — deterministic) -->
+  <g fill="#cfd2d4" opacity="0.10">
+    <circle cx="60" cy="40" r="2"/><circle cx="140" cy="300" r="2.5"/><circle cx="500" cy="60" r="2"/>
+    <circle cx="590" cy="320" r="3"/><circle cx="320" cy="40" r="1.6"/><circle cx="80" cy="200" r="1.8"/>
+    <circle cx="560" cy="180" r="2.2"/><circle cx="420" cy="320" r="1.6"/><circle cx="240" cy="300" r="2"/>
+    <circle cx="610" cy="120" r="1.6"/><circle cx="30" cy="120" r="2"/><circle cx="360" cy="330" r="1.8"/>
+  </g>
+  <!-- faint runway edge marking -->
+  <rect x="-10" y="150" width="110" height="16" rx="2" fill="#cfd2d4" opacity="0.16"/>
+  <!-- transverse crack with spalling -->
+  <polyline points="180,118 246,158 298,150 358,198 420,206 498,250" fill="none" stroke="#141619" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+  <polyline points="246,158 268,134 292,172" fill="none" stroke="#141619" stroke-width="3.5" stroke-linecap="round" opacity="0.75"/>
+  <polyline points="358,198 372,176 392,196" fill="none" stroke="#141619" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+  <!-- AI detection box (high severity → #c8762f) -->
+  <rect x="196" y="116" width="268" height="122" fill="none" stroke="#c8762f" stroke-width="3" stroke-dasharray="11 6" rx="3"/>
+  <rect x="196" y="92" width="172" height="22" fill="#c8762f"/>
+  <text x="205" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="700" fill="#1b1205">PAVEMENT · 92%</text>
+</svg>
