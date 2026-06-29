@@ -78,6 +78,56 @@ NEXT_PUBLIC_DRONE_STREAM_URL=http://<host>:8888/drone/index.m3u8
 The **Live** tab (Inspector/Admin) plays it — native HLS on Safari, hls.js elsewhere — and
 auto-reconnects until the drone starts streaming.
 
+## Local dev setup (contributors)
+
+The app now runs as three local services: the **frontend** (Next.js, `:3000`),
+the **backend** (FastAPI, `:8080`, owns the data layer), and the **ml-service**
+(YOLO/VLM detection, `:8000`). All three share one Postgres. Env files hold
+secrets and are gitignored — each dev creates their own.
+
+**Start order: database → backend → frontend.** The frontend proxies API routes
+to the backend, so `BACKEND_URL` must point at a running backend.
+
+**1. Database** — one local container (or point `DATABASE_URL` at your own Postgres):
+
+```bash
+docker run -d --name strvx-pg -e POSTGRES_PASSWORD=strvx -e POSTGRES_DB=strvx -p 54432:5432 postgres:17-alpine
+```
+
+**2. Backend** (`:8080`):
+
+```bash
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env          # then edit:
+#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
+#   BACKEND_PORT=8080
+#   ML_SERVICE_URL=http://localhost:8000
+./run.sh
+```
+
+**3. Frontend** (`:3000`):
+
+```bash
+cd frontend
+npm install
+# create frontend/.env.local:
+#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
+#   BACKEND_URL=http://localhost:8080
+npm run db:setup              # applies schema + seed (incl. app_settings)
+npm run dev                   # → http://localhost:3000
+```
+
+**4. ml-service** (`:8000`) — only needed for detection work:
+
+```bash
+cd ml-service
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python download_models.py     # one-time: fetch detector weights
+.venv/bin/uvicorn app:app --port 8000
+# optional: ANTHROPIC_API_KEY in ml-service/.env for VLM markings/lighting
+```
+
 ## Status
 
 MVP — human-in-the-loop review with a stubbed detector and real persistence. Real
