@@ -104,6 +104,8 @@ cp .env.example .env          # then edit:
 #   BACKEND_PORT=8080
 #   ML_SERVICE_URL=http://localhost:8000
 ./run.sh
+# For backend code reload during development:
+./run.sh --reload
 ```
 
 **3. Frontend** (`:3000`):
