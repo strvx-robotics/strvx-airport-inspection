@@ -230,15 +230,25 @@ export const getTicket = (id: string) =>
   jsonReq<TicketDetail>(`/api/tickets/${id}`);
 export const listTickets = () =>
   jsonReq<{ tickets: Ticket[] }>("/api/tickets").then((r) => r.tickets);
+export const startTicket = (id: string) =>
+  post<{ ticket: Ticket }>(`/api/tickets/${id}/start`, { actor: actor() }).then(
+    (r) => r.ticket,
+  );
+export const saveTicketNotes = (id: string, notes: string) =>
+  post<{ ticket: Ticket }>(`/api/tickets/${id}/notes`, {
+    notes,
+    actor: actor(),
+  }).then((r) => r.ticket);
 export const repairTicket = (id: string, notes?: string) =>
   post<{ ticket: Ticket }>(`/api/tickets/${id}/repair`, {
     notes,
     actor: actor(),
   }).then((r) => r.ticket);
-export const closeTicket = (id: string) =>
-  post<{ ticket: Ticket }>(`/api/tickets/${id}/close`, { actor: actor() }).then(
-    (r) => r.ticket,
-  );
+export const closeTicket = (id: string, notes?: string) =>
+  post<{ ticket: Ticket }>(`/api/tickets/${id}/close`, {
+    notes,
+    actor: actor(),
+  }).then((r) => r.ticket);
 
 // ── Admin CRUD ────────────────────────────────────────────────────────────────
 

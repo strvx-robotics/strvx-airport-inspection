@@ -631,7 +631,7 @@ async function appendIssueHistory(row: {
 }
 
 async function appendTicketHistory(row: {
-  ticketId: string; action: "create" | "repair" | "close"; fromStatus?: string; toStatus?: string; note?: string; actor?: Actor;
+  ticketId: string; action: "create" | "start" | "note" | "repair" | "close"; fromStatus?: string; toStatus?: string; note?: string; actor?: Actor;
 }): Promise<void> {
   await run(
     `INSERT INTO ticket_status_history (id, ticket_id, action, from_status, to_status, note, actor, actor_role, ts)
@@ -753,6 +753,30 @@ export async function listTickets(): Promise<Ticket[]> {
   return (await all<TicketRow>(`${TICKET_SELECT} ORDER BY t.created_at DESC`)).map(toTicket);
 }
 
+/** Maintenance acknowledges / starts work: sent → in_progress. */
+export async function startTicket(id: string, actor?: Actor): Promise<Ticket> {
+  const ticket = await getTicket(id);
+  if (!ticket) throw new Error(`Ticket not found: ${id}`);
+  if (ticket.status !== "sent") throw new Error(`Cannot start a ${ticket.status} ticket`);
+  await tx(async () => {
+    await run("UPDATE tickets SET status = 'in_progress' WHERE id = ?", [id]);
+    await appendTicketHistory({ ticketId: id, action: "start", fromStatus: ticket.status, toStatus: "in_progress", note: "Work started", actor });
+  });
+  return (await getTicket(id))!;
+}
+
+/** Persist maintenance notes WITHOUT changing status (progress notes on an open ticket). */
+export async function updateTicketNotes(id: string, input: { notes: string }, actor?: Actor): Promise<Ticket> {
+  const ticket = await getTicket(id);
+  if (!ticket) throw new Error(`Ticket not found: ${id}`);
+  if (ticket.status === "closed") throw new Error("Cannot edit notes on a closed ticket");
+  await tx(async () => {
+    await run("UPDATE tickets SET maintenance_notes = ? WHERE id = ?", [input.notes, id]);
+    await appendTicketHistory({ ticketId: id, action: "note", fromStatus: ticket.status, toStatus: ticket.status, note: "Updated notes", actor });
+  });
+  return (await getTicket(id))!;
+}
+
 export async function repairTicket(id: string, input: { notes?: string }, actor?: Actor): Promise<Ticket> {
   const ticket = await getTicket(id);
   if (!ticket) throw new Error(`Ticket not found: ${id}`);
@@ -764,13 +788,17 @@ export async function repairTicket(id: string, input: { notes?: string }, actor?
   return (await getTicket(id))!;
 }
 
-export async function closeTicket(id: string, actor?: Actor): Promise<Ticket> {
+export async function closeTicket(id: string, input: { notes?: string }, actor?: Actor): Promise<Ticket> {
   const ticket = await getTicket(id);
   if (!ticket) throw new Error(`Ticket not found: ${id}`);
   if (ticket.status === "closed") return ticket;
   await tx(async () => {
-    await run("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?", [now(), id]);
-    await appendTicketHistory({ ticketId: id, action: "close", fromStatus: ticket.status, toStatus: "closed", note: "Closed after reinspection", actor });
+    // When the closer leaves a reinspection remark, persist it so nothing typed is dropped.
+    if (input.notes != null)
+      await run("UPDATE tickets SET status = 'closed', closed_at = ?, maintenance_notes = ? WHERE id = ?", [now(), input.notes, id]);
+    else
+      await run("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?", [now(), id]);
+    await appendTicketHistory({ ticketId: id, action: "close", fromStatus: ticket.status, toStatus: "closed", note: input.notes ? "Closed after reinspection with notes" : "Closed after reinspection", actor });
   });
   return (await getTicket(id))!;
 }

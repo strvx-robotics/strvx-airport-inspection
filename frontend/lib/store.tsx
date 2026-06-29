@@ -59,13 +59,19 @@ interface Store {
   ) => Promise<void>;
   manualReview: (id: string) => Promise<void>;
   editIssue: (id: string, patch: EditIssuePatch) => Promise<void>;
+  startTicket: (id: string) => Promise<void>;
+  saveTicketNotes: (id: string, notes: string) => Promise<void>;
   repairTicket: (id: string, notes?: string) => Promise<void>;
-  closeTicket: (id: string) => Promise<void>;
+  closeTicket: (id: string, notes?: string) => Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
 
 const ROLE_KEY = "strvx.role";
+
+/** How often live views re-pull from the server (the maintenance queue + ticket
+ *  detail). Matches the StatusBar heartbeat's lightweight-poll philosophy. */
+export const TICKET_POLL_MS = 10_000;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [role, setRoleState] = useState<UserRole>("inspector");
@@ -240,6 +246,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [issues, mergeIssue],
   );
 
+  const startTicket = useCallback(
+    async (id: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, { status: "in_progress" });
+      try {
+        mergeTicket(await api.startTicket(id));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
+
+  const saveTicketNotes = useCallback(
+    async (id: string, notes: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, { maintenanceNotes: notes });
+      try {
+        mergeTicket(await api.saveTicketNotes(id, notes));
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket],
+  );
+
   const repairTicket = useCallback(
     async (id: string, notes?: string) => {
       const prev = tickets[id];
@@ -259,11 +294,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const closeTicket = useCallback(
-    async (id: string) => {
+    async (id: string, notes?: string) => {
       const prev = tickets[id];
-      patchTicketLocal(setTickets, id, { status: "closed" });
+      patchTicketLocal(setTickets, id, {
+        status: "closed",
+        ...(notes !== undefined ? { maintenanceNotes: notes } : {}),
+      });
       try {
-        mergeTicket(await api.closeTicket(id));
+        mergeTicket(await api.closeTicket(id, notes));
         void loadOverview();
       } catch (err) {
         if (prev) mergeTicket(prev);
@@ -290,6 +328,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     rejectIssue,
     manualReview,
     editIssue,
+    startTicket,
+    saveTicketNotes,
     repairTicket,
     closeTicket,
   };
@@ -382,16 +422,27 @@ export function useTicketDetail(id: string) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    loadTicket(id)
-      .then((d) => {
-        if (d) issueIdRef.current = d.ticket.issueId;
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (live) setLoading(false);
-      });
+    const pull = () =>
+      loadTicket(id)
+        .then((d) => {
+          if (d) issueIdRef.current = d.ticket.issueId;
+        })
+        .catch(() => undefined);
+    pull().finally(() => {
+      if (live) setLoading(false);
+    });
+    // Keep the detail live so a viewer sees transitions made elsewhere (e.g. an
+    // inspector watching maintenance mark a work order repaired). Skip while the
+    // tab is hidden; catch up immediately on focus.
+    const beat = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void pull();
+    }, TICKET_POLL_MS);
+    const onFocus = () => void pull();
+    if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
     return () => {
       live = false;
+      clearInterval(beat);
+      if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
     };
   }, [id, loadTicket]);
   const ticket = tickets[id];

@@ -79,11 +79,76 @@ async def test_repair_keeps_existing_notes_when_none(seed):
 
 
 @pytest.mark.asyncio
+async def test_start_transitions_sent_to_in_progress(seed):
+    await _seed_issue_and_ticket(seed, status="sent")
+    await db.connect()
+    try:
+        t = await repo.start_ticket("WO-1042", Actor(role="maintenance"))
+        assert t.status == "in_progress"
+        h = await db.one("SELECT action, from_status, to_status FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
+        assert h["action"] == "start"
+        assert h["from_status"] == "sent"
+        assert h["to_status"] == "in_progress"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_non_sent(seed):
+    await _seed_issue_and_ticket(seed, status="repaired")
+    await db.connect()
+    try:
+        with pytest.raises(AppError, match="Cannot start a repaired ticket"):
+            await repo.start_ticket("WO-1042", Actor(role="maintenance"))
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_notes_keeps_status_and_records_history(seed):
+    await _seed_issue_and_ticket(seed, status="in_progress")
+    await db.connect()
+    try:
+        t = await repo.update_ticket_notes("WO-1042", "halfway done", Actor(role="maintenance"))
+        assert t.status == "in_progress"  # unchanged
+        assert t.maintenance_notes == "halfway done"
+        h = await db.one("SELECT action, from_status, to_status FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
+        assert h["action"] == "note"
+        assert h["from_status"] == "in_progress"
+        assert h["to_status"] == "in_progress"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_notes_rejects_closed(seed):
+    await _seed_issue_and_ticket(seed, status="closed")
+    await db.connect()
+    try:
+        with pytest.raises(AppError, match="Cannot edit notes on a closed ticket"):
+            await repo.update_ticket_notes("WO-1042", "too late", Actor(role="maintenance"))
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_close_with_notes_persists_them(seed):
+    await _seed_issue_and_ticket(seed, status="repaired")
+    await db.connect()
+    try:
+        t = await repo.close_ticket("WO-1042", "reinspected, looks good", Actor(role="inspector"))
+        assert t.status == "closed"
+        assert t.maintenance_notes == "reinspected, looks good"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_close_is_idempotent(seed):
     await _seed_issue_and_ticket(seed, status="closed")
     await db.connect()
     try:
-        t = await repo.close_ticket("WO-1042", Actor(role="admin"))
+        t = await repo.close_ticket("WO-1042", None, Actor(role="admin"))
         assert t.status == "closed"
         # No new history row for an already-closed ticket.
         n = await db.one("SELECT count(*) AS c FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
@@ -97,7 +162,7 @@ async def test_close_repaired_ticket(seed):
     await _seed_issue_and_ticket(seed, status="repaired")
     await db.connect()
     try:
-        t = await repo.close_ticket("WO-1042", Actor(role="inspector"))
+        t = await repo.close_ticket("WO-1042", None, Actor(role="inspector"))
         assert t.status == "closed"
         assert t.closed_at is not None
         h = await db.one("SELECT action FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")

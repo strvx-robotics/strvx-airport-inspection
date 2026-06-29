@@ -81,3 +81,45 @@ async def test_close_returns_wrapped_ticket(seed, client):
     t = res.json()["ticket"]
     assert t["status"] == "closed"
     assert t["closedAt"].endswith("Z")
+
+
+@pytest.mark.asyncio
+async def test_start_returns_in_progress(seed, client):
+    await _seed_ticket(seed, status="sent")
+    res = await client.post("/tickets/WO-1042/start", json={"actor": {"role": "maintenance"}})
+    assert res.status_code == 200
+    assert res.json()["ticket"]["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_notes_persists_without_status_change(seed, client):
+    await _seed_ticket(seed, status="sent")
+    res = await client.post(
+        "/tickets/WO-1042/notes",
+        json={"notes": "scheduled crew", "actor": {"role": "maintenance"}},
+    )
+    assert res.status_code == 200
+    t = res.json()["ticket"]
+    assert t["status"] == "sent"  # unchanged
+    assert t["maintenanceNotes"] == "scheduled crew"
+
+
+@pytest.mark.asyncio
+async def test_notes_on_closed_maps_400(seed, client):
+    await _seed_ticket(seed, status="closed")
+    res = await client.post("/tickets/WO-1042/notes", json={"notes": "x", "actor": {"role": "maintenance"}})
+    assert res.status_code == 400
+    assert res.json() == {"error": "Cannot edit notes on a closed ticket"}
+
+
+@pytest.mark.asyncio
+async def test_close_with_notes_persists(seed, client):
+    await _seed_ticket(seed, status="repaired")
+    res = await client.post(
+        "/tickets/WO-1042/close",
+        json={"notes": "signed off", "actor": {"role": "inspector"}},
+    )
+    assert res.status_code == 200
+    t = res.json()["ticket"]
+    assert t["status"] == "closed"
+    assert t["maintenanceNotes"] == "signed off"

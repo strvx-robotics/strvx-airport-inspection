@@ -334,7 +334,13 @@ export interface IssueStatusHistory {
   ts: string;
 }
 
-export type TicketHistoryAction = "create" | "repair" | "close" | "reject";
+export type TicketHistoryAction =
+  | "create"
+  | "start"
+  | "note"
+  | "repair"
+  | "close"
+  | "reject";
 
 export interface TicketStatusHistory {
   id: string;

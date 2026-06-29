@@ -26,6 +26,20 @@ async def get_ticket_detail_route(id: str) -> dict:
     return out
 
 
+@router.post("/tickets/{id}/start")
+async def post_start(id: str, request: Request) -> dict:
+    body = await _json(request)
+    ticket = await repo.start_ticket(id, actor_from(request, body))
+    return {"ticket": dump(ticket)}
+
+
+@router.post("/tickets/{id}/notes")
+async def post_notes(id: str, request: Request) -> dict:
+    body = await _json(request)
+    ticket = await repo.update_ticket_notes(id, body.get("notes") or "", actor_from(request, body))
+    return {"ticket": dump(ticket)}
+
+
 @router.post("/tickets/{id}/repair")
 async def post_repair(id: str, request: Request) -> dict:
     body = await _json(request)
@@ -36,7 +50,7 @@ async def post_repair(id: str, request: Request) -> dict:
 @router.post("/tickets/{id}/close")
 async def post_close(id: str, request: Request) -> dict:
     body = await _json(request)
-    ticket = await repo.close_ticket(id, actor_from(request, body))
+    ticket = await repo.close_ticket(id, body.get("notes"), actor_from(request, body))
     return {"ticket": dump(ticket)}
 
 

@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Lock,
   ClipboardCheck,
+  Play,
+  Save,
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
@@ -21,9 +23,10 @@ import { CARD, BAR, INPUT, BTN, BTN_PRIMARY, EYEBROW, H2, MUTED, LINK, DOT } fro
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
   const { ticket, issue, runway, loading } = useTicketDetail(id);
-  const { role, repairTicket, closeTicket } = useStore();
+  const { role, startTicket, saveTicketNotes, repairTicket, closeTicket } = useStore();
   const [notes, setNotesLocal] = useState("");
   const [synced, setSynced] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // Seed the repair-notes box from the ticket once it loads.
   useEffect(() => {
@@ -54,6 +57,15 @@ export default function TicketPage() {
   const severity = SEVERITY[ticket.severity];
   const canWork = role === "maintenance" || role === "admin";
   const workOrder = buildWorkOrder(ticket, issue, runway);
+  const editable = canWork && ticket.status !== "closed";
+  const dirty = notes !== (ticket.maintenanceNotes ?? "");
+  const run = (fn: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    void fn()
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
@@ -124,17 +136,33 @@ export default function TicketPage() {
             <p className="px-4 py-3 text-[13px] leading-relaxed text-[#3f4448]">{ticket.description}</p>
           </section>
 
-          {/* repair notes */}
+          {/* maintenance notes */}
           <div className="space-y-1.5">
-            <label className={EYEBROW}>Repair notes</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className={EYEBROW}>Maintenance notes</label>
+              {editable && (
+                <button
+                  onClick={() => run(() => saveTicketNotes(ticket.id, notes))}
+                  disabled={!dirty || busy}
+                  className={cn("h-7 px-2 text-[11px] disabled:opacity-40", BTN)}
+                >
+                  <Save size={12} strokeWidth={2} /> Save notes
+                </button>
+              )}
+            </div>
             <textarea
               value={notes}
               disabled={ticket.status === "closed" || !canWork}
               onChange={(e) => setNotesLocal(e.target.value)}
               rows={3}
-              placeholder="Maintenance notes…"
+              placeholder="Add progress or repair notes…"
               className={cn("w-full resize-none px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50", INPUT)}
             />
+            {editable && dirty && (
+              <p className="text-[11px] text-[#9a6a00]">
+                Unsaved notes — Save them, or they’ll be stored when you mark repaired / close.
+              </p>
+            )}
           </div>
 
           {/* action — pinned to the bottom so it lines up with the Evidence box */}
@@ -149,10 +177,28 @@ export default function TicketPage() {
                 <Lock size={13} strokeWidth={2} />
                 Switch to the Maintenance role to work this ticket.
               </p>
-            ) : ticket.status === "sent" || ticket.status === "in_progress" ? (
+            ) : ticket.status === "sent" ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => run(() => startTicket(ticket.id))}
+                  disabled={busy}
+                  className={cn("h-10 flex-1 px-3 text-[13px] disabled:opacity-50", BTN)}
+                >
+                  <Play size={14} strokeWidth={2} /> Start work
+                </button>
+                <button
+                  onClick={() => run(() => repairTicket(ticket.id, notes))}
+                  disabled={busy}
+                  className={cn("h-10 flex-1 px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
+                >
+                  <Wrench size={14} strokeWidth={2} /> Mark repaired
+                </button>
+              </div>
+            ) : ticket.status === "in_progress" ? (
               <button
-                onClick={() => void repairTicket(ticket.id, notes).catch(() => undefined)}
-                className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
+                onClick={() => run(() => repairTicket(ticket.id, notes))}
+                disabled={busy}
+                className={cn("h-10 w-full px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
               >
                 <Wrench size={14} strokeWidth={2} /> Mark repaired
               </button>
@@ -163,8 +209,9 @@ export default function TicketPage() {
                   Repaired — awaiting inspector reinspection.
                 </p>
                 <button
-                  onClick={() => void closeTicket(ticket.id).catch(() => undefined)}
-                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
+                  onClick={() => run(() => closeTicket(ticket.id, dirty ? notes : undefined))}
+                  disabled={busy}
+                  className={cn("h-10 w-full px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
                 >
                   <CheckCircle2 size={14} strokeWidth={2} /> Close after reinspection
                 </button>

@@ -12,6 +12,7 @@ import {
 import Badge from "@/components/Badge";
 import DataTable from "@/components/DataTable";
 import * as api from "@/lib/api";
+import { TICKET_POLL_MS } from "@/lib/store";
 import type { Ticket, TicketStatus } from "@/lib/types";
 import { SEVERITY_VALUES } from "@/lib/types";
 import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
@@ -104,13 +105,43 @@ export default function MaintenanceTracker() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number | null>(null);
 
+  // Poll the work-order queue so newly-generated orders and status changes made
+  // by other roles appear without a manual reload. Pause while the tab is hidden
+  // to avoid waste; catch up immediately on focus.
   useEffect(() => {
     let live = true;
-    api.listTickets().then((t) => live && setTickets(t)).catch(() => live && setTickets([]));
+    const load = () =>
+      api
+        .listTickets()
+        .then((t) => {
+          if (!live) return;
+          setTickets(t);
+          setUpdatedAt(Date.now());
+        })
+        // Keep the last good list on a transient poll error; only show empty if
+        // we never managed a first load.
+        .catch(() => live && setTickets((prev) => prev ?? []));
+    load();
+    const beat = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void load();
+    }, TICKET_POLL_MS);
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
     return () => {
       live = false;
+      clearInterval(beat);
+      window.removeEventListener("focus", onFocus);
     };
+  }, []);
+
+  // 1s clock so the "updated …" stamp stays truthful between polls.
+  useEffect(() => {
+    setNow(Date.now());
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
   }, []);
 
   const all = tickets ?? [];
@@ -163,7 +194,16 @@ export default function MaintenanceTracker() {
           <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
             <Wrench size={17} strokeWidth={2} /> Work orders
           </h1>
-          <p className={cn("mt-1 text-[13px]", MUTED)}>Field maintenance queue · {all.length} total</p>
+          <p className={cn("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]", MUTED)}>
+            <span>Field maintenance queue · {all.length} total</span>
+            <LivePill
+              stamp={
+                updatedAt != null && now != null
+                  ? rel(new Date(updatedAt).toISOString(), now)
+                  : null
+              }
+            />
+          </p>
         </div>
       </div>
 
@@ -226,6 +266,20 @@ export default function MaintenanceTracker() {
         />
       </section>
     </div>
+  );
+}
+
+/** Pulsing "Live" pill — signals the queue auto-refreshes, with a last-updated stamp. */
+function LivePill({ stamp }: { stamp: string | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-[#6b7176]">
+      <span className="relative flex h-1.5 w-1.5" aria-hidden>
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2f9e44] opacity-60" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#2f9e44]" />
+      </span>
+      <span className="uppercase tracking-wide text-[#3f7a4e]">Live</span>
+      {stamp && <span className="text-[#9aa1a6]">· updated {stamp}</span>}
+    </span>
   );
 }
 
