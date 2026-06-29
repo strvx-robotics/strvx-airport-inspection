@@ -1,40 +1,20 @@
-// /api/zones — GET list (requires ?runwayId=), POST create (admin setup).
-
-import { createZone, listZones } from "@/lib/repo";
-import { json, readJson, route } from "@/lib/http";
-
+// /api/zones — proxied to the Python backend (GET list, POST create).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 const BACKEND_URL = process.env.BACKEND_URL;
-
-interface Body {
-  runwayId?: string;
-  name?: string;
-  stationStartM?: number;
-  stationEndM?: number;
-  notes?: string;
-}
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
 export async function GET(req: Request) {
-  if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
-  const qs = new URL(req.url).search; // ?runwayId=
+  const qs = new URL(req.url).search;
   const res = await fetch(`${BACKEND_URL}/zones${qs}`, { cache: "no-store" });
-  return new Response(await res.text(), {
-    status: res.status,
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
 }
 
-export const POST = route(async (req) => {
-  const body = await readJson<Body>(req);
-  if (!body.runwayId || !body.name) throw new Error("runwayId and name are required");
-  const zone = await createZone({
-    runwayId: body.runwayId,
-    name: body.name,
-    stationStartM: body.stationStartM,
-    stationEndM: body.stationEndM,
-    notes: body.notes,
+export async function POST(req: Request) {
+  const res = await fetch(`${BACKEND_URL}/zones`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-actor-role": req.headers.get("x-strvx-role") ?? "" },
+    body: await req.text(),
   });
-  return json({ zone }, { status: 201 });
-});
+  return new Response(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
+}
