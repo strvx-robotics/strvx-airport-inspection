@@ -7,28 +7,38 @@ import {
   Check,
   Satellite,
   Plane,
+  SquareDashed,
   MapPin,
   Plus,
+  RotateCcw,
+  Save,
+  Square,
 } from "lucide-react";
 import { MapPanel } from "./MapPanel";
-import { SEVERITY, DECISION } from "@/lib/ui";
-import type { IssueStatus, Severity } from "@/lib/types";
+import { DECISION, SEVERITY } from "@/lib/ui";
+import type { IssueStatus, Runway, Severity } from "@/lib/types";
 import { DOT } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
-export type LayerKey = "satellite" | "runways" | "centerline" | "issues";
+export type LayerKey = "satellite" | "runways" | "zones" | "centerline" | "issues";
 export type LayerVis = Record<LayerKey, boolean>;
 
 // Centerline is always drawn (not user-toggleable) — it's reference geometry.
 const LAYER_ROWS: { key: LayerKey; icon: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>; label: string }[] = [
   { key: "satellite", icon: Satellite, label: "Satellite" },
   { key: "runways", icon: Plane, label: "Runways" },
+  { key: "zones", icon: SquareDashed, label: "Zones" },
   { key: "issues", icon: MapPin, label: "Issues" },
 ];
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
-// Status filter order mirrors the review workflow (unresolved first).
 const STATUSES: IssueStatus[] = ["pending", "manual_review", "approved", "rejected"];
+const STATUS_DOT: Record<IssueStatus, string> = {
+  pending: "bg-[#caa44e]",
+  manual_review: "bg-[#8d78bd]",
+  approved: "bg-[#44b07f]",
+  rejected: "bg-[#b23b32] ring-2 ring-[#b23b32]/25",
+};
 
 /** Left-edge tool rail: layer visibility, severity filter, recenter, markers. */
 export function MapToolbar({
@@ -43,6 +53,18 @@ export function MapToolbar({
   onRecenter,
   addMode,
   onToggleAddMode,
+  runways,
+  selectedRunwayId,
+  onSelectRunway,
+  areaDrawMode,
+  onToggleAreaDraw,
+  areaPointCount,
+  areaCanSave,
+  areaSaving,
+  areaMessage,
+  onSaveArea,
+  onResetArea,
+  onClearArea,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -55,6 +77,18 @@ export function MapToolbar({
   onRecenter: () => void;
   addMode: boolean;
   onToggleAddMode: () => void;
+  runways: Runway[];
+  selectedRunwayId: string;
+  onSelectRunway: (id: string) => void;
+  areaDrawMode: boolean;
+  onToggleAreaDraw: () => void;
+  areaPointCount: number;
+  areaCanSave: boolean;
+  areaSaving: boolean;
+  areaMessage?: string;
+  onSaveArea: () => void;
+  onResetArea: () => void;
+  onClearArea: () => void;
 }) {
   return (
     <MapPanel
@@ -62,7 +96,7 @@ export function MapToolbar({
       icon={Layers}
       collapsed={collapsed}
       onToggle={onToggleCollapsed}
-      className="pointer-events-auto absolute left-3 top-3 z-10 w-48"
+      className="pointer-events-auto absolute left-3 top-3 z-10 w-56"
     >
       <div className="flex flex-col gap-0.5 p-1.5">
         <button
@@ -112,7 +146,7 @@ export function MapToolbar({
               statuses.has(s) ? "text-[#181b1e]" : "text-[#6b7176] hover:text-[#3f4448]",
             )}
           >
-            <StatusGlyph status={s} />
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[s])} />
             <span className="flex-1 font-mono text-[11px] tracking-wide">{DECISION[s].label}</span>
             {statuses.has(s) && <Check size={13} strokeWidth={2.4} />}
           </button>
@@ -139,6 +173,68 @@ export function MapToolbar({
         <p className="px-2 pt-1 font-mono text-[10px] leading-snug text-[#9aa1a6]">
           Click a marker to rename or delete it.
         </p>
+
+        <Divider />
+        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#9aa1a6]">
+          Runway areas
+        </p>
+        <select
+          value={selectedRunwayId}
+          onChange={(e) => onSelectRunway(e.target.value)}
+          className="mx-2 h-8 rounded border border-[#c7cdd2] bg-white px-2 font-mono text-[11px] text-[#181b1e] outline-none focus:border-[#6b7176]"
+          aria-label="Select runway area"
+        >
+          {runways.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} · {r.designation}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={onToggleAreaDraw}
+          className={cn(
+            "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
+            areaDrawMode
+              ? "bg-[#181b1e] text-[#eef1f4]"
+              : "text-[#3f4448] hover:bg-white/5 hover:text-[#181b1e]",
+          )}
+        >
+          <Square size={15} strokeWidth={2.1} className={areaDrawMode ? "text-[#eef1f4]" : "text-[#5b6166]"} />
+          <span className="flex-1 font-mono text-[11px] tracking-wide">Draw area</span>
+          <span className={cn("font-mono text-[10px]", areaDrawMode ? "text-[#dce2e8]" : "text-[#9aa1a6]")}>
+            {areaPointCount}/4
+          </span>
+        </button>
+        <div className="grid grid-cols-3 gap-1 px-2 pt-1">
+          <button
+            onClick={onSaveArea}
+            disabled={!areaCanSave || areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Save area"
+            aria-label="Save runway area"
+          >
+            <Save size={13} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onResetArea}
+            disabled={areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Reset draft"
+            aria-label="Reset runway area draft"
+          >
+            <RotateCcw size={13} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onClearArea}
+            disabled={areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white font-mono text-[10px] uppercase tracking-wide text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Clear
+          </button>
+        </div>
+        {areaMessage && (
+          <p className="px-2 pt-1 font-mono text-[10px] leading-snug text-[#6b7176]">{areaMessage}</p>
+        )}
       </div>
     </MapPanel>
   );
@@ -168,17 +264,6 @@ function Toggle({
       {on && <Check size={13} strokeWidth={2.4} />}
     </button>
   );
-}
-
-/** Legend glyph mirroring how status is drawn on the map: color carries severity,
- *  fill-style carries status — solid = approved, hollow ring = awaiting review,
- *  muted = rejected. Drawn in neutral ink here so it reads at any severity. */
-function StatusGlyph({ status }: { status: IssueStatus }) {
-  if (status === "approved")
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-[#3f4448]" />;
-  if (status === "rejected")
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-[#c7cdd2]" />;
-  return <span className="h-2 w-2 shrink-0 rounded-full border-[1.5px] border-[#3f4448]" />;
 }
 
 function Divider() {

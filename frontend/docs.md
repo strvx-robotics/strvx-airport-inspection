@@ -1,39 +1,117 @@
 # frontend/
 
-Phase 0 clickable demo for the Strvx runway-inspection MVP (PRD §13). Next.js
-(App Router) + Tailwind, **mock data only — no backend, no real CV**. The point
-is to walk an airport stakeholder through the workflow end to end.
+Next.js App Router UI and BFF for STRVX Airport Inspection.
+
+The frontend serves the browser app on `:3000`, keeps the client-safe domain
+types and state cache, proxies most API calls to the FastAPI backend, and still
+owns a small set of server-side routes that have not been extracted yet.
 
 ## Run
 
 ```bash
 cd frontend
-npm install   # first time
-npm run dev   # http://localhost:3000
+npm install
 ```
-## Layout
 
-- `app/` — routes: `/` overview, `/runway/[id]`, `/issue/[id]`, `/ticket/[id]`
-  (the four PRD §8 screens). All client components; route params via `useParams`.
-- `lib/types.ts` — domain types (PRD §11 data model, trimmed).
-- `lib/seed.ts` — mock airport / runways / issues. Edit here to change the demo.
-- `lib/store.tsx` — in-memory React Context holding issue + ticket state and the
-  approve / reject / repair / close actions. State is per-session; "Reset demo"
-  on the dashboard (or a refresh) restores the seed.
-- `lib/ui.ts` — label + badge-tone maps and the PRD §10.4 confidence bands.
-- `components/` — `Badge`, `RunwayImage` (asphalt-textured stand-in with a
-  detection box; no real images shipped), `Header`.
+Create `.env.local`:
 
-## Demo path
+```bash
+DATABASE_URL=postgresql://postgres:strvx@localhost:54432/strvx
+BACKEND_URL=http://localhost:8080
 
-Overview → Runway 2 (2 issues) → open an issue → review the AI-drafted ticket →
-**Approve** → ticket page → **Mark repaired** → **Close**. Counts and runway
-status update live.
+# Optional
+BACKEND_API_TOKEN=
+ML_SERVICE_URL=http://localhost:8000
+RL_SERVICE_URL=http://localhost:8000
+NEXT_PUBLIC_DRONE_STREAM_URL=http://localhost:8888/drone/index.m3u8
+NEXT_PUBLIC_RELAY_URL=ws://localhost:8000
+ANTHROPIC_API_KEY=
+```
 
-## Deliberately skipped (Phase 0)
+Then:
 
-- No backend / DB / auth — `backend/`, `database/` come online in Phase 1.
-- No image upload or model — detections are seeded fixtures.
-- State is in-memory (no persistence) — intentional, so each demo run is clean.
-- `severity` is editable and `User`/roles are faked as strings; both need real
-  modeling in Phase 1 (see PRD review notes).
+```bash
+npm run db:setup       # apply schema only
+npm run db:bootstrap   # optional AGS airport/runway/zone/schedule config
+npm run dev
+```
+
+## Routes
+
+- `/` - inspection dashboard; maintenance users see the maintenance tracker.
+- `/inspection/[id]` - inspection detail.
+- `/runway/[id]` - runway issue list.
+- `/issue/[id]` - candidate review, approve/reject/manual review/edit.
+- `/ticket/[id]` - maintenance work order, repair, and closeout.
+- `/upload` - manual image upload and zone tag.
+- `/live` - HLS drone feed plus live detection overlay.
+- `/map` - airport/runway map view.
+- `/admin` - airport, runway, zone, schedule, user, and setting setup.
+- `/logs` - inspection and ticket logs.
+
+## Data Flow
+
+Client components call `frontend/lib/api.ts`. `frontend/lib/store.tsx` wraps those
+calls in a React context cache with optimistic updates for review and ticket
+actions.
+
+Most `/api/*` route handlers proxy to the backend through `frontend/lib/backend.ts`
+and `BACKEND_URL`. Proxied domains include inspections, runways, zones,
+schedules, users, drones, airports, issues, and tickets.
+
+These routes still execute in the Next.js server and talk to Postgres or
+downstream services directly:
+
+- `app/api/uploads/route.ts` - validates image bytes, stores the file, calls the
+  detector, drafts ticket text, and ingests issue candidates.
+- `app/api/live-capture/route.ts` - receives live worker captures.
+- `app/api/settings/route.ts` - app settings such as stream URL.
+- `app/api/feedback-export/route.ts` - learning JSONL export.
+- `app/api/inspections/[id]/report/route.ts` - JSON/HTML report rendering.
+
+## Important Files
+
+- `lib/types.ts` - client-safe domain types and enum values.
+- `lib/api.ts` - browser API client.
+- `lib/store.tsx` - app state cache and mutation helpers.
+- `lib/db.ts` - Postgres schema and low-level query helpers used by remaining
+  frontend-owned server routes.
+- `lib/repo.ts` - remaining server-side repository functions for uploads,
+  reports, settings, and feedback export.
+- `lib/backend.ts` - server-side backend proxy helper.
+- `lib/mlDetector.ts` - calls `ML_SERVICE_URL`, with deterministic fallback.
+- `lib/llm.ts` - ticket drafting via RL service, Claude, or deterministic
+  template fallback.
+- `lib/workOrder.ts` - derives operational work-order fields from ticket,
+  issue, runway, category, and severity.
+
+## Manual Runway Mapping
+
+Runways can carry an admin-maintained `runwayPolygon` plus `mapStatus`:
+
+- `draft` - being drawn or edited.
+- `active` - used for inspection map placement.
+- `retired` - kept for historical context.
+- `needs_review` - detections or intersections indicate the map needs attention.
+
+The admin runway form accepts polygon JSON for now. The airport map prefers that
+manual polygon over inferred threshold/heading geometry. Future drawing tools
+should write the same `runwayPolygon` field instead of introducing a parallel
+geometry model.
+
+## Database Scripts
+
+`npm run db:setup` applies the schema from `lib/db.ts`. It does not create demo
+data.
+
+`npm run db:bootstrap` creates only airport configuration for Augusta Regional:
+airport, three runways, zones, and a 6 AM schedule. It does not create
+inspections, images, issues, or tickets.
+
+`lib/seed-db.ts` is not part of the normal setup path. It is retained only as old
+demo fixture reference while the extraction finishes.
+
+## Next.js Version Rule
+
+This project uses a newer Next.js version with breaking API and convention
+changes. Follow `frontend/AGENTS.md` before editing framework-sensitive code.

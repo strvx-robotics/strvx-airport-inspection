@@ -1,137 +1,196 @@
-# STRVX Airport — AI Runway Inspection
+# STRVX Airport Inspection
 
-Drone-assisted runway inspection for airport operations teams. A drone flies each
-runway before the first commercial flights, an AI flags possible issues, a human
-inspector reviews them, and approved findings become maintenance tickets — with a
-**feedback loop that makes the system better every time an inspector corrects it.**
+Drone-assisted runway inspection for airport operations teams. A drone or operator
+captures runway imagery, the system flags possible issues, an inspector reviews
+them, and approved findings become maintenance tickets. Rejections and ticket text
+edits are exported as learning records so the detector and ticket writer can
+improve over time.
 
-> Standalone hackathon build. Single Next.js full-stack app (UI + API + SQLite),
-> one command to run. The autonomy/CV core migrates into the Valanor multi-drone
-> product later; this repo is the self-contained product slice.
+The current app is a three-service Postgres system:
 
-## The loop
+- `frontend/` - Next.js App Router UI and BFF routes on `:3000`.
+- `backend/` - FastAPI data/API service on `:8080`.
+- `ml-service/` - CV, live detections, and RL endpoints on `:8000`.
 
+Some UI copy and assets still use Valanor branding; that branding is intentional
+for this repo and is not part of the stale-doc cleanup.
+
+## Workflow
+
+```text
+inspection schedule or run-now
+  -> runway imagery upload or live capture
+  -> CV/VLM detection
+  -> issue candidate review
+  -> approved ticket
+  -> maintenance repair
+  -> inspector closeout
+  -> report + feedback export
 ```
-Schedule (6 AM) → drone captures runway images → AI detects issues
-   → reviewable issue cards → inspector approves / rejects / edits
-   → approved → maintenance ticket → repaired → reinspected → closed
-```
 
-**Four issue categories:** Debris/FOD · Pavement damage · Runway markings · Lighting/signage.
+Issue categories are `fod`, `pavement`, `marking`, and `lighting`.
 
-## Self-improving (why this is more than a CRUD app)
+Runway map geometry is manually maintained. Admins can store the runway work-area
+polygon and map lifecycle status so the airport map uses explicit operational
+geometry instead of inferred threshold markings when available.
 
-Every human decision is captured as a training signal:
+## Local Setup
 
-- **Rejections require a reason** (`not_an_issue`, `wrong_category`, …) → hard-negative
-  mining + threshold recalibration for the detector.
-- **The AI's ticket draft is preserved immutably** next to the inspector's final text;
-  the **diff** between them trains the ticket-writer (few-shot now, SFT/DPO later).
-- An admin **feedback export** emits the accumulated learning records as JSONL.
+Start order: database, backend, optional ml-service, frontend.
 
-## Stack
+### 1. Database
 
-Next.js (App Router) · TypeScript · Tailwind · Postgres (node-postgres) ·
-S3-compatible object storage · server-side LLM drafting (Anthropic, with a
-templated fallback so it runs with no API key).
-
-## Run
-
-Requires a Postgres database. The same code runs against a local Postgres in dev,
-Supabase / Neon / Vercel Postgres in the cloud, and AWS RDS later — only
-`DATABASE_URL` changes. A one-line local container:
+Use a local Postgres container or point `DATABASE_URL` at Supabase, Neon, Vercel
+Postgres, RDS, or another compatible Postgres database.
 
 ```bash
-docker run -d --name strvx-pg -e POSTGRES_PASSWORD=strvx -e POSTGRES_DB=strvx -p 54432:5432 postgres:17-alpine
+docker run -d --name strvx-pg \
+  -e POSTGRES_PASSWORD=strvx \
+  -e POSTGRES_DB=strvx \
+  -p 54432:5432 \
+  postgres:17-alpine
 ```
+
+Use this local URL in env files:
 
 ```bash
-npm run setup       # installs frontend deps
-# create frontend/.env.local with:
-#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
-npm run db:setup    # apply schema + idempotent seed
-npm run dev         # → http://localhost:3000
+DATABASE_URL=postgresql://postgres:strvx@localhost:54432/strvx
 ```
 
-Optional `frontend/.env.local` settings:
-- `ANTHROPIC_API_KEY` — real LLM-drafted tickets (else a deterministic template).
-- `S3_BUCKET` (+ `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
-  `S3_PUBLIC_BASE_URL`) — durable image storage. Unset in dev → uploads write to `public/uploads`.
-- `NEXT_PUBLIC_DRONE_STREAM_URL` — HLS URL for the **Live** drone-POV view. Unset → "No signal".
-
-### Live drone feed (DJI Mavic → RTMP → HLS)
-
-Browsers can't play raw RTMP, so a media server republishes the drone's RTMP as HLS.
-[MediaMTX](https://github.com/bluenviron/mediamtx) is a single binary that does this with no config:
-
-```bash
-./mediamtx                                   # RTMP in :1935, HLS out :8888
-```
-
-In the DJI Fly app, set Live Streaming → **RTMP** → `rtmp://<host>:1935/drone`, then:
-
-```bash
-# frontend/.env.local
-NEXT_PUBLIC_DRONE_STREAM_URL=http://<host>:8888/drone/index.m3u8
-```
-
-The **Live** tab (Inspector/Admin) plays it — native HLS on Safari, hls.js elsewhere — and
-auto-reconnects until the drone starts streaming.
-
-## Local dev setup (contributors)
-
-The app now runs as three local services: the **frontend** (Next.js, `:3000`),
-the **backend** (FastAPI, `:8080`, owns the data layer), and the **ml-service**
-(YOLO/VLM detection, `:8000`). All three share one Postgres. Env files hold
-secrets and are gitignored — each dev creates their own.
-
-**Start order: database → backend → frontend.** The frontend proxies API routes
-to the backend, so `BACKEND_URL` must point at a running backend.
-
-**1. Database** — one local container (or point `DATABASE_URL` at your own Postgres):
-
-```bash
-docker run -d --name strvx-pg -e POSTGRES_PASSWORD=strvx -e POSTGRES_DB=strvx -p 54432:5432 postgres:17-alpine
-```
-
-**2. Backend** (`:8080`):
+### 2. Backend
 
 ```bash
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env          # then edit:
-#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
-#   BACKEND_PORT=8080
-#   ML_SERVICE_URL=http://localhost:8000
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env
 ./run.sh
 # For backend code reload during development:
 ./run.sh --reload
 ```
 
-**3. Frontend** (`:3000`):
+Set `DATABASE_URL` in `backend/.env`. `BACKEND_API_TOKEN` is optional for local
+dev; set the same value in the frontend when enabled.
+
+### 3. ml-service (Optional)
+
+The app runs with deterministic detector and ticket-draft fallbacks when the ML
+service is absent. Start this service when working on real detection, live worker,
+or RL behavior.
+
+```bash
+cd ml-service
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m app.scripts.download_models
+.venv/bin/uvicorn app.main:app --port 8000
+```
+
+Optional `ml-service/.env`:
+
+```bash
+ANTHROPIC_API_KEY=...
+```
+
+### 4. Frontend
 
 ```bash
 cd frontend
 npm install
-# create frontend/.env.local:
-#   DATABASE_URL=postgres://postgres:strvx@localhost:54432/strvx
-#   BACKEND_URL=http://localhost:8080
-npm run db:setup              # applies schema + seed (incl. app_settings)
-npm run dev                   # → http://localhost:3000
 ```
 
-**4. ml-service** (`:8000`) — only needed for detection work:
+Create `frontend/.env.local`:
 
 ```bash
-cd ml-service
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-python download_models.py     # one-time: fetch detector weights
-.venv/bin/uvicorn app:app --port 8000
-# optional: ANTHROPIC_API_KEY in ml-service/.env for VLM markings/lighting
+DATABASE_URL=postgresql://postgres:strvx@localhost:54432/strvx
+BACKEND_URL=http://localhost:8080
+
+# Optional
+BACKEND_API_TOKEN=
+ML_SERVICE_URL=http://localhost:8000
+RL_SERVICE_URL=http://localhost:8000
+NEXT_PUBLIC_DRONE_STREAM_URL=http://localhost:8888/drone/index.m3u8
+NEXT_PUBLIC_RELAY_URL=ws://localhost:8000
+ANTHROPIC_API_KEY=
 ```
+
+Apply schema, optionally bootstrap airport configuration, then run the app:
+
+```bash
+npm run db:setup       # schema only, no demo seed
+npm run db:bootstrap   # optional AGS airport/runways/zones/schedule
+npm run dev            # http://localhost:3000
+```
+
+`db:bootstrap` creates physical airport configuration only. Inspections, images,
+issue candidates, and tickets accumulate from real usage.
+
+## Useful Commands
+
+From the repo root:
+
+```bash
+npm run setup
+npm run db:setup
+npm run dev
+npm run build
+```
+
+Backend:
+
+```bash
+cd backend
+pytest
+```
+
+## Architecture Notes
+
+Most browser-facing `/api/*` routes are thin Next.js proxies to the FastAPI
+backend via `BACKEND_URL`. A few routes still run in the frontend server because
+they own uploads, reports, settings, and learning exports:
+
+- `frontend/app/api/uploads/route.ts`
+- `frontend/app/api/live-capture/route.ts`
+- `frontend/app/api/settings/route.ts`
+- `frontend/app/api/feedback-export/route.ts`
+- `frontend/app/api/inspections/[id]/report/route.ts`
+
+The frontend schema setup remains in `frontend/lib/db.ts`; backend tests keep a
+copy at `backend/tests/schema.sql`.
+
+## Live Drone Feed
+
+Browsers cannot play raw RTMP. For local demos, MediaMTX can republish drone RTMP
+as HLS:
+
+```bash
+./mediamtx
+```
+
+Set the DJI Fly RTMP target to `rtmp://<host>:1935/drone`, then set:
+
+```bash
+NEXT_PUBLIC_DRONE_STREAM_URL=http://<host>:8888/drone/index.m3u8
+```
+
+The ml-service relay also supports live detection overlays:
+
+- Worker publishes: `POST http://localhost:8000/live/detections`
+- Browser subscribes: `ws://localhost:8000/live/ws/{runway}`
+
+Set `NEXT_PUBLIC_RELAY_URL=ws://localhost:8000` in the frontend.
+
+## Documentation
+
+- `docs/prd.md` - product requirements and current implementation status.
+- `frontend/docs.md` - frontend routes, env, API proxy model, and state flow.
+- `backend/docs.md` - FastAPI routers, repo layer, auth gate, and tests.
+- `ml-service/docs.md` - CV, live worker, relay, RL, model, and deployment notes.
+- `frontend/AGENTS.md` - active Next.js agent rule for this repo.
 
 ## Status
 
-MVP — human-in-the-loop review with a stubbed detector and real persistence. Real
-CV detectors, drone flight integration, and the offline training pipeline are the
-next milestones (see `docs/`).
+MVP workflow is implemented with real Postgres persistence: overview, runway and
+issue review, ticket lifecycle, admin setup, upload ingestion, reports, feedback
+export, live feed UI, and backend extraction for most CRUD/read APIs. CV uses the
+ml-service when configured and deterministic fallbacks otherwise.

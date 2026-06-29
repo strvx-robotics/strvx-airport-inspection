@@ -9,8 +9,6 @@ import {
   CheckCircle2,
   Lock,
   ClipboardCheck,
-  Play,
-  Save,
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import RunwayImage from "@/components/RunwayImage";
@@ -23,15 +21,17 @@ import { CARD, BAR, INPUT, BTN, BTN_PRIMARY, EYEBROW, H2, MUTED, LINK, DOT } fro
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
   const { ticket, issue, runway, loading } = useTicketDetail(id);
-  const { role, startTicket, saveTicketNotes, repairTicket, closeTicket } = useStore();
+  const { role, repairTicket, closeTicket, startTicket, reinspectTicket, assignTicket } =
+    useStore();
   const [notes, setNotesLocal] = useState("");
+  const [assignTo, setAssignTo] = useState("");
   const [synced, setSynced] = useState(false);
-  const [busy, setBusy] = useState(false);
 
-  // Seed the repair-notes box from the ticket once it loads.
+  // Seed the repair-notes + assignment boxes from the ticket once it loads.
   useEffect(() => {
     if (ticket && !synced) {
       setNotesLocal(ticket.maintenanceNotes ?? "");
+      setAssignTo(ticket.assignedTo ?? "");
       setSynced(true);
     }
   }, [ticket, synced]);
@@ -55,17 +55,10 @@ export default function TicketPage() {
 
   const status = TICKET_STATUS[ticket.status];
   const severity = SEVERITY[ticket.severity];
-  const canWork = role === "maintenance" || role === "admin";
+  const canMaintain = role === "maintenance" || role === "admin";
+  const canInspect = role === "inspector" || role === "admin";
+  const isOpen = ticket.status !== "closed";
   const workOrder = buildWorkOrder(ticket, issue, runway);
-  const editable = canWork && ticket.status !== "closed";
-  const dirty = notes !== (ticket.maintenanceNotes ?? "");
-  const run = (fn: () => Promise<unknown>) => {
-    if (busy) return;
-    setBusy(true);
-    void fn()
-      .catch(() => undefined)
-      .finally(() => setBusy(false));
-  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
@@ -136,94 +129,116 @@ export default function TicketPage() {
             <p className="px-4 py-3 text-[13px] leading-relaxed text-[#3f4448]">{ticket.description}</p>
           </section>
 
-          {/* maintenance notes */}
+          {/* repair notes */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <label className={EYEBROW}>Maintenance notes</label>
-              {editable && (
-                <button
-                  onClick={() => run(() => saveTicketNotes(ticket.id, notes))}
-                  disabled={!dirty || busy}
-                  className={cn("h-7 px-2 text-[11px] disabled:opacity-40", BTN)}
-                >
-                  <Save size={12} strokeWidth={2} /> Save notes
-                </button>
-              )}
-            </div>
+            <label className={EYEBROW}>Repair notes</label>
             <textarea
               value={notes}
-              disabled={ticket.status === "closed" || !canWork}
+              disabled={!isOpen || !canMaintain}
               onChange={(e) => setNotesLocal(e.target.value)}
               rows={3}
-              placeholder="Add progress or repair notes…"
+              placeholder="Maintenance notes…"
               className={cn("w-full resize-none px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50", INPUT)}
             />
-            {editable && dirty && (
-              <p className="text-[11px] text-[#9a6a00]">
-                Unsaved notes — Save them, or they’ll be stored when you mark repaired / close.
-              </p>
-            )}
           </div>
 
-          {/* action — pinned to the bottom so it lines up with the Evidence box */}
+          {/* assignment — maintenance owner */}
+          {isOpen && canMaintain && (
+            <div className="space-y-1.5">
+              <label className={EYEBROW}>Assigned to</label>
+              <div className="flex gap-2">
+                <input
+                  value={assignTo}
+                  onChange={(e) => setAssignTo(e.target.value)}
+                  placeholder="Maintenance owner…"
+                  className={cn("h-9 flex-1 px-3 text-[13px]", INPUT)}
+                />
+                <button
+                  onClick={() => void assignTicket(ticket.id, assignTo).catch(() => undefined)}
+                  disabled={!assignTo.trim() || assignTo.trim() === (ticket.assignedTo ?? "")}
+                  className={cn("h-9 px-3 text-[12px] disabled:cursor-not-allowed disabled:opacity-50", BTN)}
+                >
+                  Assign
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* action — pinned to the bottom so it lines up with the Evidence box.
+              Lifecycle: sent → in_progress → repaired → reinspected → closed.
+              Start/repair are maintenance actions; reinspect/close are inspector. */}
           <div className="mt-auto">
-            {!canWork && ticket.status !== "closed" ? (
-              <p
-                className={cn(
-                  "flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#eef1f4] px-3 py-2 text-center text-[12px]",
-                  MUTED,
-                )}
-              >
-                <Lock size={13} strokeWidth={2} />
-                Switch to the Maintenance role to work this ticket.
+            {ticket.status === "closed" ? (
+              <p className="flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] px-3 py-2 text-center text-[12px] text-[#6b7176]">
+                <CheckCircle2 size={13} strokeWidth={2} /> Ticket closed.
               </p>
             ) : ticket.status === "sent" ? (
-              <div className="flex gap-2">
+              canMaintain ? (
                 <button
-                  onClick={() => run(() => startTicket(ticket.id))}
-                  disabled={busy}
-                  className={cn("h-10 flex-1 px-3 text-[13px] disabled:opacity-50", BTN)}
+                  onClick={() => void startTicket(ticket.id).catch(() => undefined)}
+                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
                 >
-                  <Play size={14} strokeWidth={2} /> Start work
+                  <Wrench size={14} strokeWidth={2} /> Start work
                 </button>
+              ) : (
+                <SwitchHint role="Maintenance" />
+              )
+            ) : ticket.status === "in_progress" ? (
+              canMaintain ? (
                 <button
-                  onClick={() => run(() => repairTicket(ticket.id, notes))}
-                  disabled={busy}
-                  className={cn("h-10 flex-1 px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
+                  onClick={() => void repairTicket(ticket.id, notes).catch(() => undefined)}
+                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
                 >
                   <Wrench size={14} strokeWidth={2} /> Mark repaired
                 </button>
-              </div>
-            ) : ticket.status === "in_progress" ? (
-              <button
-                onClick={() => run(() => repairTicket(ticket.id, notes))}
-                disabled={busy}
-                className={cn("h-10 w-full px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
-              >
-                <Wrench size={14} strokeWidth={2} /> Mark repaired
-              </button>
+              ) : (
+                <SwitchHint role="Maintenance" />
+              )
             ) : ticket.status === "repaired" ? (
               <div className="space-y-2">
                 <p className="flex items-center justify-center gap-2 rounded-md border border-dashed border-[#9aa1a6] bg-[#e4e8ec] px-3 py-2 text-center text-[12px] text-[#181b1e]">
                   <ClipboardCheck size={13} strokeWidth={2} />
                   Repaired — awaiting inspector reinspection.
                 </p>
-                <button
-                  onClick={() => run(() => closeTicket(ticket.id, dirty ? notes : undefined))}
-                  disabled={busy}
-                  className={cn("h-10 w-full px-3 text-[13px] disabled:opacity-50", BTN_PRIMARY)}
-                >
-                  <CheckCircle2 size={14} strokeWidth={2} /> Close after reinspection
-                </button>
+                {canInspect ? (
+                  <button
+                    onClick={() => void reinspectTicket(ticket.id, notes).catch(() => undefined)}
+                    className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
+                  >
+                    <ClipboardCheck size={14} strokeWidth={2} /> Mark reinspected
+                  </button>
+                ) : (
+                  <SwitchHint role="Inspector" />
+                )}
               </div>
-            ) : (
-              <p className="flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] px-3 py-2 text-center text-[12px] text-[#6b7176]">
-                <CheckCircle2 size={13} strokeWidth={2} /> Ticket closed.
-              </p>
-            )}
+            ) : ticket.status === "reinspected" ? (
+              canInspect ? (
+                <button
+                  onClick={() => void closeTicket(ticket.id).catch(() => undefined)}
+                  className={cn("h-10 w-full px-3 text-[13px]", BTN_PRIMARY)}
+                >
+                  <CheckCircle2 size={14} strokeWidth={2} /> Close ticket
+                </button>
+              ) : (
+                <SwitchHint role="Inspector" />
+              )
+            ) : null}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function SwitchHint({ role }: { role: string }) {
+  return (
+    <p
+      className={cn(
+        "flex items-center justify-center gap-2 rounded-md border border-[#dbdfe3] bg-[#eef1f4] px-3 py-2 text-center text-[12px]",
+        MUTED,
+      )}
+    >
+      <Lock size={13} strokeWidth={2} /> Switch to the {role} role to act on this ticket.
+    </p>
   );
 }

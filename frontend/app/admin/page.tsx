@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import SelectMenu from "@/components/Select";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import {
   Cog,
   Play,
   FileText,
   FileJson,
+  FileSpreadsheet,
   Download,
   Building2,
   Users,
@@ -18,9 +20,19 @@ import {
 import Badge, { type Tone } from "@/components/Badge";
 import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
-import { INSPECTION_WINDOW, ROLE } from "@/lib/ui";
-import { INSPECTION_WINDOWS } from "@/lib/types";
-import type { Airport, InspectionWindow, User, UserRole } from "@/lib/types";
+import { INSPECTION_TYPE, INSPECTION_WINDOW, ROLE } from "@/lib/ui";
+import { INSPECTION_TYPES, INSPECTION_WINDOWS, RUNWAY_MAP_STATUSES } from "@/lib/types";
+import type {
+  Airport,
+  InspectionSchedule,
+  InspectionType,
+  InspectionWindow,
+  LngLat,
+  RunwayMapStatus,
+  User,
+  UserRole,
+  Zone,
+} from "@/lib/types";
 import { cn } from "@/lib/cn";
 import {
   PAGE,
@@ -34,7 +46,21 @@ import {
   MUTED,
 } from "@/lib/vstyle";
 
-type RunwayLite = { id: string; name: string; designation: string; length: string; activeStatus?: string };
+type RunwayLite = {
+  id: string;
+  name: string;
+  designation: string;
+  length: string;
+  runwayPolygon?: LngLat[];
+  mapStatus?: RunwayMapStatus;
+  activeStatus?: string;
+};
+const MAP_STATUS_LABEL: Record<RunwayMapStatus, string> = {
+  draft: "Draft map",
+  active: "Active map",
+  retired: "Retired map",
+  needs_review: "Needs review",
+};
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon; desc: string }[] = [
   { id: "general", label: "General", icon: Building2, desc: "General information for this airfield." },
@@ -258,6 +284,86 @@ const ROLE_ACCESS: Record<UserRole, string> = {
   maintenance: "Work orders only — repairs and closes assigned tickets.",
 };
 
+const userColumns: DataTableColumn<User>[] = [
+  {
+    colId: "name",
+    headerName: "Name",
+    field: "name",
+    cellClass: "text-[13px] text-[#181b1e]",
+    flex: 1,
+    minWidth: 180,
+  },
+  {
+    colId: "username",
+    headerName: "Username",
+    field: "username",
+    cellClass: "font-mono text-[12px] text-[#5b6166]",
+    flex: 1,
+    minWidth: 160,
+  },
+  {
+    colId: "role",
+    headerName: "Role",
+    field: "role",
+    cellRenderer: ({ data }: { data?: User }) =>
+      data ? <Badge tone={ROLE_TONE[data.role]}>{ROLE[data.role]}</Badge> : null,
+    minWidth: 150,
+  },
+];
+
+const runwayColumns: DataTableColumn<RunwayLite>[] = [
+  {
+    colId: "name",
+    headerName: "Name",
+    field: "name",
+    cellClass: "text-[13px] text-[#181b1e]",
+    flex: 1,
+    minWidth: 150,
+  },
+  {
+    colId: "designation",
+    headerName: "Designation",
+    field: "designation",
+    cellClass: "font-mono text-[12px] text-[#3f4448]",
+    minWidth: 140,
+  },
+  {
+    colId: "length",
+    headerName: "Length",
+    valueGetter: ({ data }) => data?.length || "-",
+    cellClass: "font-mono text-[12px] text-[#5b6166]",
+    minWidth: 120,
+  },
+  {
+    colId: "map",
+    headerName: "Map",
+    valueGetter: ({ data }) =>
+      data?.runwayPolygon?.length ? MAP_STATUS_LABEL[data.mapStatus ?? "draft"] : "Unmapped",
+    cellRenderer: ({ data }: { data?: RunwayLite }) => {
+      if (!data) return null;
+      const tone = data.mapStatus === "active" ? "green" : data.mapStatus === "needs_review" ? "amber" : "gray";
+      return (
+        <Badge tone={tone}>
+          {data.runwayPolygon?.length ? MAP_STATUS_LABEL[data.mapStatus ?? "draft"] : "Unmapped"}
+        </Badge>
+      );
+    },
+    minWidth: 150,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    valueGetter: ({ data }) => data?.activeStatus ?? "-",
+    cellRenderer: ({ data }: { data?: RunwayLite }) =>
+      data ? (
+        <Badge tone={data.activeStatus === "active" ? "green" : "gray"}>
+          {data.activeStatus ?? "-"}
+        </Badge>
+      ) : null,
+    minWidth: 140,
+  },
+];
+
 function UsersSection() {
   const [users, setUsers] = useState<User[] | undefined>();
   useEffect(() => {
@@ -289,26 +395,13 @@ function UsersSection() {
         ) : users.length === 0 ? (
           <p className={cn("text-[13px]", MUTED)}>No users.</p>
         ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-[#dbdfe3]">
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Name</th>
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Username</th>
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Role</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-b border-[#eef1f4] last:border-b-0">
-                  <td className="px-2 py-2.5 text-[13px] text-[#181b1e]">{u.name}</td>
-                  <td className="px-2 py-2.5 font-mono text-[12px] text-[#5b6166]">{u.username}</td>
-                  <td className="px-2 py-2.5">
-                    <Badge tone={ROLE_TONE[u.role]}>{ROLE[u.role]}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            rows={users}
+            columns={userColumns}
+            label="Users and access"
+            height={260}
+            getRowId={(u) => u.id}
+          />
         )}
       </Panel>
 
@@ -353,30 +446,13 @@ function RunwaysSection({
         {runways.length === 0 ? (
           <p className={cn("text-[13px]", MUTED)}>No runways yet.</p>
         ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-[#dbdfe3]">
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Name</th>
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Designation</th>
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Length</th>
-                <th className={cn("px-2 py-2 text-left", EYEBROW)}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runways.map((r) => (
-                <tr key={r.id} className="border-b border-[#eef1f4] last:border-b-0">
-                  <td className="px-2 py-2.5 text-[13px] text-[#181b1e]">{r.name}</td>
-                  <td className="px-2 py-2.5 font-mono text-[12px] text-[#3f4448]">{r.designation}</td>
-                  <td className="px-2 py-2.5 font-mono text-[12px] text-[#5b6166]">{r.length || "—"}</td>
-                  <td className="px-2 py-2.5">
-                    <Badge tone={r.activeStatus === "active" ? "green" : "gray"}>
-                      {r.activeStatus ?? "—"}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            rows={runways}
+            columns={runwayColumns}
+            label="Runways"
+            height={320}
+            getRowId={(r) => r.id}
+          />
         )}
       </Panel>
 
@@ -388,7 +464,158 @@ function RunwaysSection({
           <ZoneForm runways={runways} onDone={onDone} />
         </Panel>
       </div>
+
+      <Panel
+        title="Manage runways & zones"
+        desc="Rename, retire, or delete. Delete is blocked once a runway/zone has inspection data — retire it instead."
+      >
+        {runways.length === 0 ? (
+          <p className={cn("text-[13px]", MUTED)}>No runways yet.</p>
+        ) : (
+          <ul className="divide-y divide-[#dbdfe3]">
+            {runways.map((r) => (
+              <RunwayManageRow key={r.id} runway={r} onDone={onDone} />
+            ))}
+          </ul>
+        )}
+      </Panel>
     </>
+  );
+}
+
+function RunwayManageRow({ runway, onDone }: { runway: RunwayLite; onDone: () => void }) {
+  const [name, setName] = useState(runway.name);
+  const [designation, setDesignation] = useState(runway.designation);
+  const [length, setLength] = useState(runway.length ?? "");
+  const [zones, setZones] = useState<Zone[] | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const retired = runway.activeStatus === "retired";
+  const dirty =
+    name !== runway.name || designation !== runway.designation || length !== (runway.length ?? "");
+
+  const loadZones = useCallback(() => {
+    api.listZones(runway.id).then(setZones).catch(() => setZones([]));
+  }, [runway.id]);
+  useEffect(() => {
+    loadZones();
+  }, [loadZones]);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await fn();
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="space-y-2 py-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Input label="Name" value={name} onChange={setName} />
+        <Input label="Designation" value={designation} onChange={setDesignation} />
+        <Input label="Length" value={length} onChange={setLength} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => void act(() => api.updateRunway(runway.id, { name, designation, length }))}
+          disabled={!dirty || busy}
+          className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN_PRIMARY)}
+        >
+          Save
+        </button>
+        <button
+          onClick={() =>
+            void act(() =>
+              api.updateRunway(runway.id, { activeStatus: retired ? "active" : "retired" }),
+            )
+          }
+          disabled={busy}
+          className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+        >
+          {retired ? "Activate" : "Retire"}
+        </button>
+        <button
+          onClick={() => void act(() => api.deleteRunway(runway.id))}
+          disabled={busy}
+          className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+        >
+          Delete
+        </button>
+        <Badge tone={retired ? "gray" : "green"}>{runway.activeStatus ?? "active"}</Badge>
+      </div>
+
+      <div className="rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-2.5">
+        <p className={EYEBROW}>Zones</p>
+        {!zones ? (
+          <p className={cn("mt-1 text-[12px]", MUTED)}>Loading…</p>
+        ) : zones.length === 0 ? (
+          <p className={cn("mt-1 text-[12px]", MUTED)}>No zones on this runway.</p>
+        ) : (
+          <ul className="mt-1 divide-y divide-[#eef1f4]">
+            {zones.map((z) => (
+              <ZoneManageRow
+                key={z.id}
+                zone={z}
+                onDone={() => {
+                  loadZones();
+                  onDone();
+                }}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+      {err && <p className="text-[12px] font-medium text-[#b91c1c]">{err}</p>}
+    </li>
+  );
+}
+
+function ZoneManageRow({ zone, onDone }: { zone: Zone; onDone: () => void }) {
+  const [name, setName] = useState(zone.name);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const dirty = name !== zone.name;
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await fn();
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center gap-2 py-1.5">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className={cn("h-8 min-w-0 flex-1 px-2.5 text-[12px]", INPUT)}
+      />
+      <button
+        onClick={() => void act(() => api.updateZone(zone.id, { name }))}
+        disabled={!dirty || busy}
+        className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+      >
+        Save
+      </button>
+      <button
+        onClick={() => void act(() => api.deleteZone(zone.id))}
+        disabled={busy}
+        className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+      >
+        Delete
+      </button>
+      {err && <span className="w-full text-[11px] font-medium text-[#b91c1c]">{err}</span>}
+    </li>
   );
 }
 
@@ -396,24 +623,75 @@ function RunwayForm({ airportId, onDone }: { airportId: string; onDone: () => vo
   const [name, setName] = useState("");
   const [designation, setDesignation] = useState("");
   const [length, setLength] = useState("");
+  const [mapStatus, setMapStatus] = useState<RunwayMapStatus>("draft");
+  const [polygonText, setPolygonText] = useState("");
+  const polygon = parsePolygon(polygonText);
+  const polygonInvalid = polygonText.trim().length > 0 && polygon === undefined;
   return (
     <FormShell
-      disabled={!name || !designation}
+      disabled={!name || !designation || polygonInvalid}
       reset={() => {
         setName("");
         setDesignation("");
         setLength("");
+        setMapStatus("draft");
+        setPolygonText("");
       }}
       submit={async () => {
-        await api.createRunway({ airportId, name, designation, length: length || undefined });
+        await api.createRunway({
+          airportId,
+          name,
+          designation,
+          length: length || undefined,
+          runwayPolygon: polygon,
+          mapStatus,
+        });
         onDone();
       }}
     >
       <Input label="Name" value={name} onChange={setName} placeholder="Runway 4" />
       <Input label="Designation" value={designation} onChange={setDesignation} placeholder="14 – 32" />
       <Input label="Length" value={length} onChange={setLength} placeholder="7,000 ft" />
+      <Select
+        label="Map status"
+        value={mapStatus}
+        onChange={(v) => setMapStatus(v as RunwayMapStatus)}
+        options={RUNWAY_MAP_STATUSES.map((s) => ({ value: s, label: MAP_STATUS_LABEL[s] }))}
+      />
+      <TextArea
+        label="Manual runway polygon"
+        value={polygonText}
+        onChange={setPolygonText}
+        placeholder='[{"lat":33.371,"lng":-81.967},{"lat":33.372,"lng":-81.965},{"lat":33.370,"lng":-81.964}]'
+      />
+      <p className={cn("text-[11px] leading-relaxed", polygonInvalid ? "text-[#181b1e]" : MUTED)}>
+        Drawn runway geometry is the source of truth for map placement. Enter at least three lat/lng points as JSON for now; the drawing tool will write this same field.
+      </p>
     </FormShell>
   );
+}
+
+function parsePolygon(raw: string): LngLat[] | undefined {
+  const text = raw.trim();
+  if (!text) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed) || parsed.length < 3) return undefined;
+    const points = parsed.map((p) => {
+      if (
+        !p ||
+        typeof p !== "object" ||
+        typeof (p as LngLat).lat !== "number" ||
+        typeof (p as LngLat).lng !== "number"
+      ) {
+        throw new Error("bad point");
+      }
+      return { lat: (p as LngLat).lat, lng: (p as LngLat).lng };
+    });
+    return points;
+  } catch {
+    return undefined;
+  }
 }
 
 function ZoneForm({
@@ -450,10 +728,92 @@ function ZoneForm({
 // ── Schedule ──────────────────────────────────────────────────────────────────
 
 function ScheduleSection({ airportId, onDone }: { airportId: string; onDone: () => void }) {
+  const [schedules, setSchedules] = useState<InspectionSchedule[] | undefined>();
+  const load = useCallback(() => {
+    api.listSchedules(airportId).then(setSchedules).catch(() => setSchedules([]));
+  }, [airportId]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const reload = () => {
+    load();
+    onDone();
+  };
   return (
-    <Panel title="Schedule" desc={SECTIONS[3].desc}>
-      <ScheduleForm airportId={airportId} onDone={onDone} />
-    </Panel>
+    <>
+      <Panel
+        title="Schedule"
+        desc={SECTIONS[3].desc}
+        action={
+          schedules && (
+            <span className={cn("whitespace-nowrap text-[12px]", MUTED)}>
+              {schedules.length} schedule{schedules.length === 1 ? "" : "s"}
+            </span>
+          )
+        }
+      >
+        {!schedules ? (
+          <p className={cn("text-[13px]", MUTED)}>Loading schedules…</p>
+        ) : schedules.length === 0 ? (
+          <p className={cn("text-[13px]", MUTED)}>No schedules yet.</p>
+        ) : (
+          <ul className="divide-y divide-[#dbdfe3]">
+            {schedules.map((s) => (
+              <ScheduleRow key={s.id} schedule={s} onChanged={reload} />
+            ))}
+          </ul>
+        )}
+      </Panel>
+      <Panel title="Add schedule" desc="Add a recurring inspection pass and its illumination window.">
+        <ScheduleForm airportId={airportId} onDone={reload} />
+      </Panel>
+    </>
+  );
+}
+
+function ScheduleRow({
+  schedule,
+  onChanged,
+}: {
+  schedule: InspectionSchedule;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+      <span className="flex items-center gap-2 text-[13px] text-[#181b1e]">
+        <span className="font-mono">{schedule.time}</span>
+        <span className={cn("text-[12px]", MUTED)}>{INSPECTION_WINDOW[schedule.window]}</span>
+        <Badge tone={schedule.enabled ? "green" : "gray"}>
+          {schedule.enabled ? "Enabled" : "Disabled"}
+        </Badge>
+      </span>
+      <span className="flex gap-2">
+        <button
+          onClick={() => void act(() => api.updateSchedule(schedule.id, { enabled: !schedule.enabled }))}
+          disabled={busy}
+          className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+        >
+          {schedule.enabled ? "Disable" : "Enable"}
+        </button>
+        <button
+          onClick={() => void act(() => api.deleteSchedule(schedule.id))}
+          disabled={busy}
+          className={cn("h-8 px-3 text-[12px] disabled:opacity-50", BTN)}
+        >
+          Delete
+        </button>
+      </span>
+    </li>
   );
 }
 
@@ -500,13 +860,19 @@ function ScheduleForm({ airportId, onDone }: { airportId: string; onDone: () => 
 function DataSection({ inspectionId, onRan }: { inspectionId?: string; onRan: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [type, setType] = useState<InspectionType>("daily");
+  const [reason, setReason] = useState("");
 
   const runNow = async () => {
     setBusy(true);
     setMsg(null);
     try {
-      const insp = await api.runInspectionNow();
-      setMsg(`Materialized inspection ${insp.id}.`);
+      const insp = await api.runInspectionNow(
+        type,
+        type === "daily" ? undefined : reason.trim() || undefined,
+      );
+      setMsg(`Started ${INSPECTION_TYPE[type].label.toLowerCase()} inspection ${insp.id}.`);
+      setReason("");
       onRan();
     } catch {
       setMsg("Run failed — is the API running?");
@@ -526,11 +892,27 @@ function DataSection({ inspectionId, onRan }: { inspectionId?: string; onRan: ()
 
   return (
     <Panel title="Data & export" desc={SECTIONS[4].desc}>
-      <div className="space-y-3">
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Select
+            label="Inspection type"
+            value={type}
+            onChange={(v) => setType(v as InspectionType)}
+            options={INSPECTION_TYPES.map((t) => ({ value: t, label: INSPECTION_TYPE[t].label }))}
+          />
+          {type !== "daily" && (
+            <Input
+              label="Reason / context"
+              value={reason}
+              onChange={setReason}
+              placeholder="e.g. high winds, reported FOD"
+            />
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={runNow} disabled={busy} className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}>
             <Play size={13} strokeWidth={2} />
-            {busy ? "Running…" : "Run 6 AM inspection now"}
+            {busy ? "Starting…" : `Start ${INSPECTION_TYPE[type].label.toLowerCase()} inspection`}
           </button>
           <button onClick={exportFeedback} className={cn("h-8 px-3 text-[12px]", BTN)}>
             <Download size={13} strokeWidth={2} /> Export feedback (JSONL)
@@ -543,7 +925,13 @@ function DataSection({ inspectionId, onRan }: { inspectionId?: string; onRan: ()
                 rel="noopener noreferrer"
                 className={cn("h-8 px-3 text-[12px]", BTN)}
               >
-                <FileText size={13} strokeWidth={2} /> Report (HTML)
+                <FileText size={13} strokeWidth={2} /> Report (PDF)
+              </a>
+              <a
+                href={api.reportUrl(inspectionId, "csv")}
+                className={cn("h-8 px-3 text-[12px]", BTN)}
+              >
+                <FileSpreadsheet size={13} strokeWidth={2} /> Report (CSV)
               </a>
               <a
                 href={api.reportUrl(inspectionId, "json")}
@@ -628,6 +1016,31 @@ function Input({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn("h-8 w-full px-3", INPUT)}
+      />
+    </div>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className={EYEBROW}>{label}</label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={5}
+        className={cn("w-full resize-y px-3 py-2 font-mono text-[11px]", INPUT)}
       />
     </div>
   );

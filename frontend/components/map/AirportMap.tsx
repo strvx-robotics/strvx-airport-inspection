@@ -1,118 +1,130 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
-import type { Drone, IssueCandidate, IssueStatus, LngLat, Runway, Severity, Ticket, Zone } from "@/lib/types";
-import { ISSUE_STATUSES } from "@/lib/types";
+import type { IssueCandidate, IssueStatus, LngLat, Runway, Severity, Zone } from "@/lib/types";
+import * as api from "@/lib/api";
+import { CATEGORY, SEVERITY } from "@/lib/ui";
 import {
   centerline,
-  isMappable,
   issuePosition,
-  locateOnRunways,
+  isMappable,
   runwayAnchor,
-  runwayHeading,
   runwayRect,
-  stationToLngLat,
+  zoneRect,
 } from "@/lib/runwayGeom";
 import { basemapStyle } from "./mapStyle";
 import { MapToolbar, type LayerKey, type LayerVis } from "./MapToolbar";
 import { MarkerEditor } from "./MarkerEditor";
-import { IssuePreviewCard } from "./IssuePreviewCard";
 import { loadMarkers, newMarkerId, saveMarkers, type MapMarker } from "@/lib/mapMarkers";
-import { issuePinProperties, ticketForIssue } from "./issuePinStyle";
 
 export interface RunwayLayer {
   runway: Runway;
   issues: IssueCandidate[];
-  tickets: Ticket[];
   zones: Zone[];
 }
 
+// Pin radius grows with severity; fill stays white (monochrome) — size carries rank.
+const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, critical: 8 };
 const ALL_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
-const ISSUE_PREVIEW_PAD = 12;
-const ISSUE_PREVIEW_GAP = 16;
-const ISSUE_FOCUS_ZOOM = 17;
+const ALL_STATUSES: IssueStatus[] = ["pending", "manual_review", "approved", "rejected"];
 
 // User-marker MapLibre ids. Rendered as native GeoJSON layers (circle + symbol)
 // so they stay pixel-locked to their coordinates when panning/zooming.
 const MARKER_SOURCE = "user-markers";
 const MARKER_DOT = "user-markers-dot";
 const MARKER_LABEL = "user-markers-label";
-
-// Operator (ground station) position — the blue "you are here" dot. System-owned,
-// single point, no rename/delete affordance.
-const OPERATOR_SOURCE = "operator";
-const OPERATOR_DOT = "operator-dot";
-const OPERATOR_LABEL = "operator-label";
-
-// Live aircraft positions — a separate, system-owned layer (NOT user markers), so
-// they have no rename/delete affordance. Drawn in violet so they read distinctly
-// from the blue operator dot and the severity-colored work-order pins.
-const DRONE_SOURCE = "drones";
-const DRONE_DOT = "drones-dot";
-const DRONE_LABEL = "drones-label";
-const DRONE_COLOR = "#7c4dff";
+const SELECTED_AREA_SOURCE = "selected-runway-area";
+const SELECTED_AREA_FILL = "selected-runway-area-fill";
+const SELECTED_AREA_LINE = "selected-runway-area-line";
+const AREA_DRAFT_SOURCE = "runway-area-draft";
+const AREA_DRAFT_FILL = "runway-area-draft-fill";
+const AREA_DRAFT_LINE = "runway-area-draft-line";
+const AREA_DRAFT_POINTS_SOURCE = "runway-area-draft-points";
+const AREA_DRAFT_POINTS = "runway-area-draft-points";
 
 // Which MapLibre layer ids each toolbar toggle controls.
 const LAYER_GROUPS: Record<LayerKey, string[]> = {
   satellite: ["sat"],
-  runways: ["surface-fill", "surface-line"],
+  runways: [
+    "surface-fill",
+    "surface-line",
+    SELECTED_AREA_FILL,
+    SELECTED_AREA_LINE,
+    AREA_DRAFT_FILL,
+    AREA_DRAFT_LINE,
+    AREA_DRAFT_POINTS,
+  ],
+  zones: ["zones-fill", "zones-line"],
   centerline: ["centerline"],
   issues: ["pins"],
 };
 
 const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
-const ring = (pts: LngLat[]): [number, number][] => pts.map(pos);
+const ring = (pts: LngLat[]): [number, number][] => {
+  const coords = pts.map(pos);
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) coords.push(first);
+  return coords;
+};
 const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
 });
-const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
 
-function focusIssuePreview(map: maplibregl.Map, anchor: LngLat) {
-  map.easeTo({
-    center: pos(anchor),
-    zoom: Math.max(map.getZoom(), ISSUE_FOCUS_ZOOM),
-    duration: 450,
-    essential: true,
-  });
+function orderedPolygonPoints(points: LngLat[]): LngLat[] {
+  if (points.length < 3) return points;
+  const center = points.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat / points.length, lng: acc.lng + p.lng / points.length }),
+    { lat: 0, lng: 0 },
+  );
+  return [...points].sort((a, b) =>
+    Math.atan2(a.lat - center.lat, a.lng - center.lng) -
+    Math.atan2(b.lat - center.lat, b.lng - center.lng),
+  );
 }
 
-function placeIssuePreview(
-  map: maplibregl.Map,
-  container: HTMLDivElement | null,
-  el: HTMLDivElement,
-  anchor: LngLat,
-) {
-  if (!container) return;
-  const p = map.project(pos(anchor));
-  const width = el.offsetWidth || 240;
-  const height = el.offsetHeight || 220;
-  const { width: mapW, height: mapH } = container.getBoundingClientRect();
-  const maxLeft = Math.max(ISSUE_PREVIEW_PAD, mapW - width - ISSUE_PREVIEW_PAD);
-  const maxTop = Math.max(ISSUE_PREVIEW_PAD, mapH - height - ISSUE_PREVIEW_PAD);
-  const left = clamp(p.x - width / 2, ISSUE_PREVIEW_PAD, maxLeft);
+const areaFeature = (points: LngLat[], props: Record<string, unknown> = {}): Feature<Geometry> | undefined => {
+  if (points.length < 3) return undefined;
+  return {
+    type: "Feature",
+    properties: props,
+    geometry: { type: "Polygon", coordinates: [ring(orderedPolygonPoints(points))] },
+  };
+};
 
-  let top: number;
-  let placement: "above" | "below" | "floating" = "above";
-  if (p.y - height - ISSUE_PREVIEW_GAP >= ISSUE_PREVIEW_PAD) {
-    top = p.y - height - ISSUE_PREVIEW_GAP;
-  } else if (p.y + ISSUE_PREVIEW_GAP + height <= mapH - ISSUE_PREVIEW_PAD) {
-    top = p.y + ISSUE_PREVIEW_GAP;
-    placement = "below";
-  } else {
-    top = clamp(p.y - height / 2, ISSUE_PREVIEW_PAD, maxTop);
-    placement = "floating";
+const selectedAreaFC = (runway?: Runway): FeatureCollection => {
+  const rect = runway ? runwayRect(runway) : undefined;
+  const feature = rect ? areaFeature(rect, { id: runway?.id }) : undefined;
+  return fc(feature ? [feature] : []);
+};
+
+const draftAreaFC = (points: LngLat[]): FeatureCollection => {
+  const features: Feature<Geometry>[] = [];
+  const polygon = areaFeature(points);
+  if (polygon) features.push(polygon);
+  if (points.length > 1) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: orderedPolygonPoints(points).map(pos) },
+    });
   }
+  return fc(features);
+};
 
-  el.style.left = `${left}px`;
-  el.style.top = `${clamp(top, ISSUE_PREVIEW_PAD, maxTop)}px`;
-  el.style.setProperty("--stem-left", `${clamp(p.x - left, 14, width - 14)}px`);
-  el.dataset.placement = placement;
-}
+const draftPointsFC = (points: LngLat[]): FeatureCollection =>
+  fc(
+    points.map((p, index) => ({
+      type: "Feature",
+      properties: { index },
+      geometry: { type: "Point", coordinates: pos(p) },
+    })),
+  );
 
 const markersFC = (markers: MapMarker[]): FeatureCollection =>
   fc(
@@ -123,45 +135,6 @@ const markersFC = (markers: MapMarker[]): FeatureCollection =>
     })),
   );
 
-/** In-flight aircraft → position dots. Placed partway down the assigned runway's
- *  centerline using its (seeded) threshold GPS — a stand-in until real telemetry
- *  ships. Idle/charging/offline aircraft and unmatched assignments are skipped. */
-function dronesFC(layers: RunwayLayer[], drones: Drone[]): FeatureCollection {
-  const features: Feature<Geometry>[] = [];
-  for (const d of drones) {
-    if (d.status !== "in_flight" || !d.assignment) continue;
-    const layer = layers.find(
-      (l) => isMappable(l.runway) && l.runway.name.toLowerCase() === d.assignment!.toLowerCase(),
-    );
-    if (!layer) continue;
-    const anchor = runwayAnchor(layer.runway);
-    const heading = runwayHeading(layer.runway);
-    if (!anchor || heading == null) continue;
-    const p = stationToLngLat(anchor, heading, (layer.runway.lengthM ?? 0) * 0.4);
-    const batt = d.battery != null ? ` · ${d.battery}%` : "";
-    features.push({
-      type: "Feature",
-      properties: { id: d.id, tail: d.id, label: `${d.id} · In flight${batt}` },
-      geometry: { type: "Point", coordinates: pos(p) },
-    });
-  }
-  return fc(features);
-}
-
-/** Operator (ground station) position — centroid of the mapped runway thresholds
- *  for now (a stand-in until a real operator/GCS coordinate is wired in). */
-function operatorFC(layers: RunwayLayer[]): FeatureCollection {
-  const anchors = layers
-    .map((l) => runwayAnchor(l.runway))
-    .filter((a): a is LngLat => a != null);
-  if (anchors.length === 0) return fc([]);
-  const lng = anchors.reduce((s, a) => s + a.lng, 0) / anchors.length;
-  const lat = anchors.reduce((s, a) => s + a.lat, 0) / anchors.length;
-  return fc([
-    { type: "Feature", properties: { name: "Operator", label: "Operator position" }, geometry: { type: "Point", coordinates: [lng, lat] } },
-  ]);
-}
-
 function applyLayerVis(map: maplibregl.Map, vis: LayerVis) {
   for (const key of Object.keys(LAYER_GROUPS) as LayerKey[]) {
     for (const id of LAYER_GROUPS[key]) {
@@ -170,24 +143,27 @@ function applyLayerVis(map: maplibregl.Map, vis: LayerVis) {
   }
 }
 
-/** Pins are filtered by severity AND status together (both toolbar filters). */
-function applyFilter(map: maplibregl.Map, sev: Set<Severity>, status: Set<IssueStatus>) {
+function applyIssueFilter(map: maplibregl.Map, sev: Set<Severity>, statuses: Set<IssueStatus>) {
   if (!map.getLayer("pins")) return;
-  map.setFilter("pins", [
-    "all",
-    ["in", ["get", "severity"], ["literal", [...sev]]],
-    ["in", ["get", "status"], ["literal", [...status]]],
-  ] as unknown as maplibregl.FilterSpecification);
+  map.setFilter(
+    "pins",
+    [
+      "all",
+      ["in", ["get", "severity"], ["literal", [...sev]]],
+      ["in", ["get", "status"], ["literal", [...statuses]]],
+    ] as unknown as maplibregl.FilterSpecification,
+  );
 }
 
-/** Merge every mappable runway into three shared sources, fit-bounds across all. */
+/** Merge every mappable runway into four shared sources, fit-bounds across all. */
 function buildSources(layers: RunwayLayer[]) {
   const surface: Feature<Geometry>[] = [];
+  const zones: Feature<Geometry>[] = [];
   const center: Feature<Geometry>[] = [];
   const pins: Feature<Geometry>[] = [];
   const bounds = new maplibregl.LngLatBounds();
 
-  for (const { runway, issues, tickets } of layers) {
+  for (const { runway, issues, zones: rwyZones } of layers) {
     if (!isMappable(runway)) continue;
 
     const rect = runwayRect(runway);
@@ -199,15 +175,21 @@ function buildSources(layers: RunwayLayer[]) {
     if (cl) {
       center.push({ type: "Feature", properties: { label: runway.designation }, geometry: { type: "LineString", coordinates: [pos(cl[0]), pos(cl[1])] } });
     }
+    for (const z of rwyZones) {
+      const r = zoneRect(runway, z);
+      if (r) zones.push({ type: "Feature", properties: { name: z.name }, geometry: { type: "Polygon", coordinates: [ring(r)] } });
+    }
     for (const i of issues) {
       const p = issuePosition(runway, i);
       if (!p) continue;
-      const pin = issuePinProperties(runway, i, ticketForIssue(i, tickets));
       pins.push({
         type: "Feature",
         properties: {
           id: i.id,
-          ...pin,
+          severity: i.severity,
+          status: i.status,
+          radius: SEV_RADIUS[i.severity],
+          label: `${runway.name} · ${CATEGORY[i.category]} · ${SEVERITY[i.severity].label}`,
         },
         geometry: { type: "Point", coordinates: pos(p) },
       });
@@ -215,19 +197,24 @@ function buildSources(layers: RunwayLayer[]) {
     }
   }
 
-  return { surfaceFC: fc(surface), centerlineFC: fc(center), pinsFC: fc(pins), bounds };
+  return {
+    surfaceFC: fc(surface),
+    zonesFC: fc(zones),
+    centerlineFC: fc(center),
+    pinsFC: fc(pins),
+    bounds,
+  };
 }
 
-/** Airport-wide map: every mappable runway with its centerline, severity-colored
- *  issue pins, live aircraft positions, and user annotations. */
+/** Airport-wide map: every mappable runway with its zones, centerline, issue pins. */
 export default function AirportMap({
   layers,
-  drones = [],
   heightClass = "h-full",
+  onRunwayChange,
 }: {
   layers: RunwayLayer[];
-  drones?: Drone[];
   heightClass?: string;
+  onRunwayChange?: (runway: Runway) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -235,19 +222,25 @@ export default function AirportMap({
   const loadedRef = useRef(false);
   const router = useRouter();
   const [failed, setFailed] = useState(false);
+  const [selectedRunwayId, setSelectedRunwayId] = useState(() => layers[0]?.runway.id ?? "");
+  const [areaDrawMode, setAreaDrawMode] = useState(false);
+  const [draftPoints, setDraftPoints] = useState<LngLat[]>([]);
+  const [areaSaving, setAreaSaving] = useState(false);
+  const [areaMessage, setAreaMessage] = useState<string | undefined>();
 
-  // Toolbar state — layer visibility + severity/status filters.
+  // Toolbar state — layer visibility + severity filter.
   const [collapsed, setCollapsed] = useState(false);
   const [layerVis, setLayerVis] = useState<LayerVis>({
     satellite: true,
     runways: true,
+    zones: true,
     centerline: true,
     issues: true,
   });
   const [sevSet, setSevSet] = useState<Set<Severity>>(new Set(ALL_SEVERITIES));
-  const [statusSet, setStatusSet] = useState<Set<IssueStatus>>(new Set(ISSUE_STATUSES));
+  const [statusSet, setStatusSet] = useState<Set<IssueStatus>>(new Set(ALL_STATUSES));
 
-  // User-dropped markers — gray named annotations, persisted per airport.
+  // User-dropped markers — named annotations, persisted per airport.
   const airportId = layers[0]?.runway.airportId ?? "default";
   const [markers, setMarkers] = useState<MapMarker[]>(() => loadMarkers(airportId));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -256,40 +249,114 @@ export default function AirportMap({
   // pan/zoom doesn't re-render the whole map ~60×/sec — panning stays smooth.
   const editorElRef = useRef<HTMLDivElement>(null);
 
-  // Clicked issue pin → anchored preview card (triage without leaving the map).
-  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
-  const issueCardElRef = useRef<HTMLDivElement>(null);
-  const selectedIssuePosRef = useRef<LngLat | null>(null);
-
-  // Cursor → station readout element (updated by direct DOM writes on mousemove).
-  const readoutRef = useRef<HTMLDivElement>(null);
-
-  // id → {issue, runway} for the preview card lookup on render.
-  const issueIndex = useMemo(() => {
-    const m = new Map<string, { issue: IssueCandidate; runway: Runway; ticket?: Ticket }>();
-    for (const l of layers) {
-      for (const i of l.issues) m.set(i.id, { issue: i, runway: l.runway, ticket: ticketForIssue(i, l.tickets) });
-    }
-    return m;
-  }, [layers]);
-
   // Refs so the once-registered map event handlers always read current state.
   const markersRef = useRef(markers);
   const addModeRef = useRef(addMode);
   const selectedRef = useRef(selectedId);
-  const dronesRef = useRef(drones);
+  const areaDrawRef = useRef(areaDrawMode);
+  const draftPointsRef = useRef(draftPoints);
+  const draggingAreaPointRef = useRef<number | null>(null);
   useEffect(() => { markersRef.current = markers; }, [markers]);
   useEffect(() => { addModeRef.current = addMode; }, [addMode]);
   useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
-  useEffect(() => { dronesRef.current = drones; }, [drones]);
+  useEffect(() => { areaDrawRef.current = areaDrawMode; }, [areaDrawMode]);
+  useEffect(() => { draftPointsRef.current = draftPoints; }, [draftPoints]);
 
   const mappable = layers.filter((l) => isMappable(l.runway));
-  const sig = mappable
-    .map((l) => `${l.runway.id}:${l.issues.map((i) => {
-      const ticket = ticketForIssue(i, l.tickets);
-      return `${i.id}@${i.severity}/${i.status}/${ticket?.status ?? "-"}`;
-    }).join(",")}`)
+  const selectedRunway = layers.find((l) => l.runway.id === selectedRunwayId)?.runway ?? layers[0]?.runway;
+  const selectedPolygonSig = selectedRunway?.runwayPolygon
+    ?.map((p) => `${p.lat.toFixed(7)},${p.lng.toFixed(7)}`)
+    .join("|") ?? "";
+  const areaCanSave = Boolean(selectedRunway && draftPoints.length === 4 && !areaSaving);
+  const mapSig = mappable
+    .map((l) => [
+      l.runway.id,
+      l.runway.thresholdLat,
+      l.runway.thresholdLng,
+      l.runway.thresholdHeadingDeg,
+      l.runway.lengthM,
+    ].join(":"))
     .join("|");
+
+  useEffect(() => {
+    if (!layers.length) return;
+    if (!selectedRunwayId || !layers.some((l) => l.runway.id === selectedRunwayId)) {
+      setSelectedRunwayId(layers[0].runway.id);
+    }
+  }, [layers, selectedRunwayId]);
+
+  useEffect(() => {
+    if (!selectedRunway || areaDrawRef.current) return;
+    setDraftPoints(selectedRunway.runwayPolygon ?? []);
+    setAreaMessage(selectedRunway.runwayPolygon?.length ? "Area active" : "No saved area");
+  }, [selectedRunway?.id, selectedPolygonSig, selectedRunway]);
+
+  const selectRunwayArea = (id: string) => {
+    setSelectedRunwayId(id);
+    setAreaDrawMode(false);
+    setAddMode(false);
+    setSelectedId(null);
+    setAreaMessage(undefined);
+  };
+
+  const toggleAreaDraw = () => {
+    setAreaDrawMode((current) => {
+      const next = !current;
+      if (next) {
+        setAddMode(false);
+        setSelectedId(null);
+        setAreaMessage("0/4 points");
+      } else {
+        setAreaMessage(selectedRunway?.runwayPolygon?.length ? "Area active" : "No saved area");
+      }
+      return next;
+    });
+  };
+
+  const resetAreaDraft = () => {
+    setDraftPoints(selectedRunway?.runwayPolygon ?? []);
+    setAreaMessage(selectedRunway?.runwayPolygon?.length ? "Draft reset" : "Draft cleared");
+  };
+
+  const saveArea = async () => {
+    if (!selectedRunway || draftPoints.length !== 4) return;
+    setAreaSaving(true);
+    setAreaMessage("Saving...");
+    try {
+      const runway = await api.updateRunway(selectedRunway.id, {
+        runwayPolygon: orderedPolygonPoints(draftPoints),
+        mapStatus: "active",
+      });
+      onRunwayChange?.(runway);
+      setDraftPoints(runway.runwayPolygon ?? []);
+      setAreaDrawMode(false);
+      setAreaMessage("Area saved");
+    } catch {
+      setAreaMessage("Save failed");
+    } finally {
+      setAreaSaving(false);
+    }
+  };
+
+  const clearArea = async () => {
+    if (!selectedRunway) return;
+    setAreaSaving(true);
+    setAreaMessage("Clearing...");
+    try {
+      const runway = await api.updateRunway(selectedRunway.id, {
+        runwayPolygon: null,
+        mapStatus: "needs_review",
+      });
+      onRunwayChange?.(runway);
+      setDraftPoints([]);
+      setAreaDrawMode(false);
+      setAreaMessage("Area cleared");
+    } catch {
+      setAreaMessage("Clear failed");
+    } finally {
+      setAreaSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current || mappable.length === 0) return;
@@ -317,14 +384,17 @@ export default function AirportMap({
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
 
     map.on("load", () => {
-      const { surfaceFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
+      const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
 
       map.addSource("surface", { type: "geojson", data: surfaceFC });
+      map.addSource("zones", { type: "geojson", data: zonesFC });
       map.addSource("centerline", { type: "geojson", data: centerlineFC });
       map.addSource("pins", { type: "geojson", data: pinsFC });
 
       map.addLayer({ id: "surface-fill", type: "fill", source: "surface", paint: { "fill-color": "#181b1e", "fill-opacity": 0.06 } });
       map.addLayer({ id: "surface-line", type: "line", source: "surface", paint: { "line-color": "#181b1e", "line-opacity": 0.35, "line-width": 1 } });
+      map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#5b6166", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#3f4448", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [3, 2] } });
       map.addLayer({ id: "centerline", type: "line", source: "centerline", paint: { "line-color": "#181b1e", "line-opacity": 0.7, "line-width": 1.5, "line-dasharray": [4, 3] } });
       map.addLayer({
         id: "pins",
@@ -332,11 +402,48 @@ export default function AirportMap({
         source: "pins",
         paint: {
           "circle-radius": ["get", "radius"],
-          "circle-color": ["get", "fill"],
-          "circle-stroke-color": ["get", "stroke"],
-          "circle-stroke-width": ["get", "strokeWidth"],
-          "circle-opacity": ["get", "alpha"],
-          "circle-stroke-opacity": ["get", "alpha"],
+          "circle-color": "#181b1e",
+          "circle-stroke-color": "#e9ecef",
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 0.95,
+        },
+      });
+      map.addSource(SELECTED_AREA_SOURCE, { type: "geojson", data: selectedAreaFC(selectedRunway) });
+      map.addLayer({
+        id: SELECTED_AREA_FILL,
+        type: "fill",
+        source: SELECTED_AREA_SOURCE,
+        paint: { "fill-color": "#1a73e8", "fill-opacity": 0.08 },
+      });
+      map.addLayer({
+        id: SELECTED_AREA_LINE,
+        type: "line",
+        source: SELECTED_AREA_SOURCE,
+        paint: { "line-color": "#1a73e8", "line-opacity": 0.95, "line-width": 2 },
+      });
+      map.addSource(AREA_DRAFT_SOURCE, { type: "geojson", data: draftAreaFC(draftPointsRef.current) });
+      map.addLayer({
+        id: AREA_DRAFT_FILL,
+        type: "fill",
+        source: AREA_DRAFT_SOURCE,
+        paint: { "fill-color": "#f5b84b", "fill-opacity": 0.16 },
+      });
+      map.addLayer({
+        id: AREA_DRAFT_LINE,
+        type: "line",
+        source: AREA_DRAFT_SOURCE,
+        paint: { "line-color": "#b36b00", "line-opacity": 0.95, "line-width": 2, "line-dasharray": [2, 1] },
+      });
+      map.addSource(AREA_DRAFT_POINTS_SOURCE, { type: "geojson", data: draftPointsFC(draftPointsRef.current) });
+      map.addLayer({
+        id: AREA_DRAFT_POINTS,
+        type: "circle",
+        source: AREA_DRAFT_POINTS_SOURCE,
+        paint: {
+          "circle-radius": 5,
+          "circle-color": "#ffffff",
+          "circle-stroke-color": "#b36b00",
+          "circle-stroke-width": 2,
         },
       });
 
@@ -347,7 +454,7 @@ export default function AirportMap({
       boundsRef.current = bounds;
       loadedRef.current = true;
       applyLayerVis(map, layerVis);
-      applyFilter(map, sevSet, statusSet);
+      applyIssueFilter(map, sevSet, statusSet);
 
       map.on("mouseenter", "pins", (e) => {
         map.getCanvas().style.cursor = "pointer";
@@ -358,33 +465,56 @@ export default function AirportMap({
         map.getCanvas().style.cursor = "";
         popup.remove();
       });
-      // Click a pin → open the preview card (don't navigate away immediately).
       map.on("click", "pins", (e) => {
+        if (areaDrawRef.current) return;
         const id = e.features?.[0]?.properties?.id;
-        if (typeof id !== "string") return;
-        selectedIssuePosRef.current = null;
-        for (const l of layers) {
-          const found = l.issues.find((i) => i.id === id);
-          if (found) { selectedIssuePosRef.current = issuePosition(l.runway, found) ?? null; break; }
-        }
-        setSelectedId(null);
-        setSelectedIssueId(id);
-        if (selectedIssuePosRef.current) focusIssuePreview(map, selectedIssuePosRef.current);
+        if (id) router.push(`/issue/${id}`);
       });
 
-      // ── User markers: gray drop-at-cursor named annotations ────────────────
+      map.on("mouseenter", AREA_DRAFT_POINTS, () => {
+        if (areaDrawRef.current) map.getCanvas().style.cursor = "grab";
+      });
+      map.on("mouseleave", AREA_DRAFT_POINTS, () => {
+        if (areaDrawRef.current && draggingAreaPointRef.current == null) {
+          map.getCanvas().style.cursor = "crosshair";
+        }
+      });
+      map.on("mousedown", AREA_DRAFT_POINTS, (e) => {
+        if (!areaDrawRef.current) return;
+        const index = Number(e.features?.[0]?.properties?.index);
+        if (!Number.isFinite(index)) return;
+        draggingAreaPointRef.current = index;
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "grabbing";
+        e.preventDefault();
+      });
+      map.on("mousemove", (e) => {
+        const index = draggingAreaPointRef.current;
+        if (index == null) return;
+        const nextPoint = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+        setDraftPoints((prev) => prev.map((p, i) => (i === index ? nextPoint : p)));
+      });
+      const finishAreaDrag = () => {
+        if (draggingAreaPointRef.current == null) return;
+        draggingAreaPointRef.current = null;
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = areaDrawRef.current ? "crosshair" : "";
+      };
+      map.on("mouseup", finishAreaDrag);
+      map.on("mouseleave", finishAreaDrag);
+
+      // ── User markers: drop-at-cursor named annotations ────────────────────
       map.addSource(MARKER_SOURCE, { type: "geojson", data: markersFC(markersRef.current) });
-      // Gray annotation dot with a thick white ring (distinct from the blue
-      // position dot and the severity-colored issue pins).
+      // Google-Maps-style location dot: solid blue core with a thick white ring.
       map.addLayer({
         id: MARKER_DOT,
         type: "circle",
         source: MARKER_SOURCE,
         paint: {
-          "circle-radius": 6,
-          "circle-color": "#5b6166",
+          "circle-radius": 7,
+          "circle-color": "#1a73e8",
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 2.5,
+          "circle-stroke-width": 3,
           "circle-opacity": 1,
         },
       });
@@ -410,111 +540,17 @@ export default function AirportMap({
         },
       });
 
-      // ── Live aircraft: violet position dots (system-owned, no editor) ───────
-      map.addSource(DRONE_SOURCE, { type: "geojson", data: dronesFC(layers, dronesRef.current) });
-      map.addLayer({
-        id: DRONE_DOT,
-        type: "circle",
-        source: DRONE_SOURCE,
-        paint: {
-          "circle-radius": 7,
-          "circle-color": DRONE_COLOR,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 3,
-          "circle-opacity": 1,
-        },
-      });
-      map.addLayer({
-        id: DRONE_LABEL,
-        type: "symbol",
-        source: DRONE_SOURCE,
-        layout: {
-          "text-field": ["get", "tail"],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": 11,
-          "text-offset": [0, 1.2],
-          "text-anchor": "top",
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: {
-          "text-color": "#ffffff",
-          "text-halo-color": "#3b1f7a",
-          "text-halo-width": 1.6,
-          "text-halo-blur": 0.3,
-        },
-      });
-
-      // Telemetry popup on hover; deliberately NO click handler — aircraft dots
-      // are not selectable, renamable, or deletable.
-      map.on("mouseenter", DRONE_DOT, (e) => {
-        if (!addModeRef.current) map.getCanvas().style.cursor = "pointer";
-        const f = e.features?.[0];
-        if (f) popup.setLngLat((f.geometry as Point).coordinates as [number, number]).setText(String(f.properties?.label ?? "")).addTo(map);
-      });
-      map.on("mouseleave", DRONE_DOT, () => {
-        map.getCanvas().style.cursor = addModeRef.current ? "crosshair" : "";
-        popup.remove();
-      });
-
-      // ── Operator (ground station): the blue "you are here" position dot ─────
-      map.addSource(OPERATOR_SOURCE, { type: "geojson", data: operatorFC(layers) });
-      map.addLayer({
-        id: OPERATOR_DOT,
-        type: "circle",
-        source: OPERATOR_SOURCE,
-        paint: {
-          "circle-radius": 7,
-          "circle-color": "#1a73e8",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 3,
-          "circle-opacity": 1,
-        },
-      });
-      map.addLayer({
-        id: OPERATOR_LABEL,
-        type: "symbol",
-        source: OPERATOR_SOURCE,
-        layout: {
-          "text-field": ["get", "name"],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": 11,
-          "text-offset": [0, 1.2],
-          "text-anchor": "top",
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: {
-          "text-color": "#ffffff",
-          "text-halo-color": "#1a4ea3",
-          "text-halo-width": 1.6,
-          "text-halo-blur": 0.3,
-        },
-      });
-      map.on("mouseenter", OPERATOR_DOT, (e) => {
-        if (!addModeRef.current) map.getCanvas().style.cursor = "pointer";
-        const f = e.features?.[0];
-        if (f) popup.setLngLat((f.geometry as Point).coordinates as [number, number]).setText(String(f.properties?.label ?? "")).addTo(map);
-      });
-      map.on("mouseleave", OPERATOR_DOT, () => {
-        map.getCanvas().style.cursor = addModeRef.current ? "crosshair" : "";
-        popup.remove();
-      });
-
-      // Keep the open editor / preview card glued to their anchors as the camera
-      // moves — write positions straight to the DOM nodes, no React state.
+      // Keep the open editor glued to its marker as the camera moves — write the
+      // position straight to the DOM node, no React state, so pan stays smooth.
       map.on("move", () => {
         const el = editorElRef.current;
         const id = selectedRef.current;
-        if (el && id) {
-          const m = markersRef.current.find((x) => x.id === id);
-          if (m) { const p = map.project([m.lng, m.lat]); el.style.left = `${p.x}px`; el.style.top = `${p.y}px`; }
-        }
-        const cardEl = issueCardElRef.current;
-        const ipos = selectedIssuePosRef.current;
-        if (cardEl && ipos) {
-          placeIssuePreview(map, containerRef.current, cardEl, ipos);
-        }
+        if (!el || !id) return;
+        const m = markersRef.current.find((x) => x.id === id);
+        if (!m) return;
+        const p = map.project([m.lng, m.lat]);
+        el.style.left = `${p.x}px`;
+        el.style.top = `${p.y}px`;
       });
 
       map.on("mouseenter", MARKER_DOT, () => {
@@ -528,39 +564,30 @@ export default function AirportMap({
       map.on("click", MARKER_DOT, (e) => {
         if (addModeRef.current) return; // add-mode: the map-level handler drops a new one
         const id = e.features?.[0]?.properties?.id;
-        if (typeof id === "string") { setSelectedIssueId(null); setSelectedId(id); }
+        if (typeof id === "string") setSelectedId(id);
       });
 
       // Map-level click: drop at the cursor in add-mode, else deselect on empty map.
       map.on("click", (e) => {
+        if (areaDrawRef.current) {
+          const points = draftPointsRef.current;
+          if (points.length < 4) {
+            const next = [...points, { lat: e.lngLat.lat, lng: e.lngLat.lng }];
+            setDraftPoints(next);
+            setAreaMessage(`${next.length}/4 points`);
+          }
+          return;
+        }
         if (addModeRef.current) {
           const m: MapMarker = { id: newMarkerId(), lng: e.lngLat.lng, lat: e.lngLat.lat, name: "" };
           setMarkers((prev) => [...prev, m]);
-          setSelectedIssueId(null);
           setSelectedId(m.id);
           setAddMode(false);
           return;
         }
-        const interactive = [MARKER_DOT, "pins", DRONE_DOT, OPERATOR_DOT].filter((id) => map.getLayer(id));
-        const hit = map.queryRenderedFeatures(e.point, { layers: interactive });
-        if (hit.length === 0) { setSelectedId(null); setSelectedIssueId(null); }
+        const hit = map.queryRenderedFeatures(e.point, { layers: [MARKER_DOT] });
+        if (hit.length === 0) setSelectedId(null);
       });
-
-      // Cursor readout: project onto the nearest runway → station + lateral offset.
-      const runways = layers.map((l) => l.runway);
-      map.on("mousemove", (e) => {
-        const el = readoutRef.current;
-        if (!el) return;
-        const hit = locateOnRunways(runways, { lat: e.lngLat.lat, lng: e.lngLat.lng });
-        if (hit) {
-          const rwy = runways.find((r) => r.id === hit.runwayId);
-          const side = hit.lateralOffsetM >= 0 ? "R" : "L";
-          el.textContent = `RWY ${rwy?.designation ?? "?"} · ${Math.round(hit.stationM).toLocaleString()} m · ${Math.abs(Math.round(hit.lateralOffsetM))} m ${side}`;
-        } else {
-          el.textContent = `${e.lngLat.lat.toFixed(5)}, ${e.lngLat.lng.toFixed(5)}`;
-        }
-      });
-      map.on("mouseout", () => { if (readoutRef.current) readoutRef.current.textContent = "—"; });
     });
 
     map.on("error", () => {/* tile/network errors are non-fatal — geometry still renders */});
@@ -571,14 +598,48 @@ export default function AirportMap({
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig]);
+  }, [mapSig]);
+
+  // Hydrate changing data in place. The map should not be torn down just because
+  // a slow runway-detail request finally returned with zones or issue pins.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
+    (map.getSource("surface") as maplibregl.GeoJSONSource | undefined)?.setData(surfaceFC);
+    (map.getSource("zones") as maplibregl.GeoJSONSource | undefined)?.setData(zonesFC);
+    (map.getSource("centerline") as maplibregl.GeoJSONSource | undefined)?.setData(centerlineFC);
+    (map.getSource("pins") as maplibregl.GeoJSONSource | undefined)?.setData(pinsFC);
+    (map.getSource(SELECTED_AREA_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      selectedAreaFC(selectedRunway),
+    );
+    boundsRef.current = bounds;
+    applyIssueFilter(map, sevSet, statusSet);
+  }, [layers, sevSet, statusSet, selectedRunway]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    (map.getSource(SELECTED_AREA_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      selectedAreaFC(selectedRunway),
+    );
+  }, [selectedRunway]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    (map.getSource(AREA_DRAFT_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(draftAreaFC(draftPoints));
+    (map.getSource(AREA_DRAFT_POINTS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      draftPointsFC(draftPoints),
+    );
+  }, [draftPoints]);
 
   // Reapply toolbar state to the live map when it changes.
   useEffect(() => {
     if (loadedRef.current && mapRef.current) applyLayerVis(mapRef.current, layerVis);
   }, [layerVis]);
   useEffect(() => {
-    if (loadedRef.current && mapRef.current) applyFilter(mapRef.current, sevSet, statusSet);
+    if (loadedRef.current && mapRef.current) applyIssueFilter(mapRef.current, sevSet, statusSet);
   }, [sevSet, statusSet]);
 
   // Push marker changes to the live source (the load handler seeds initial data).
@@ -589,15 +650,6 @@ export default function AirportMap({
     }
   }, [markers]);
 
-  // Push live aircraft updates to the drone source.
-  useEffect(() => {
-    if (loadedRef.current && mapRef.current) {
-      const src = mapRef.current.getSource(DRONE_SOURCE) as maplibregl.GeoJSONSource | undefined;
-      src?.setData(dronesFC(layers, drones));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drones]);
-
   // Persist markers per airport so they survive reloads.
   useEffect(() => {
     saveMarkers(airportId, markers);
@@ -606,10 +658,10 @@ export default function AirportMap({
   // Crosshair cursor while placing a marker.
   useEffect(() => {
     const m = mapRef.current;
-    if (m) m.getCanvas().style.cursor = addMode ? "crosshair" : "";
-  }, [addMode]);
+    if (m) m.getCanvas().style.cursor = areaDrawMode || addMode ? "crosshair" : "";
+  }, [addMode, areaDrawMode]);
 
-  // Position the marker editor (pre-paint) whenever it opens or its marker moves.
+  // Position the editor (pre-paint) whenever it opens or its marker moves.
   useLayoutEffect(() => {
     const m = mapRef.current;
     const el = editorElRef.current;
@@ -621,22 +673,12 @@ export default function AirportMap({
     el.style.top = `${p.y}px`;
   }, [selectedId, markers]);
 
-  // Position the issue preview card (pre-paint) when it opens.
-  useLayoutEffect(() => {
-    const m = mapRef.current;
-    const el = issueCardElRef.current;
-    const p = selectedIssuePosRef.current;
-    if (!m || !el || !selectedIssueId || !p) return;
-    placeIssuePreview(m, containerRef.current, el, p);
-  }, [selectedIssueId]);
-
-  // Escape exits add-mode / closes the editor + preview card.
+  // Escape exits add-mode / closes the editor.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setAddMode(false);
         setSelectedId(null);
-        setSelectedIssueId(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -692,17 +734,23 @@ export default function AirportMap({
         }}
         addMode={addMode}
         onToggleAddMode={() => {
+          setAreaDrawMode(false);
           setAddMode((v) => !v);
           setSelectedId(null);
         }}
+        runways={layers.map((l) => l.runway)}
+        selectedRunwayId={selectedRunway?.id ?? ""}
+        onSelectRunway={selectRunwayArea}
+        areaDrawMode={areaDrawMode}
+        onToggleAreaDraw={toggleAreaDraw}
+        areaPointCount={draftPoints.length}
+        areaCanSave={areaCanSave}
+        areaSaving={areaSaving}
+        areaMessage={areaMessage}
+        onSaveArea={() => void saveArea()}
+        onResetArea={resetAreaDraft}
+        onClearArea={() => void clearArea()}
       />
-      {/* Cursor → runway station / lateral readout (distinctive to this domain). */}
-      <div
-        ref={readoutRef}
-        className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md border border-[#dbdfe3] bg-[#fbfcfd]/90 px-2 py-1 font-mono text-[10px] tracking-wide text-[#3f4448] shadow-sm backdrop-blur-sm"
-      >
-        —
-      </div>
       {selectedId &&
         (() => {
           const mk = markers.find((x) => x.id === selectedId);
@@ -719,21 +767,6 @@ export default function AirportMap({
                 setSelectedId(null);
               }}
               onClose={() => setSelectedId(null)}
-            />
-          );
-        })()}
-      {selectedIssueId &&
-        (() => {
-          const entry = issueIndex.get(selectedIssueId);
-          if (!entry) return null;
-          return (
-            <IssuePreviewCard
-              ref={issueCardElRef}
-              issue={entry.issue}
-              ticket={entry.ticket}
-              runwayName={entry.runway.name}
-              onOpen={() => router.push(`/issue/${selectedIssueId}`)}
-              onClose={() => setSelectedIssueId(null)}
             />
           );
         })()}

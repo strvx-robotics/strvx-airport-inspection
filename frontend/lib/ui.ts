@@ -1,10 +1,12 @@
 // Presentation maps: domain value -> human label + badge tone.
 import type { Tone } from "@/components/Badge";
 import type {
+  ChecklistResult,
   Issue,
   IssueCategory,
   IssueDecision,
   InspectionStatus,
+  InspectionType,
   InspectionWindow,
   RejectionReason,
   Severity,
@@ -47,6 +49,20 @@ export const INSPECTION_WINDOW: Record<InspectionWindow, string> = {
   dusk_lit: "Dusk · lit",
 };
 
+/** Inspection-type labels (PRD §3). */
+export const INSPECTION_TYPE: Record<InspectionType, { label: string; tone: Tone }> = {
+  daily: { label: "Daily", tone: "blue" },
+  unusual: { label: "Unusual condition", tone: "amber" },
+  accident: { label: "Accident / incident", tone: "red" },
+};
+
+/** Daily-checklist result labels + tones (PRD §6). */
+export const CHECKLIST_RESULT: Record<ChecklistResult, { label: string; tone: Tone }> = {
+  pass: { label: "Pass", tone: "green" },
+  fail: { label: "Fail", tone: "red" },
+  na: { label: "N/A", tone: "gray" },
+};
+
 export const SEVERITY: Record<Severity, { label: string; tone: Tone }> = {
   low: { label: "Low", tone: "gray" },
   medium: { label: "Medium", tone: "amber" },
@@ -66,7 +82,8 @@ export const TICKET_STATUS: Record<TicketStatus, { label: string; tone: Tone }> 
     draft: { label: "Draft", tone: "gray" },
     sent: { label: "Sent to maintenance", tone: "blue" },
     in_progress: { label: "In progress", tone: "blue" },
-    repaired: { label: "Repaired · awaiting reinspection", tone: "purple" },
+    repaired: { label: "Repaired · awaiting reinspection", tone: "amber" },
+    reinspected: { label: "Reinspected · ready to close", tone: "purple" },
     closed: { label: "Closed", tone: "green" },
     rejected: { label: "Rejected", tone: "red" },
   };

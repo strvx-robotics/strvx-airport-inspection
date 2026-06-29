@@ -1,59 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { Flame } from "lucide-react";
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import Badge from "@/components/Badge";
-import DataTable from "@/components/DataTable";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
+import { SeverityFlames } from "@/components/SeverityFlames";
 import type { RunwayOverview } from "@/lib/api";
 import type { Severity } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, MUTED } from "@/lib/vstyle";
 
-// Severity as a 1–5 fire rating. Flames are lit by the runway's worst tier and
-// glow hotter (amber → red) the more severe it is — color here is signal (hazard
-// intensity), the one place warmth earns its keep in the monochrome console.
-const FLAMES: Record<Severity, number> = { low: 2, medium: 3, high: 4, critical: 5 };
-const HEAT: Record<Severity, string> = {
-  low: "text-[#d99a2b]",
-  medium: "text-[#d97f28]",
-  high: "text-[#d85f22]",
-  critical: "text-[#d23b1e]",
-};
-
 function FlameRating({ bySeverity, total }: { bySeverity: Record<Severity, number>; total: number }) {
   if (total === 0)
     return <span className="font-mono text-[11px] uppercase tracking-wide text-[#9aa1a6]">clear</span>;
   const worst = SEV_DESC.find((s) => bySeverity[s] > 0) ?? "low";
-  const rating = FLAMES[worst];
-  return (
-    <span
-      className="inline-flex items-center gap-0.5"
-      title={`Severity ${rating}/5 · worst tier: ${worst}`}
-      aria-label={`Severity ${rating} of 5`}
-    >
-      {[1, 2, 3, 4, 5].map((n) => {
-        const lit = n <= rating;
-        return (
-          <Flame
-            key={n}
-            size={15}
-            strokeWidth={2}
-            aria-hidden
-            className={lit ? HEAT[worst] : "text-[#d3d7da]"}
-            fill={lit ? "currentColor" : "none"}
-            style={lit ? { filter: "drop-shadow(0 0 2.5px currentColor)" } : undefined}
-          />
-        );
-      })}
-    </span>
-  );
+  return <SeverityFlames severity={worst} />;
 }
 
 // Worst-first comparator for the "Severity" column: a runway with more criticals
@@ -75,76 +33,85 @@ const lengthValue = (r: RunwayOverview) => {
   return n > 0 ? n : (r.runway.lengthM ?? 0);
 };
 
-const col = createColumnHelper<RunwayOverview>();
-const columns = [
-  col.accessor((r) => r.runway.name, {
-    id: "runway",
-    header: "Runway",
-    sortingFn: "alphanumeric",
-    cell: (c) => <span className="text-[13px] font-semibold text-[#181b1e]">{c.getValue()}</span>,
-    meta: { thClass: "w-[34%]" },
-  }),
-  col.accessor((r) => r.runway.designation, {
-    id: "designation",
-    header: "Designation",
-    sortingFn: "alphanumeric",
-    cell: (c) => c.getValue(),
-    meta: { tdClass: "whitespace-nowrap font-mono text-[12px] text-[#3f4448]" },
-  }),
-  col.accessor(lengthValue, {
-    id: "length",
-    header: "Length",
-    cell: (c) => c.row.original.runway.length || "—",
-    meta: { tdClass: "whitespace-nowrap font-mono text-[12px] text-[#5b6166]" },
-  }),
-  col.accessor((r) => r.imageCount, {
-    id: "images",
-    header: "Images",
-    cell: (c) => c.getValue() || "—",
-    meta: {
-      thClass: "text-right",
-      tdClass: "whitespace-nowrap text-right font-mono text-[12px] tabular-nums text-[#5b6166]",
+const columns: DataTableColumn<RunwayOverview>[] = [
+  {
+    colId: "runway",
+    headerName: "Runway",
+    valueGetter: ({ data }) => data?.runway.name ?? "",
+    cellRenderer: ({ value }: { value?: string }) => (
+      <span className="text-[13px] font-semibold text-[#181b1e]">{value}</span>
+    ),
+    flex: 1.15,
+    minWidth: 140,
+  },
+  {
+    colId: "designation",
+    headerName: "Designation",
+    valueGetter: ({ data }) => data?.runway.designation ?? "",
+    cellClass: "font-mono text-[12px] text-[#3f4448]",
+    flex: 0.8,
+    minWidth: 105,
+  },
+  {
+    colId: "length",
+    headerName: "Length",
+    valueGetter: ({ data }) => (data ? lengthValue(data) : 0),
+    valueFormatter: ({ data }) => data?.runway.length || "—",
+    cellClass: "font-mono text-[12px] text-[#5b6166]",
+    flex: 0.8,
+    minWidth: 95,
+  },
+  {
+    colId: "images",
+    headerName: "Images",
+    field: "imageCount",
+    valueFormatter: ({ value }) => value || "—",
+    cellClass: "font-mono text-[12px] tabular-nums text-[#5b6166]",
+    headerClass: "ag-right-aligned-header",
+    type: "rightAligned",
+    flex: 0.7,
+    minWidth: 80,
+  },
+  {
+    colId: "issues",
+    headerName: "Issue count",
+    field: "issueCount",
+    sort: "desc",
+    cellClass: "font-mono text-[13px] tabular-nums text-[#181b1e]",
+    headerClass: "ag-right-aligned-header",
+    type: "rightAligned",
+    flex: 0.75,
+    minWidth: 90,
+  },
+  {
+    colId: "severity",
+    headerName: "Severity",
+    valueGetter: ({ data }) => data?.issueCount ?? 0,
+    comparator: (_a, _b, nodeA, nodeB) =>
+      nodeA.data && nodeB.data ? severityCompare(nodeA.data, nodeB.data) : 0,
+    cellRenderer: ({ data }: { data?: RunwayOverview }) =>
+      data ? <FlameRating bySeverity={data.bySeverity} total={data.issueCount} /> : null,
+    flex: 1,
+    minWidth: 130,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    valueGetter: ({ data }) => data?.status.label ?? "",
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${data?.status.tone ?? "gray"}`,
+    cellStyle: {
+      alignItems: "center",
+      display: "flex",
     },
-  }),
-  col.accessor((r) => r.issueCount, {
-    id: "issues",
-    header: "Issues",
-    cell: (c) => c.getValue(),
-    meta: {
-      thClass: "text-right",
-      tdClass: "whitespace-nowrap text-right font-mono text-[13px] tabular-nums text-[#181b1e]",
-    },
-  }),
-  col.accessor((r) => r.issueCount, {
-    id: "severity",
-    header: "Severity",
-    sortingFn: (a, b) => severityCompare(a.original, b.original),
-    cell: (c) => <FlameRating bySeverity={c.row.original.bySeverity} total={c.row.original.issueCount} />,
-    meta: { thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((r) => r.status.label, {
-    id: "status",
-    header: "Status",
-    sortingFn: "alphanumeric",
-    cell: (c) => <Badge tone={c.row.original.status.tone}>{c.row.original.status.label}</Badge>,
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
+    cellRenderer: ({ data }: { data?: RunwayOverview }) =>
+      data ? <span>{data.status.label}</span> : null,
+    flex: 1.2,
+    minWidth: 160,
+  },
 ];
 
 export default function RunwayTable({ rows }: { rows: RunwayOverview[] }) {
-  // Default view: most issues first — but every header is now click-to-sort.
-  const [sorting, setSorting] = useState<SortingState>([{ id: "issues", desc: true }]);
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (r) => r.runway.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
-
   return (
     <section className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-md", CARD)}>
       <div className={cn("flex items-center justify-between px-4 py-2.5", BAR)}>
@@ -154,9 +121,11 @@ export default function RunwayTable({ rows }: { rows: RunwayOverview[] }) {
         </p>
       </div>
       <DataTable
-        table={table}
+        rows={rows}
+        columns={columns}
         label="Runways"
-        minWidth={720}
+        fill
+        getRowId={(r) => r.runway.id}
         rowHref={(r) => `/runway/${r.runway.id}`}
         empty={<div className="px-4 py-12 text-center text-[13px] text-[#6b7176]">No runways to show.</div>}
       />

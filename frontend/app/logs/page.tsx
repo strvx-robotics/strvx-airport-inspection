@@ -2,40 +2,51 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ScrollText, ArrowUpRight } from "lucide-react";
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import Badge from "@/components/Badge";
-import DataTable from "@/components/DataTable";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import { useOverview } from "@/lib/store";
 import * as api from "@/lib/api";
 import type { Inspection } from "@/lib/types";
 import { fmtInTz } from "@/lib/format";
-import { INSPECTION_STATUS, INSPECTION_WINDOW } from "@/lib/ui";
+import { INSPECTION_STATUS, INSPECTION_TYPE, INSPECTION_WINDOW } from "@/lib/ui";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, EYEBROW, H2, MUTED } from "@/lib/vstyle";
+import { CARD, BAR, EYEBROW, H2, INPUT, MUTED } from "@/lib/vstyle";
 
 type Counts = { images: number; issues: number };
 
-const col = createColumnHelper<Inspection>();
-
-/** Inspection log — one row per daily pass, with that day's results + report. */
+/** Inspection log - one row per daily pass, with that day's results + report. */
 export default function LogsPage() {
   const { overview, loading } = useOverview();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
-  const [sorting, setSorting] = useState<SortingState>([{ id: "date", desc: true }]);
 
   const inspections = useMemo(() => overview?.inspections ?? [], [overview?.inspections]);
   const tz = overview?.airport.timezone;
   const currentId = overview?.inspection?.id;
   const ids = inspections.map((i) => i.id).join(",");
+  const [queryText, setQueryText] = useState("");
 
-  // ponytail: N+1 — one detail fetch per pass to total that day's images/issues.
-  // Fine at demo scale; fold counts into listInspections() if the log grows long.
+  const filtered = useMemo(() => {
+    const q = queryText.trim().toLowerCase();
+    if (!q) return inspections;
+    return inspections.filter((i) =>
+      [
+        INSPECTION_TYPE[i.type]?.label,
+        INSPECTION_STATUS[i.status]?.label,
+        INSPECTION_WINDOW[i.window],
+        i.reason ?? "",
+        fmtInTz(i.scheduledTime, tz, {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [inspections, queryText, tz]);
+
+  // N+1 is fine at demo scale; fold counts into listInspections() if this grows.
   useEffect(() => {
     if (!ids) return;
     let live = true;
@@ -67,91 +78,106 @@ export default function LogsPage() {
   }, [ids]);
 
   const columns = useMemo(
-    () => [
-      col.accessor((i) => i.scheduledTime, {
-        id: "date",
-        header: "Date",
-        sortingFn: "text", // ISO timestamps → text compare is chronological
-        cell: ({ row }) => {
-          const i = row.original;
-          return (
+    (): DataTableColumn<Inspection>[] => [
+      {
+        colId: "date",
+        headerName: "Date",
+        field: "scheduledTime",
+        sort: "desc",
+        cellRenderer: ({ data }: { data?: Inspection }) =>
+          data ? (
             <div className="flex items-center gap-2.5">
               <span
                 className={cn(
                   "h-1.5 w-1.5 shrink-0 rounded-full",
-                  i.id === currentId ? "bg-[#181b1e]" : "bg-[#c7cdd2]",
+                  data.id === currentId ? "bg-[#181b1e]" : "bg-[#c7cdd2]",
                 )}
               />
               <span className="font-mono text-[12px] text-[#181b1e]">
-                {fmtInTz(i.scheduledTime, tz, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                {fmtInTz(data.scheduledTime, tz, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </span>
               <span className={cn("font-mono text-[11px]", MUTED)}>
-                {fmtInTz(i.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
+                {fmtInTz(data.scheduledTime, tz, { hour: "2-digit", minute: "2-digit" })}
               </span>
             </div>
-          );
+          ) : null,
+        flex: 1.4,
+        minWidth: 260,
+      },
+      {
+        colId: "type",
+        headerName: "Type",
+        valueGetter: ({ data }) => {
+          if (!data) return "";
+          const type = data.type ?? "daily";
+          return INSPECTION_TYPE[type]?.label ?? "Daily";
         },
-        meta: { thClass: "w-full" },
-      }),
-      col.accessor((i) => INSPECTION_WINDOW[i.window], {
-        id: "window",
-        header: "Window",
-        sortingFn: "alphanumeric",
-        cell: (c) => c.getValue(),
-        meta: { tdClass: "whitespace-nowrap text-[12px] text-[#3f4448]" },
-      }),
-      col.accessor((i) => counts[i.id]?.issues ?? -1, {
-        id: "issues",
-        header: "Issues",
-        cell: ({ row }) => counts[row.original.id]?.issues ?? "—",
-        meta: { tdClass: "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#181b1e]" },
-      }),
-      col.accessor((i) => counts[i.id]?.images ?? -1, {
-        id: "images",
-        header: "Images",
-        cell: ({ row }) => counts[row.original.id]?.images ?? "—",
-        meta: { tdClass: "whitespace-nowrap font-mono text-[12px] tabular-nums text-[#5b6166]" },
-      }),
-      col.accessor((i) => INSPECTION_STATUS[i.status].label, {
-        id: "status",
-        header: "Status",
-        sortingFn: "alphanumeric",
-        cell: ({ row }) => (
-          <Badge tone={INSPECTION_STATUS[row.original.status].tone}>
-            {INSPECTION_STATUS[row.original.status].label}
-          </Badge>
-        ),
-        meta: { tdClass: "whitespace-nowrap" },
-      }),
-      col.display({
-        id: "report",
-        header: "",
-        cell: ({ row }) => (
-          <a
-            href={api.reportUrl(row.original.id, "html")}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 font-mono text-[11px] text-[#5b6166] hover:text-[#181b1e] focus-visible:text-[#181b1e] focus-visible:underline focus-visible:outline-none"
-          >
-            Report <ArrowUpRight size={13} strokeWidth={2} aria-hidden />
-          </a>
-        ),
-        meta: { tdClass: "whitespace-nowrap text-right" },
-      }),
+        cellClass: "text-[12px] text-[#3f4448]",
+        minWidth: 150,
+      },
+      {
+        colId: "window",
+        headerName: "Window",
+        valueGetter: ({ data }) => (data ? INSPECTION_WINDOW[data.window] : ""),
+        cellClass: "text-[12px] text-[#3f4448]",
+        minWidth: 140,
+      },
+      {
+        colId: "issues",
+        headerName: "Issues",
+        valueGetter: ({ data }) => (data ? counts[data.id]?.issues ?? -1 : -1),
+        valueFormatter: ({ data }) => (data ? String(counts[data.id]?.issues ?? "-") : "-"),
+        cellClass: "font-mono text-[12px] tabular-nums text-[#181b1e]",
+        minWidth: 110,
+      },
+      {
+        colId: "images",
+        headerName: "Images",
+        valueGetter: ({ data }) => (data ? counts[data.id]?.images ?? -1 : -1),
+        valueFormatter: ({ data }) => (data ? String(counts[data.id]?.images ?? "-") : "-"),
+        cellClass: "font-mono text-[12px] tabular-nums text-[#5b6166]",
+        minWidth: 110,
+      },
+      {
+        colId: "status",
+        headerName: "Status",
+        valueGetter: ({ data }) => (data ? INSPECTION_STATUS[data.status].label : ""),
+        cellClass: ({ data }) =>
+          `valanor-status-cell valanor-status-${data ? INSPECTION_STATUS[data.status].tone : "gray"}`,
+        cellStyle: {
+          alignItems: "center",
+          display: "flex",
+        },
+        cellRenderer: ({ data }: { data?: Inspection }) =>
+          data ? <span>{INSPECTION_STATUS[data.status].label}</span> : null,
+        minWidth: 160,
+      },
+      {
+        colId: "report",
+        headerName: "",
+        sortable: false,
+        cellRenderer: ({ data }: { data?: Inspection }) =>
+          data ? (
+            <a
+              href={api.reportUrl(data.id, "html")}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 font-mono text-[11px] text-[#5b6166] hover:text-[#181b1e] focus-visible:text-[#181b1e] focus-visible:underline focus-visible:outline-none"
+            >
+              Report <ArrowUpRight size={13} strokeWidth={2} aria-hidden />
+            </a>
+          ) : null,
+        minWidth: 110,
+      },
     ],
     [counts, tz, currentId],
   );
-
-  const table = useReactTable({
-    data: inspections,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (i) => i.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-6">
@@ -163,22 +189,36 @@ export default function LogsPage() {
       </header>
 
       <section className={cn("mt-6 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md", CARD)}>
-        <div className={cn("flex items-center justify-between px-4 py-3", BAR)}>
+        <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", BAR)}>
           <h3 className="text-[13px] font-semibold text-[#181b1e]">Daily passes</h3>
-          <p className={cn("text-[12px]", MUTED)}>
-            {inspections.length} record{inspections.length === 1 ? "" : "s"}
-          </p>
+          <div className="flex items-center gap-3">
+            <input
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder="Search date, type, status…"
+              className={cn("h-8 w-56 px-3 text-[12px]", INPUT)}
+            />
+            <p className={cn("whitespace-nowrap text-[12px]", MUTED)}>
+              {filtered.length} record{filtered.length === 1 ? "" : "s"}
+            </p>
+          </div>
         </div>
 
         {loading ? (
-          <p className={cn("px-4 py-8 text-center font-mono text-[12px]", MUTED)}>Loading log…</p>
+          <p className={cn("px-4 py-8 text-center font-mono text-[12px]", MUTED)}>Loading log...</p>
         ) : (
           <DataTable
-            table={table}
+            rows={filtered}
+            columns={columns}
             label="Daily passes"
-            minWidth={720}
+            fill
+            getRowId={(i) => i.id}
             rowHref={(i) => `/inspection/${i.id}`}
-            empty={<p className={cn("px-4 py-8 text-center text-[12px]", MUTED)}>No inspections recorded.</p>}
+            empty={
+              <p className={cn("px-4 py-8 text-center text-[12px]", MUTED)}>
+                {queryText ? "No matching inspections." : "No inspections recorded."}
+              </p>
+            }
           />
         )}
       </section>

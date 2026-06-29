@@ -1,16 +1,23 @@
 from datetime import datetime
 
 from app import db
+from app.deps import Actor
 from app.errors import AppError
 from app.models import Inspection, InspectionJob
-from app.repo.helpers import gid, now
+from app.repo.helpers import actor_name, gid, now
+
+
+VALID_INSPECTION_TYPES = {"daily", "unusual", "accident"}
 
 
 def to_inspection(r) -> Inspection:
     return Inspection(
         id=r["id"], airport_id=r["airport_id"], scheduled_time=r["scheduled_time"],
-        window=r["window"], status=r["status"], started_at=r["started_at"],
-        completed_at=r["completed_at"], created_by=r["created_by"], created_at=r["created_at"],
+        window=r["window"], type=r["type"], reason=r["reason"], status=r["status"],
+        started_at=r["started_at"], completed_at=r["completed_at"],
+        signed_by=r["signed_by"], signed_at=r["signed_at"],
+        signature_name=r["signature_name"], attestation=bool(r["attestation"]),
+        created_by=r["created_by"], created_at=r["created_at"],
     )
 
 
@@ -51,31 +58,39 @@ async def list_jobs(inspection_id: str) -> list[InspectionJob]:
     return [to_job(r) for r in rows]
 
 
-async def run_inspection_now(airport_id: str | None = None) -> Inspection:
+async def run_inspection_now(
+    airport_id: str | None = None, type: str = "daily", reason: str | None = None
+) -> Inspection:
     from app.repo.airports import get_airport, get_default_airport
     from app.repo.runways import list_runways
     airport = await get_airport(airport_id) if airport_id else await get_default_airport()
     if airport is None:
         raise AppError("Airport not found")
-    # LOCAL date (matches frontend new Date() local components), 6 AM Z slot.
-    d = datetime.now()
-    day = d.strftime("%Y-%m-%d")
-    scheduled = f"{day}T06:00:00.000Z"
-
-    existing = await db.one(
-        "SELECT * FROM inspections WHERE airport_id = $1 AND scheduled_time = $2 LIMIT 1",
-        airport.id, scheduled,
-    )
-    if existing:
-        return to_inspection(existing)
+    if type not in VALID_INSPECTION_TYPES:
+        type = "daily"
 
     created_at = now()
+    if type == "daily":
+        # One canonical daily pass per LOCAL day, 6 AM Z slot — deduped so the
+        # scheduler/operator can't create two daily passes for the same day.
+        scheduled = f"{datetime.now().strftime('%Y-%m-%d')}T06:00:00.000Z"
+        existing = await db.one(
+            "SELECT * FROM inspections WHERE airport_id = $1 AND scheduled_time = $2 LIMIT 1",
+            airport.id, scheduled,
+        )
+        if existing:
+            return to_inspection(existing)
+    else:
+        # Ad-hoc unusual-condition / accident inspections are always NEW; a unique
+        # timestamp slot sidesteps the (airport_id, scheduled_time) dedup.
+        scheduled = created_at
+
     async with db.tx():
         await db.run(
-            'INSERT INTO inspections (id, airport_id, scheduled_time, "window", status, created_by, created_at) '
-            "VALUES ($1,$2,$3,'daylight','not_started','scheduler',$4) "
+            'INSERT INTO inspections (id, airport_id, scheduled_time, "window", type, reason, status, created_by, created_at) '
+            "VALUES ($1,$2,$3,'daylight',$4,$5,'not_started','scheduler',$6) "
             "ON CONFLICT (airport_id, scheduled_time) DO NOTHING",
-            gid("insp"), airport.id, scheduled, created_at,
+            gid("insp"), airport.id, scheduled, type, reason, created_at,
         )
         canon = await db.one(
             "SELECT id FROM inspections WHERE airport_id = $1 AND scheduled_time = $2",
@@ -90,6 +105,31 @@ async def run_inspection_now(airport_id: str | None = None) -> Inspection:
                 gid("job"), cid, rw.id, created_at,
             )
     result = await get_inspection(cid)
+    assert result is not None
+    return result
+
+
+async def sign_inspection(id: str, signature_name: str, actor: Actor | None) -> Inspection:
+    """Inspector attestation / sign-off for the inspection (PRD §2). Records who
+    signed, the typed signature name, and marks the pass completed."""
+    from app.repo.checklist import get_checklist
+
+    insp = await get_inspection(id)
+    if insp is None:
+        raise AppError(f"Inspection not found: {id}")
+    if insp.signed_at:
+        raise AppError("Inspection is already signed off")
+    if not signature_name or not signature_name.strip():
+        raise AppError("A signature name is required to sign off")
+    incomplete = [i for i in await get_checklist(id) if not i.get("result")]
+    if incomplete:
+        raise AppError("Complete all checklist items before signing off")
+    await db.run(
+        "UPDATE inspections SET signed_by = $1, signature_name = $2, signed_at = $3, "
+        "attestation = 1, status = 'completed' WHERE id = $4",
+        await actor_name(actor), signature_name.strip(), now(), id,
+    )
+    result = await get_inspection(id)
     assert result is not None
     return result
 

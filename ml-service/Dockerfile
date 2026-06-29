@@ -18,7 +18,7 @@ COPY . .
 # Bake all weights into the image so the first request is fast and the container
 # needs no network at runtime: the COCO FOD model + the pretrained pavement model.
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" \
-    && python download_models.py
+    && python -m app.scripts.download_models
 
 EXPOSE 8000
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

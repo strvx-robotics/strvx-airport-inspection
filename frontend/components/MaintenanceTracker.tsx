@@ -2,23 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Wrench, Search, ClipboardList } from "lucide-react";
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import Badge from "@/components/Badge";
-import DataTable from "@/components/DataTable";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
+import { SeverityFlames } from "@/components/SeverityFlames";
 import * as api from "@/lib/api";
-import { TICKET_POLL_MS } from "@/lib/store";
 import type { Ticket, TicketStatus } from "@/lib/types";
 import { SEVERITY_VALUES } from "@/lib/types";
-import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
+import { CATEGORY, TICKET_STATUS } from "@/lib/ui";
 import { rel } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, INPUT, EYEBROW, H2, MUTED, METRIC_CELL, DOT } from "@/lib/vstyle";
+import { CARD, BAR, INPUT, EYEBROW, H2, MUTED, METRIC_CELL } from "@/lib/vstyle";
 
 const ACTIVE: TicketStatus[] = ["draft", "sent", "in_progress", "repaired"];
 const isActive = (s: TicketStatus) => ACTIVE.includes(s);
@@ -30,73 +22,84 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-// WO · Defect · Location · Severity · Status · Assigned · Logged · › — every
-// header is click-to-sort; the default order (active first) comes from `rows`.
-const col = createColumnHelper<Ticket>();
-const columns = [
-  col.accessor((t) => t.id, {
-    id: "wo",
-    header: "Work order",
-    sortingFn: "alphanumeric",
-    cell: (c) => <span className="font-mono text-[13px] font-medium text-[#181b1e]">{c.getValue()}</span>,
-    meta: { thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((t) => CATEGORY[t.category] ?? t.category, {
-    id: "defect",
-    header: "Defect",
-    sortingFn: "alphanumeric",
-    cell: (c) => c.getValue(),
-    meta: { thClass: "w-[34%]", tdClass: "truncate text-[13px] text-[#3f4448]" },
-  }),
-  // Sort by the displayed string so placeholder rows ("—") order with what's shown.
-  col.accessor((t) => t.zone || "—", {
-    id: "location",
-    header: "Location",
-    sortingFn: "alphanumeric",
-    cell: (c) => c.getValue(),
-    meta: { thClass: "w-[26%]", tdClass: "truncate font-mono text-[12px] text-[#5b6166]" },
-  }),
-  col.accessor((t) => SEVERITY_VALUES.indexOf(t.severity), {
-    id: "severity",
-    header: "Severity",
-    cell: (c) => {
-      const sev = c.row.original.severity;
-      return (
-        <span className="inline-flex items-center gap-1.5">
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[sev] ?? "bg-[#9aa1a6]")} />
-          <span className="text-[12px] text-[#3f4448]">{SEVERITY[sev]?.label ?? sev}</span>
-        </span>
-      );
-    },
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((t) => TICKET_STATUS[t.status]?.label ?? t.status, {
-    id: "status",
-    header: "Status",
-    sortingFn: "alphanumeric",
-    cell: (c) => {
-      const st = TICKET_STATUS[c.row.original.status];
-      return <Badge tone={st?.tone ?? "gray"}>{st?.label ?? c.row.original.status}</Badge>;
-    },
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
-  // Sort by the displayed string so "Unassigned" rows order with what's shown.
-  col.accessor((t) => t.assignedTo || "Unassigned", {
-    id: "assigned",
-    header: "Assigned",
-    sortingFn: "alphanumeric",
-    cell: (c) => (
-      <span className={c.row.original.assignedTo ? undefined : "text-[#9aa1a6]"}>{c.getValue()}</span>
+// WO · Defect · Location · Severity · Status · Assigned · Logged.
+// AG Grid owns sorting; the default order (active first) comes from `rows`.
+const columns: DataTableColumn<Ticket>[] = [
+  {
+    colId: "wo",
+    headerName: "Work order",
+    field: "id",
+    cellRenderer: ({ value }: { value?: string }) => (
+      <span className="font-mono text-[13px] font-medium text-[#181b1e]">{value}</span>
     ),
-    meta: { thClass: "w-[23%]", tdClass: "truncate text-[12px] text-[#5b6166]" },
-  }),
-  col.accessor((t) => t.createdAt ?? "", {
-    id: "logged",
-    header: "Logged",
-    sortingFn: "text", // ISO timestamps → plain text compare is chronological & stable
-    cell: (c) => rel(c.row.original.createdAt),
-    meta: { tdClass: "whitespace-nowrap font-mono text-[11px] text-[#6b7176]" },
-  }),
+    minWidth: 120,
+    maxWidth: 140,
+  },
+  {
+    colId: "defect",
+    headerName: "Defect",
+    valueGetter: ({ data }) => (data ? CATEGORY[data.category] ?? data.category : ""),
+    cellClass: "text-[13px] text-[#3f4448] whitespace-normal leading-snug",
+    flex: 1.25,
+    minWidth: 150,
+  },
+  {
+    colId: "location",
+    headerName: "Location",
+    valueGetter: ({ data }) => data?.zone || "—",
+    cellClass: "font-mono text-[12px] text-[#5b6166] whitespace-normal leading-snug",
+    flex: 0.9,
+    minWidth: 130,
+  },
+  {
+    colId: "severity",
+    headerName: "Severity",
+    valueGetter: ({ data }) => (data ? SEVERITY_VALUES.indexOf(data.severity) : -1),
+    cellRenderer: ({ data }: { data?: Ticket }) =>
+      data ? <SeverityFlames severity={data.severity} /> : null,
+    minWidth: 112,
+    maxWidth: 122,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    valueGetter: ({ data }) => (data ? TICKET_STATUS[data.status]?.label ?? data.status : ""),
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${
+        data ? TICKET_STATUS[data.status]?.tone ?? "gray" : "gray"
+      } whitespace-normal leading-snug`,
+    cellStyle: {
+      alignItems: "center",
+      display: "flex",
+    },
+    cellRenderer: ({ data }: { data?: Ticket }) => {
+      if (!data) return null;
+      const st = TICKET_STATUS[data.status];
+      return <span>{st?.label ?? data.status}</span>;
+    },
+    flex: 1.15,
+    minWidth: 160,
+  },
+  {
+    colId: "assigned",
+    headerName: "Assigned",
+    valueGetter: ({ data }) => data?.assignedTo || "Unassigned",
+    cellRenderer: ({ data, value }: { data?: Ticket; value?: string }) => (
+      <span className={data?.assignedTo ? undefined : "text-[#9aa1a6]"}>{value}</span>
+    ),
+    cellClass: "text-[12px] text-[#5b6166] whitespace-normal leading-snug",
+    flex: 0.9,
+    minWidth: 140,
+  },
+  {
+    colId: "logged",
+    headerName: "Logged",
+    field: "createdAt",
+    cellRenderer: ({ data }: { data?: Ticket }) => rel(data?.createdAt),
+    cellClass: "font-mono text-[11px] text-[#6b7176]",
+    minWidth: 100,
+    maxWidth: 110,
+  },
 ];
 
 /** The maintenance role's whole view: an enterprise work-order queue. */
@@ -104,44 +107,13 @@ export default function MaintenanceTracker() {
   const [tickets, setTickets] = useState<Ticket[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const [now, setNow] = useState<number | null>(null);
 
-  // Poll the work-order queue so newly-generated orders and status changes made
-  // by other roles appear without a manual reload. Pause while the tab is hidden
-  // to avoid waste; catch up immediately on focus.
   useEffect(() => {
     let live = true;
-    const load = () =>
-      api
-        .listTickets()
-        .then((t) => {
-          if (!live) return;
-          setTickets(t);
-          setUpdatedAt(Date.now());
-        })
-        // Keep the last good list on a transient poll error; only show empty if
-        // we never managed a first load.
-        .catch(() => live && setTickets((prev) => prev ?? []));
-    load();
-    const beat = setInterval(() => {
-      if (typeof document === "undefined" || !document.hidden) void load();
-    }, TICKET_POLL_MS);
-    const onFocus = () => void load();
-    window.addEventListener("focus", onFocus);
+    api.listTickets().then((t) => live && setTickets(t)).catch(() => live && setTickets([]));
     return () => {
       live = false;
-      clearInterval(beat);
-      window.removeEventListener("focus", onFocus);
     };
-  }, []);
-
-  // 1s clock so the "updated …" stamp stays truthful between polls.
-  useEffect(() => {
-    setNow(Date.now());
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(tick);
   }, []);
 
   const all = tickets ?? [];
@@ -156,7 +128,6 @@ export default function MaintenanceTracker() {
   );
 
   // Tab + search narrow the set; default order is active-first, newest-first.
-  // TanStack starts with empty sorting so it preserves this until a header click.
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all
@@ -175,16 +146,6 @@ export default function MaintenanceTracker() {
       );
   }, [all, filter, query]);
 
-  const table = useReactTable({
-    data: rows,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (t) => t.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
-
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col px-6 py-6">
       {/* header */}
@@ -194,16 +155,7 @@ export default function MaintenanceTracker() {
           <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
             <Wrench size={17} strokeWidth={2} /> Work orders
           </h1>
-          <p className={cn("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]", MUTED)}>
-            <span>Field maintenance queue · {all.length} total</span>
-            <LivePill
-              stamp={
-                updatedAt != null && now != null
-                  ? rel(new Date(updatedAt).toISOString(), now)
-                  : null
-              }
-            />
-          </p>
+          <p className={cn("mt-1 text-[13px]", MUTED)}>Field maintenance queue · {all.length} total</p>
         </div>
       </div>
 
@@ -242,15 +194,17 @@ export default function MaintenanceTracker() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search WO, location, defect…"
-              className={cn("h-8 w-56 max-w-full pl-8 pr-3", INPUT)}
+              className={cn("h-8 w-48 max-w-full pl-8 pr-3", INPUT)}
             />
           </div>
         </div>
 
         <DataTable
-          table={table}
+          rows={rows}
+          columns={columns}
           label="Work orders"
-          minWidth={760}
+          fill
+          getRowId={(t) => t.id}
           rowHref={(t) => `/ticket/${t.id}`}
           empty={
             tickets === null ? (
@@ -266,20 +220,6 @@ export default function MaintenanceTracker() {
         />
       </section>
     </div>
-  );
-}
-
-/** Pulsing "Live" pill — signals the queue auto-refreshes, with a last-updated stamp. */
-function LivePill({ stamp }: { stamp: string | null }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-[#6b7176]">
-      <span className="relative flex h-1.5 w-1.5" aria-hidden>
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2f9e44] opacity-60" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#2f9e44]" />
-      </span>
-      <span className="uppercase tracking-wide text-[#3f7a4e]">Live</span>
-      {stamp && <span className="text-[#9aa1a6]">· updated {stamp}</span>}
-    </span>
   );
 }
 

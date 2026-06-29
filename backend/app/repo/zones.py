@@ -1,6 +1,7 @@
 import json
 
 from app import db
+from app.errors import AppError
 from app.models import LngLat, Zone
 from app.repo.helpers import gid, now
 
@@ -41,3 +42,31 @@ async def create_zone(
     z = await get_zone(id)
     assert z is not None
     return z
+
+
+async def update_zone(
+    id: str, *, name: str | None = None, station_start_m: float | None = None,
+    station_end_m: float | None = None, notes: str | None = None,
+) -> Zone:
+    if await get_zone(id) is None:
+        raise AppError(f"Zone not found: {id}")
+    await db.run(
+        "UPDATE zones SET name = COALESCE($1, name), station_start_m = COALESCE($2, station_start_m), "
+        "station_end_m = COALESCE($3, station_end_m), notes = COALESCE($4, notes) WHERE id = $5",
+        name, station_start_m, station_end_m, notes, id,
+    )
+    z = await get_zone(id)
+    assert z is not None
+    return z
+
+
+async def delete_zone(id: str) -> None:
+    if await get_zone(id) is None:
+        raise AppError(f"Zone not found: {id}")
+    deps = await db.one(
+        "SELECT (SELECT count(*) FROM images WHERE zone_id = $1) AS images, "
+        "(SELECT count(*) FROM issue_candidates WHERE zone_id = $1) AS issues", id,
+    )
+    if deps and (deps["images"] or deps["issues"]):
+        raise AppError("Cannot delete a zone that has images or issues attached.")
+    await db.run("DELETE FROM zones WHERE id = $1", id)

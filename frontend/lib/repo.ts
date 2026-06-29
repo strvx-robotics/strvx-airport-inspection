@@ -21,6 +21,7 @@ import {
   type Airport,
   type BadgeTone,
   type BBox,
+  type ChecklistItem,
   type ConfidenceBand,
   type Drone,
   type GeomConfidence,
@@ -41,6 +42,7 @@ import {
   type UserRole,
   type Zone,
 } from "./types";
+import { STANDARD_CHECKLIST_ITEMS } from "./checklist";
 
 // ── Shared input shapes (route handlers type their calls against these) ────────
 
@@ -147,6 +149,8 @@ export interface InspectionReport {
   generatedAt: string;
   totals: { issues: number; tickets: number; ticketsOpen: number; ticketsCompleted: number };
   runways: Array<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] }>;
+  checklist: ChecklistItem[];
+  images: Image[];
 }
 
 export interface RejectionRecord {
@@ -190,9 +194,9 @@ const gps = (lat: Num, lng: Num): LngLat | undefined =>
   lat == null || lng == null ? undefined : { lat, lng };
 
 interface AirportRow { id: string; name: string; code: string; location: Str; timezone: Str; created_at: string }
-interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; active_status: Str; created_at: string }
+interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; runway_polygon_json: Str; map_status: Str; active_status: Str; created_at: string }
 interface ZoneRow { id: string; runway_id: string; name: string; station_start_m: Num; station_end_m: Num; polygon_json: Str; notes: Str; created_at: string }
-interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; status: string; started_at: Str; completed_at: Str; created_by: Str; created_at: string }
+interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; type: string; reason: Str; status: string; started_at: Str; completed_at: Str; signed_by: Str; signed_at: Str; signature_name: Str; attestation: number; created_by: Str; created_at: string }
 interface JobRow { id: string; inspection_id: string; runway_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
 interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; created_by: Str; created_at: string }
 interface ImageRow { id: string; job_id: Str; runway_id: string; zone_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
@@ -204,13 +208,28 @@ function toAirport(r: AirportRow): Airport {
   return { id: r.id, name: r.name, code: r.code, location: r.location ?? "", timezone: r.timezone ?? "", createdAt: r.created_at };
 }
 function toRunway(r: RunwayRow): Runway {
-  return { id: r.id, airportId: r.airport_id, name: r.name, designation: r.designation, length: r.length ?? "", description: u(r.description), lengthM: u(r.length_m), thresholdHeadingDeg: u(r.threshold_heading_deg), thresholdLat: u(r.threshold_lat), thresholdLng: u(r.threshold_lng), activeStatus: u(r.active_status), createdAt: r.created_at };
+  return {
+    id: r.id,
+    airportId: r.airport_id,
+    name: r.name,
+    designation: r.designation,
+    length: r.length ?? "",
+    description: u(r.description),
+    lengthM: u(r.length_m),
+    thresholdHeadingDeg: u(r.threshold_heading_deg),
+    thresholdLat: u(r.threshold_lat),
+    thresholdLng: u(r.threshold_lng),
+    runwayPolygon: r.runway_polygon_json ? (JSON.parse(r.runway_polygon_json) as LngLat[]) : undefined,
+    mapStatus: (r.map_status ?? "draft") as Runway["mapStatus"],
+    activeStatus: u(r.active_status),
+    createdAt: r.created_at,
+  };
 }
 function toZone(r: ZoneRow): Zone {
   return { id: r.id, runwayId: r.runway_id, name: r.name, stationStartM: u(r.station_start_m), stationEndM: u(r.station_end_m), polygon: r.polygon_json ? (JSON.parse(r.polygon_json) as LngLat[]) : undefined, notes: u(r.notes), createdAt: r.created_at };
 }
 function toInspection(r: InspectionRow): Inspection {
-  return { id: r.id, airportId: r.airport_id, scheduledTime: r.scheduled_time, window: r.window as InspectionWindow, status: r.status as Inspection["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), createdBy: u(r.created_by), createdAt: r.created_at };
+  return { id: r.id, airportId: r.airport_id, scheduledTime: r.scheduled_time, window: r.window as InspectionWindow, type: (u(r.type) as Inspection["type"]) ?? "daily", reason: u(r.reason), status: r.status as Inspection["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), signedBy: u(r.signed_by), signedAt: u(r.signed_at), signatureName: u(r.signature_name), attestation: r.attestation === 1, createdBy: u(r.created_by), createdAt: r.created_at };
 }
 function toJob(r: JobRow): InspectionJob {
   return { id: r.id, inspectionId: r.inspection_id, runwayId: r.runway_id, status: r.status as InspectionJob["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), imageCount: r.image_count, issueCount: r.issue_count, createdAt: r.created_at };
@@ -558,16 +577,16 @@ export async function createIssueCandidate(input: NewIssueCandidate): Promise<Is
 
 export async function createImage(input: {
   runwayId: string; zoneId?: string; jobId?: string; fileUrl: string; sourceFile?: string;
-  gps?: LngLat; geomConfidence?: GeomConfidence; timestamp?: string;
+  gps?: LngLat; geomConfidence?: GeomConfidence; timestamp?: string; createdBy?: string;
 }): Promise<Image> {
   const id = gid("img");
   await run(
-    `INSERT INTO images (id, job_id, runway_id, zone_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO images (id, job_id, runway_id, zone_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, input.jobId ?? null, input.runwayId, input.zoneId ?? null, input.fileUrl, input.gps?.lat ?? null,
       input.gps?.lng ?? null, input.geomConfidence ?? (input.gps ? "gps" : "manual"), input.timestamp ?? now(),
-      input.sourceFile ?? null, now(),
+      input.sourceFile ?? null, input.createdBy ?? null, now(),
     ],
   );
   const r = await one<ImageRow>("SELECT * FROM images WHERE id = ?", [id]);
@@ -599,7 +618,8 @@ export async function ingestUpload(input: UploadInput): Promise<{ image: Image; 
   }
 
   return tx(async () => {
-    const image = await createImage({ runwayId: input.runwayId, zoneId: input.zoneId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence });
+    const createdBy = input.actor ? await actorName(input.actor) : undefined;
+    const image = await createImage({ runwayId: input.runwayId, zoneId: input.zoneId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence, createdBy });
     // Sequential: every query inside a tx shares one connection and can't overlap.
     const candidates: IssueCandidate[] = [];
     for (const det of input.detections) {
@@ -864,6 +884,35 @@ export async function getOverview(inspectionId?: string): Promise<Overview> {
   };
 }
 
+interface ChecklistRow { inspection_id: string; item_key: string; result: string; notes: string; image_id: Str; updated_at: Str }
+
+/** The standard daily checklist merged with any stored response (PRD §6). */
+export async function getChecklist(inspectionId: string): Promise<ChecklistItem[]> {
+  const rows = await all<ChecklistRow>("SELECT * FROM checklist_responses WHERE inspection_id = ?", [inspectionId]);
+  const byKey = new Map(rows.map((r) => [r.item_key, r]));
+  return STANDARD_CHECKLIST_ITEMS.map((item) => {
+    const r = byKey.get(item.key);
+    return {
+      itemKey: item.key,
+      label: item.label,
+      category: item.category,
+      result: (r?.result as ChecklistItem["result"]) ?? null,
+      notes: r?.notes ?? "",
+      imageId: r?.image_id ?? null,
+      updatedAt: r?.updated_at ?? null,
+    };
+  });
+}
+
+/** Images captured during this inspection (via its runway jobs). */
+export async function listImagesByInspection(inspectionId: string): Promise<Image[]> {
+  const rows = await all<ImageRow>(
+    "SELECT i.* FROM images i JOIN inspection_jobs j ON j.id = i.job_id WHERE j.inspection_id = ? ORDER BY i.timestamp",
+    [inspectionId],
+  );
+  return rows.map(toImage);
+}
+
 export async function getInspectionReport(id: string): Promise<InspectionReport | undefined> {
   const inspection = await getInspection(id);
   if (!inspection) return undefined;
@@ -886,6 +935,8 @@ export async function getInspectionReport(id: string): Promise<InspectionReport 
       ticketsCompleted: tickets.filter((t) => t.status === "closed").length,
     },
     runways,
+    checklist: await getChecklist(id),
+    images: await listImagesByInspection(id),
   };
 }
 
@@ -932,6 +983,21 @@ export function renderReportHtml(report: InspectionReport): string {
     })
     .join("");
 
+  const resultLabel = (res: string): string => (res === "na" ? "N/A" : titleCase(res));
+  const imageUrl = (id: string | null | undefined): string =>
+    id ? (report.images.find((i) => i.id === id)?.fileUrl ?? "") : "";
+  const checklistSection = report.checklist.length
+    ? `<section><h3>Daily self-inspection checklist</h3><table><thead><tr><th>Item</th><th>Result</th><th>Notes</th><th>Evidence</th></tr></thead><tbody>${report.checklist
+        .map(
+          (c) =>
+            `<tr><td><strong>${esc(c.label)}</strong></td><td>${c.result ? esc(resultLabel(c.result)) : "—"}</td><td>${esc(c.notes || "")}</td><td>${c.imageId ? `<a href="${esc(imageUrl(c.imageId))}">${esc(imageUrl(c.imageId).split("/").pop() ?? c.imageId)}</a>` : "—"}</td></tr>`,
+        )
+        .join("")}</tbody></table></section>`
+    : "";
+  const signoff = report.inspection.signedAt
+    ? `<p class="meta">Signed off by ${esc(report.inspection.signatureName || report.inspection.signedBy || "—")} · ${esc(fmt(report.inspection.signedAt))}</p>`
+    : `<p class="meta">Not yet signed off</p>`;
+
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inspection report — ${esc(report.airport.code)}</title>
 <style>
   *{box-sizing:border-box}
@@ -957,12 +1023,63 @@ export function renderReportHtml(report: InspectionReport): string {
 <div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
 <header>
   <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
-  <p class="meta">Inspection ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
+  <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
   <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
+  ${signoff}
   <p class="totals">${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
 </header>
+${checklistSection}
 ${sections}
 </body></html>`;
+}
+
+/** Flat CSV of the inspection's issues — PRD §8 export (Cmd-P the HTML report
+ *  for PDF; this gives a spreadsheet-friendly extract). */
+export function renderReportCsv(report: InspectionReport): string {
+  const q = (v: unknown): string => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const imageUrl = (id: string | null | undefined): string =>
+    id ? (report.images.find((i) => i.id === id)?.fileUrl ?? "") : "";
+  const rows: string[] = [];
+  if (report.checklist.length) {
+    rows.push("DAILY CHECKLIST");
+    rows.push(["Item", "Category", "Result", "Notes", "Evidence URL"].join(","));
+    for (const c of report.checklist) {
+      rows.push(
+        [
+          q(c.label),
+          q(c.category),
+          q(c.result ?? ""),
+          q(c.notes),
+          q(imageUrl(c.imageId)),
+        ].join(","),
+      );
+    }
+    rows.push("");
+  }
+  rows.push("ISSUES");
+  rows.push(
+    ["Runway", "Designation", "Category", "Zone", "Confidence", "Severity", "Status", "Description"].join(","),
+  );
+  for (const { runway, issues } of report.runways) {
+    for (const i of issues) {
+      rows.push(
+        [
+          q(runway.name),
+          q(runway.designation),
+          q(REPORT_CATEGORY[i.category] ?? i.category),
+          q(i.zone ?? ""),
+          `${(i.confidence * 100).toFixed(0)}%`,
+          q(titleCase(i.severity)),
+          q(titleCase(i.status)),
+          q(i.draft),
+        ].join(","),
+      );
+    }
+  }
+  return rows.join("\n");
 }
 
 // ── Diff view + feedback export (design §13) ──────────────────────────────────

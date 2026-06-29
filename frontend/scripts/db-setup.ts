@@ -8,12 +8,13 @@
 //
 // (The demo fixtures in lib/seed-db.ts are intentionally NOT invoked here.)
 
-import { getPool, SCHEMA } from "../lib/db";
+import { ADDITIVE_MIGRATIONS, getPool, SCHEMA } from "../lib/db";
 
 async function main(): Promise<void> {
   const pool = getPool();
   // SCHEMA is a multi-statement, parameter-free DDL string — valid as one query.
   await pool.query(SCHEMA);
+  await pool.query(ADDITIVE_MIGRATIONS);
   console.log("✓ schema applied (no seed — real data only)");
   await pool.end();
 }

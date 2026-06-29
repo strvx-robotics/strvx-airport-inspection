@@ -142,7 +142,7 @@ export function LiveDetectionBar({
 
       {!connected ? (
         <p className="px-3 py-2.5 font-mono text-[11px] text-[#9aa1a6]">
-          Start the ml-service + <span className="text-[#6b7176]">live_worker.py</span> to stream detections here.
+          Start the ml-service + <span className="text-[#6b7176]">app.live.worker</span> to stream detections here.
         </p>
       ) : log.length === 0 ? (
         <p className="px-3 py-2.5 font-mono text-[11px] text-[#9aa1a6]">Watching… no detections yet.</p>
