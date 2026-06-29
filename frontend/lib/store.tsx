@@ -142,6 +142,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const i of data.issues) next[i.id] = i;
         return next;
       });
+      setTickets((p) => {
+        const next = { ...p };
+        for (const t of data.tickets) next[t.id] = t;
+        return next;
+      });
       return data;
     },
     [mergeRunway],
@@ -386,7 +391,7 @@ export function useOverview() {
 }
 
 export function useRunwayDetail(id: string) {
-  const { runways, issues, loadRunway } = useStore();
+  const { runways, issues, tickets, loadRunway } = useStore();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let live = true;
@@ -408,7 +413,11 @@ export function useRunwayDetail(id: string) {
     () => Object.values(issues).filter((i) => i.runwayId === id),
     [issues, id],
   );
-  return { runway, issues: runwayIssues, loading };
+  const runwayTickets = useMemo(
+    () => Object.values(tickets).filter((t) => t.runwayId === id),
+    [tickets, id],
+  );
+  return { runway, issues: runwayIssues, tickets: runwayTickets, loading };
 }
 
 export function useIssueDetail(id: string) {

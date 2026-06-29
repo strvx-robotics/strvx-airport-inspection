@@ -92,6 +92,7 @@ export interface InspectionReport {
 export interface RunwayWithIssues {
   runway: Runway;
   issues: IssueCandidate[];
+  tickets: Ticket[];
 }
 
 export interface TicketDetail {
