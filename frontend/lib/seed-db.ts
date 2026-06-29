@@ -103,8 +103,10 @@ export async function seedDatabase(): Promise<void> {
         [id, jobId, runwayId, zoneId, fileUrl, lat, lng, TS_COMPLETED, sourceFile, TS],
       );
     // Captured-frame stand-ins shipped in public/seed (real uploads replace these).
-    await insImage("img1", "job_r2", "r2", "z_r2_b", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.jpg", "/seed/pavement.svg");
-    await insImage("img2", "job_r2", "r2", "z_r2_a", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.jpg", "/seed/fod.svg");
+    // The PNGs are top-down runway views with the stored candidate bbox baked in,
+    // so the map preview shows realistic evidence instead of an empty placeholder.
+    await insImage("img1", "job_r2", "r2", "z_r2_b", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.png", "/seed/ags-rwy0826-pavement-crack.png");
+    await insImage("img2", "job_r2", "r2", "z_r2_a", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.png", "/seed/ags-rwy0826-fod.png");
 
     const insIssue = (
       id: string, runwayId: string, zoneId: string, imageId: string, category: string,

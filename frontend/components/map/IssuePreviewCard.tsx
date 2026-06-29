@@ -28,12 +28,11 @@ export const IssuePreviewCard = forwardRef<
   return (
     <div
       ref={ref}
-      className="pointer-events-auto absolute z-20 w-60 overflow-hidden rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg"
-      style={{ transform: "translate(-50%, calc(-100% - 16px))" }}
+      className="issue-preview-card pointer-events-auto absolute z-20 w-60 overflow-visible rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
       {/* captured frame — the single most useful triage signal */}
-      <div className="relative h-28 w-full bg-[#0f1214]">
+      <div className="relative h-28 w-full overflow-hidden rounded-t-md bg-[#0f1214]">
         {issue.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -71,7 +70,7 @@ export const IssuePreviewCard = forwardRef<
       </div>
 
       {/* little stem pointing down at the pin */}
-      <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[#c7cdd2] bg-[#fbfcfd]" />
+      <div className="issue-preview-stem absolute h-2 w-2 rotate-45 border-[#c7cdd2] bg-[#fbfcfd]" />
     </div>
   );
 });

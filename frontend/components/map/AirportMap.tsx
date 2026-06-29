@@ -36,6 +36,9 @@ const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, cri
 // Severity ramp — matches lib/vstyle DOT so the toolbar's severity dots are a legend.
 const SEV_COLOR: Record<Severity, string> = { low: "#9aa1a6", medium: "#caa44e", high: "#c8762f", critical: "#b23b32" };
 const ALL_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
+const ISSUE_PREVIEW_PAD = 12;
+const ISSUE_PREVIEW_GAP = 16;
+const ISSUE_FOCUS_ZOOM = 17;
 
 // User-marker MapLibre ids. Rendered as native GeoJSON layers (circle + symbol)
 // so they stay pixel-locked to their coordinates when panning/zooming.
@@ -71,6 +74,49 @@ const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
 });
+const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+
+function focusIssuePreview(map: maplibregl.Map, anchor: LngLat) {
+  map.easeTo({
+    center: pos(anchor),
+    zoom: Math.max(map.getZoom(), ISSUE_FOCUS_ZOOM),
+    duration: 450,
+    essential: true,
+  });
+}
+
+function placeIssuePreview(
+  map: maplibregl.Map,
+  container: HTMLDivElement | null,
+  el: HTMLDivElement,
+  anchor: LngLat,
+) {
+  if (!container) return;
+  const p = map.project(pos(anchor));
+  const width = el.offsetWidth || 240;
+  const height = el.offsetHeight || 220;
+  const { width: mapW, height: mapH } = container.getBoundingClientRect();
+  const maxLeft = Math.max(ISSUE_PREVIEW_PAD, mapW - width - ISSUE_PREVIEW_PAD);
+  const maxTop = Math.max(ISSUE_PREVIEW_PAD, mapH - height - ISSUE_PREVIEW_PAD);
+  const left = clamp(p.x - width / 2, ISSUE_PREVIEW_PAD, maxLeft);
+
+  let top: number;
+  let placement: "above" | "below" | "floating" = "above";
+  if (p.y - height - ISSUE_PREVIEW_GAP >= ISSUE_PREVIEW_PAD) {
+    top = p.y - height - ISSUE_PREVIEW_GAP;
+  } else if (p.y + ISSUE_PREVIEW_GAP + height <= mapH - ISSUE_PREVIEW_PAD) {
+    top = p.y + ISSUE_PREVIEW_GAP;
+    placement = "below";
+  } else {
+    top = clamp(p.y - height / 2, ISSUE_PREVIEW_PAD, maxTop);
+    placement = "floating";
+  }
+
+  el.style.left = `${left}px`;
+  el.style.top = `${clamp(top, ISSUE_PREVIEW_PAD, maxTop)}px`;
+  el.style.setProperty("--stem-left", `${clamp(p.x - left, 14, width - 14)}px`);
+  el.dataset.placement = placement;
+}
 
 const markersFC = (markers: MapMarker[]): FeatureCollection =>
   fc(
@@ -333,6 +379,7 @@ export default function AirportMap({
         }
         setSelectedId(null);
         setSelectedIssueId(id);
+        if (selectedIssuePosRef.current) focusIssuePreview(map, selectedIssuePosRef.current);
       });
 
       // ── User markers: gray drop-at-cursor named annotations ────────────────
@@ -476,9 +523,7 @@ export default function AirportMap({
         const cardEl = issueCardElRef.current;
         const ipos = selectedIssuePosRef.current;
         if (cardEl && ipos) {
-          const p = map.project([ipos.lng, ipos.lat]);
-          cardEl.style.left = `${p.x}px`;
-          cardEl.style.top = `${p.y}px`;
+          placeIssuePreview(map, containerRef.current, cardEl, ipos);
         }
       });
 
@@ -592,9 +637,7 @@ export default function AirportMap({
     const el = issueCardElRef.current;
     const p = selectedIssuePosRef.current;
     if (!m || !el || !selectedIssueId || !p) return;
-    const sp = m.project([p.lng, p.lat]);
-    el.style.left = `${sp.x}px`;
-    el.style.top = `${sp.y}px`;
+    placeIssuePreview(m, containerRef.current, el, p);
   }, [selectedIssueId]);
 
   // Escape exits add-mode / closes the editor + preview card.

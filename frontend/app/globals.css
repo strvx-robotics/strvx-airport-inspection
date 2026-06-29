@@ -98,6 +98,23 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
+  .issue-preview-card[data-placement="above"] .issue-preview-stem {
+    left: var(--stem-left, 50%);
+    top: 100%;
+    translate: -50% -50%;
+    border-bottom-width: 1px;
+    border-right-width: 1px;
+  }
+  .issue-preview-card[data-placement="below"] .issue-preview-stem {
+    left: var(--stem-left, 50%);
+    top: 0;
+    translate: -50% -50%;
+    border-left-width: 1px;
+    border-top-width: 1px;
+  }
+  .issue-preview-card[data-placement="floating"] .issue-preview-stem {
+    display: none;
+  }
 }
 
 /* Print only the work-order sheet ("Save PDF" on the issue-review preview). */
