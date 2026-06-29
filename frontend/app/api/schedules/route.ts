@@ -7,6 +7,8 @@ import type { InspectionWindow } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const BACKEND_URL = process.env.BACKEND_URL;
+
 interface Body {
   airportId?: string;
   time?: string;
@@ -15,10 +17,15 @@ interface Body {
   actor?: { role?: string; name?: string; id?: string };
 }
 
-export const GET = route(async (req) => {
-  const airportId = new URL(req.url).searchParams.get("airportId") ?? undefined;
-  return json({ schedules: await listSchedules(airportId) });
-});
+export async function GET(req: Request) {
+  if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
+  const qs = new URL(req.url).search; // ?airportId=
+  const res = await fetch(`${BACKEND_URL}/schedules${qs}`, { cache: "no-store" });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
