@@ -20,10 +20,9 @@ import type { IssueStatus, Runway, Severity } from "@/lib/types";
 import { DOT } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
-export type LayerKey = "satellite" | "runways" | "zones" | "centerline" | "issues";
+export type LayerKey = "satellite" | "runways" | "zones" | "issues";
 export type LayerVis = Record<LayerKey, boolean>;
 
-// Centerline is always drawn (not user-toggleable) — it's reference geometry.
 const LAYER_ROWS: { key: LayerKey; icon: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>; label: string }[] = [
   { key: "satellite", icon: Satellite, label: "Satellite" },
   { key: "runways", icon: Plane, label: "Runways" },

@@ -183,7 +183,7 @@ export const runInspectionNow = (type: InspectionType = "daily", reason?: string
     actor: actor(),
   }).then((r) => r.inspection);
 
-export const reportUrl = (id: string, format: "html" | "json" | "csv") =>
+export const reportUrl = (id: string, format: "html" | "json" | "csv" | "pdf") =>
   `/api/inspections/${id}/report?format=${format}`;
 export const getReport = (id: string) =>
   jsonReq<InspectionReport>(reportUrl(id, "json"));

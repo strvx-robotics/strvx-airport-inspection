@@ -9,7 +9,6 @@ import type { IssueCandidate, IssueStatus, LngLat, Runway, Severity, Zone } from
 import * as api from "@/lib/api";
 import { CATEGORY, SEVERITY } from "@/lib/ui";
 import {
-  centerline,
   issuePosition,
   isMappable,
   runwayAnchor,
@@ -50,16 +49,13 @@ const AREA_DRAFT_POINTS = "runway-area-draft-points";
 const LAYER_GROUPS: Record<LayerKey, string[]> = {
   satellite: ["sat"],
   runways: [
-    "surface-fill",
-    "surface-line",
     SELECTED_AREA_FILL,
     SELECTED_AREA_LINE,
     AREA_DRAFT_FILL,
     AREA_DRAFT_LINE,
     AREA_DRAFT_POINTS,
   ],
-  zones: ["zones-fill", "zones-line"],
-  centerline: ["centerline"],
+  zones: ["zones-fill"],
   issues: ["pins"],
 };
 
@@ -157,9 +153,7 @@ function applyIssueFilter(map: maplibregl.Map, sev: Set<Severity>, statuses: Set
 
 /** Merge every mappable runway into four shared sources, fit-bounds across all. */
 function buildSources(layers: RunwayLayer[]) {
-  const surface: Feature<Geometry>[] = [];
   const zones: Feature<Geometry>[] = [];
-  const center: Feature<Geometry>[] = [];
   const pins: Feature<Geometry>[] = [];
   const bounds = new maplibregl.LngLatBounds();
 
@@ -168,12 +162,7 @@ function buildSources(layers: RunwayLayer[]) {
 
     const rect = runwayRect(runway);
     if (rect) {
-      surface.push({ type: "Feature", properties: { name: runway.name }, geometry: { type: "Polygon", coordinates: [ring(rect)] } });
       for (const c of rect) bounds.extend(pos(c));
-    }
-    const cl = centerline(runway);
-    if (cl) {
-      center.push({ type: "Feature", properties: { label: runway.designation }, geometry: { type: "LineString", coordinates: [pos(cl[0]), pos(cl[1])] } });
     }
     for (const z of rwyZones) {
       const r = zoneRect(runway, z);
@@ -198,15 +187,13 @@ function buildSources(layers: RunwayLayer[]) {
   }
 
   return {
-    surfaceFC: fc(surface),
     zonesFC: fc(zones),
-    centerlineFC: fc(center),
     pinsFC: fc(pins),
     bounds,
   };
 }
 
-/** Airport-wide map: every mappable runway with its zones, centerline, issue pins. */
+/** Airport-wide map: every mappable runway with its zones, issue pins, and area tools. */
 export default function AirportMap({
   layers,
   heightClass = "h-full",
@@ -234,7 +221,6 @@ export default function AirportMap({
     satellite: true,
     runways: true,
     zones: true,
-    centerline: true,
     issues: true,
   });
   const [sevSet, setSevSet] = useState<Set<Severity>>(new Set(ALL_SEVERITIES));
@@ -384,18 +370,12 @@ export default function AirportMap({
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
 
     map.on("load", () => {
-      const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
+      const { zonesFC, pinsFC, bounds } = buildSources(layers);
 
-      map.addSource("surface", { type: "geojson", data: surfaceFC });
       map.addSource("zones", { type: "geojson", data: zonesFC });
-      map.addSource("centerline", { type: "geojson", data: centerlineFC });
       map.addSource("pins", { type: "geojson", data: pinsFC });
 
-      map.addLayer({ id: "surface-fill", type: "fill", source: "surface", paint: { "fill-color": "#181b1e", "fill-opacity": 0.06 } });
-      map.addLayer({ id: "surface-line", type: "line", source: "surface", paint: { "line-color": "#181b1e", "line-opacity": 0.35, "line-width": 1 } });
       map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#5b6166", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#3f4448", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [3, 2] } });
-      map.addLayer({ id: "centerline", type: "line", source: "centerline", paint: { "line-color": "#181b1e", "line-opacity": 0.7, "line-width": 1.5, "line-dasharray": [4, 3] } });
       map.addLayer({
         id: "pins",
         type: "circle",
@@ -605,10 +585,8 @@ export default function AirportMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!loadedRef.current || !map) return;
-    const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
-    (map.getSource("surface") as maplibregl.GeoJSONSource | undefined)?.setData(surfaceFC);
+    const { zonesFC, pinsFC, bounds } = buildSources(layers);
     (map.getSource("zones") as maplibregl.GeoJSONSource | undefined)?.setData(zonesFC);
-    (map.getSource("centerline") as maplibregl.GeoJSONSource | undefined)?.setData(centerlineFC);
     (map.getSource("pins") as maplibregl.GeoJSONSource | undefined)?.setData(pinsFC);
     (map.getSource(SELECTED_AREA_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
       selectedAreaFC(selectedRunway),

@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ScrollText,
   ArrowUpRight,
+  Download,
   ClipboardCheck,
   PenLine,
   Lock,
@@ -152,13 +153,16 @@ export default function InspectionPage() {
           <a href={api.reportUrl(id, "csv")} className={cn("h-8 px-3 text-[12px]", BTN)}>
             Export CSV
           </a>
+          <a href={api.reportUrl(id, "pdf")} className={cn("h-8 px-3 text-[12px]", BTN)}>
+            <Download size={14} strokeWidth={2} /> Download PDF
+          </a>
           <a
             href={api.reportUrl(id, "html")}
             target="_blank"
             rel="noreferrer"
             className={cn("h-8 px-3 text-[12px]", BTN)}
           >
-            Open printable report (PDF) <ArrowUpRight size={14} strokeWidth={2} />
+            Open HTML report <ArrowUpRight size={14} strokeWidth={2} />
           </a>
         </div>
       </div>

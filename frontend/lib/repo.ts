@@ -43,6 +43,7 @@ import {
   type Zone,
 } from "./types";
 import { STANDARD_CHECKLIST_ITEMS } from "./checklist";
+import { getAirportReportAssets, type AirportReportAsset } from "./airportAssets";
 
 // ── Shared input shapes (route handlers type their calls against these) ────────
 
@@ -886,9 +887,19 @@ export async function getOverview(inspectionId?: string): Promise<Overview> {
 
 interface ChecklistRow { inspection_id: string; item_key: string; result: string; notes: string; image_id: Str; updated_at: Str }
 
+const isMissingRelation = (e: unknown): boolean =>
+  (e as { code?: unknown })?.code === "42P01" ||
+  (e instanceof Error && /relation "checklist_responses" does not exist/i.test(e.message));
+
 /** The standard daily checklist merged with any stored response (PRD §6). */
 export async function getChecklist(inspectionId: string): Promise<ChecklistItem[]> {
-  const rows = await all<ChecklistRow>("SELECT * FROM checklist_responses WHERE inspection_id = ?", [inspectionId]);
+  let rows: ChecklistRow[];
+  try {
+    rows = await all<ChecklistRow>("SELECT * FROM checklist_responses WHERE inspection_id = ?", [inspectionId]);
+  } catch (e) {
+    if (!isMissingRelation(e)) throw e;
+    rows = [];
+  }
   const byKey = new Map(rows.map((r) => [r.item_key, r]));
   return STANDARD_CHECKLIST_ITEMS.map((item) => {
     const r = byKey.get(item.key);
@@ -941,7 +952,7 @@ export async function getInspectionReport(id: string): Promise<InspectionReport 
 }
 
 const esc = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Printable-report label maps (kept local so this server module stays free of
 // the client presentation layer; mirror lib/ui.ts).
@@ -957,6 +968,7 @@ const titleCase = (s: string): string =>
 /** Clean, light, print-ready HTML inspection report (PRD §14). Dark ink on
  *  white with a no-print toolbar — Cmd/Ctrl-P saves a legible PDF. */
 export function renderReportHtml(report: InspectionReport): string {
+  const assets = getAirportReportAssets(report.airport.code);
   const fmt = (iso: string): string => {
     try {
       return new Intl.DateTimeFormat("en-US", {
@@ -994,6 +1006,19 @@ export function renderReportHtml(report: InspectionReport): string {
         )
         .join("")}</tbody></table></section>`
     : "";
+  const assetSource = (asset: AirportReportAsset): string =>
+    `<p class="source">Source: <a href="${esc(asset.sourceUrl)}">${esc(asset.sourceName)}</a> · Retrieved ${esc(asset.retrievedAt)}${asset.licenseNote ? ` · ${esc(asset.licenseNote)}` : ""}<br>Cached in app: <code>${esc(asset.publicPath)}</code></p>`;
+  const assetSection = assets
+    ? `<section><h3>Airport reference assets</h3><div class="asset-grid">${
+        assets.terminalMap
+          ? `<article class="asset-card"><h4>${esc(assets.terminalMap.label)}</h4><img class="asset-img" src="${esc(assets.terminalMap.publicPath)}" alt="${esc(assets.terminalMap.label)}">${assetSource(assets.terminalMap)}</article>`
+          : ""
+      }${
+        assets.airportDiagram
+          ? `<article class="asset-card"><h4>${esc(assets.airportDiagram.label)}</h4><p><a href="${esc(assets.airportDiagram.publicPath)}">Open cached FAA airport diagram PDF</a></p>${assetSource(assets.airportDiagram)}</article>`
+          : ""
+      }</div></section>`
+    : "";
   const signoff = report.inspection.signedAt
     ? `<p class="meta">Signed off by ${esc(report.inspection.signatureName || report.inspection.signedBy || "—")} · ${esc(fmt(report.inspection.signedAt))}</p>`
     : `<p class="meta">Not yet signed off</p>`;
@@ -1006,6 +1031,8 @@ export function renderReportHtml(report: InspectionReport): string {
   button{font:inherit;font-weight:600;padding:.45rem .9rem;border:1px solid #c7cdd2;border-radius:6px;background:#f3f5f7;color:#181b1e;cursor:pointer}
   button:hover{background:#eef1f4}
   header{border-bottom:2px solid #181b1e;padding-bottom:.85rem;margin-bottom:.5rem}
+  .brand{display:flex;gap:1rem;align-items:flex-start}
+  .airport-logo{width:210px;max-width:42%;height:auto;object-fit:contain;margin-top:.15rem}
   h1{font-size:22px;margin:0 0 .3rem}
   .meta{color:#5b6166;font-size:13px;margin:.1rem 0}
   .totals{margin:.7rem 0 0;font-weight:600}
@@ -1017,18 +1044,30 @@ export function renderReportHtml(report: InspectionReport): string {
   td{padding:.4rem .5rem;border-bottom:1px solid #eef1f4;vertical-align:top}
   tr:last-child td{border-bottom:none}
   .none{color:#6b7176;margin:.25rem 0}
+  .asset-grid{display:grid;gap:.85rem}
+  .asset-card{border:1px solid #dbdfe3;border-radius:6px;padding:.85rem;break-inside:avoid}
+  .asset-card h4{font-size:13px;margin:0 0 .45rem}
+  .asset-img{display:block;width:100%;max-height:420px;object-fit:contain;border:1px solid #eef1f4;background:#f8fafb}
+  .source{color:#6b7176;font-size:11px;margin:.5rem 0 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
   @media print{body{margin:0;max-width:none;padding:0}.toolbar{display:none}}
 </style>
 </head><body>
 <div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
 <header>
-  <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
-  <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
-  <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
-  ${signoff}
-  <p class="totals">${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
+  <div class="brand">
+    ${assets?.logo ? `<img class="airport-logo" src="${esc(assets.logo.publicPath)}" alt="${esc(report.airport.name)} logo">` : ""}
+    <div>
+      <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
+      <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
+      <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
+      ${signoff}
+      <p class="totals">${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
+    </div>
+  </div>
 </header>
 ${checklistSection}
+${assetSection}
 ${sections}
 </body></html>`;
 }

@@ -67,7 +67,7 @@ downstream services directly:
 - `app/api/live-capture/route.ts` - receives live worker captures.
 - `app/api/settings/route.ts` - app settings such as stream URL.
 - `app/api/feedback-export/route.ts` - learning JSONL export.
-- `app/api/inspections/[id]/report/route.ts` - JSON/HTML report rendering.
+- `app/api/inspections/[id]/report/route.ts` - JSON/HTML/CSV/PDF report rendering.
 
 ## Important Files
 
@@ -107,6 +107,11 @@ data.
 `npm run db:bootstrap` creates only airport configuration for Augusta Regional:
 airport, three runways, zones, and a 6 AM schedule. It does not create
 inspections, images, issues, or tickets.
+
+Report exports include cached Augusta Regional Airport reference assets under
+`public/airports/ags`: the AGS logo, terminal map, and FAA KAGS airport diagram
+PDF. These are attributed in HTML/PDF reports and are used only when the airport
+code is `AGS`.
 
 `lib/seed-db.ts` is not part of the normal setup path. It is retained only as old
 demo fixture reference while the extraction finishes.

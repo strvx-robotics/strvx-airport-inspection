@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ScrollText, ArrowUpRight } from "lucide-react";
+import { ScrollText, Download } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import { useOverview } from "@/lib/store";
 import * as api from "@/lib/api";
@@ -164,13 +164,11 @@ export default function LogsPage() {
         cellRenderer: ({ data }: { data?: Inspection }) =>
           data ? (
             <a
-              href={api.reportUrl(data.id, "html")}
-              target="_blank"
-              rel="noreferrer"
+              href={api.reportUrl(data.id, "pdf")}
               onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-1 font-mono text-[11px] text-[#5b6166] hover:text-[#181b1e] focus-visible:text-[#181b1e] focus-visible:underline focus-visible:outline-none"
             >
-              Report <ArrowUpRight size={13} strokeWidth={2} aria-hidden />
+              PDF <Download size={13} strokeWidth={2} aria-hidden />
             </a>
           ) : null,
         minWidth: 110,

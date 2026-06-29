@@ -72,15 +72,7 @@ export default function RunwayImage({
         // Natural aspect → the box's percent coords map 1:1 to the displayed pixels.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={label ?? "Inspection capture"} className="block w-full" />
-      ) : (
-        <div
-          className="pointer-events-none absolute inset-y-0 left-1/2 w-1.5 -translate-x-1/2"
-          style={{
-            background: "repeating-linear-gradient(#3f4448 0 26px, transparent 26px 52px)",
-            opacity: 0.7,
-          }}
-        />
-      )}
+      ) : null}
       {bbox && <BoxOverlay bbox={bbox} label={label} />}
     </div>
   );

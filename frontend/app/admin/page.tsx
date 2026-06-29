@@ -925,7 +925,13 @@ function DataSection({ inspectionId, onRan }: { inspectionId?: string; onRan: ()
                 rel="noopener noreferrer"
                 className={cn("h-8 px-3 text-[12px]", BTN)}
               >
-                <FileText size={13} strokeWidth={2} /> Report (PDF)
+                <FileText size={13} strokeWidth={2} /> Report (HTML)
+              </a>
+              <a
+                href={api.reportUrl(inspectionId, "pdf")}
+                className={cn("h-8 px-3 text-[12px]", BTN)}
+              >
+                <Download size={13} strokeWidth={2} /> Report (PDF)
               </a>
               <a
                 href={api.reportUrl(inspectionId, "csv")}

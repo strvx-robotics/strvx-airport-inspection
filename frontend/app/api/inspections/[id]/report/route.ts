@@ -1,6 +1,7 @@
-// GET /api/inspections/[id]/report?format=html|json|csv — rendered inspection report.
+// GET /api/inspections/[id]/report?format=html|json|csv|pdf — rendered inspection report.
 
 import { getInspectionReport, renderReportCsv, renderReportHtml } from "@/lib/repo";
+import { renderReportPdf } from "@/lib/reportPdf";
 import { json, notFound, route, type RouteContext } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -22,6 +23,15 @@ export const GET = route<{ id: string }>(async (req, { params }: RouteContext<{ 
       headers: {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": `attachment; filename="inspection-${id}.csv"`,
+      },
+    });
+  }
+  if (format === "pdf") {
+    const pdf = await renderReportPdf(report);
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        "content-type": "application/pdf",
+        "content-disposition": `attachment; filename="inspection-${id}.pdf"`,
       },
     });
   }

@@ -139,12 +139,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mergeRunway(data.runway);
       setIssues((p) => {
         const next = { ...p };
-        for (const i of data.issues) next[i.id] = i;
+        for (const i of Array.isArray(data.issues) ? data.issues : []) next[i.id] = i;
         return next;
       });
       setTickets((p) => {
         const next = { ...p };
-        for (const t of data.tickets) next[t.id] = t;
+        for (const t of Array.isArray(data.tickets) ? data.tickets : []) next[t.id] = t;
         return next;
       });
       return data;
