@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ml_service_url: str | None = None
     rl_service_url: str | None = None
     anthropic_api_key: str | None = None
+    backend_api_token: str | None = None
 
 
 settings = Settings()
