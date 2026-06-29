@@ -1,5 +1,6 @@
 from app import db
 from app.models import Runway
+from app.repo.helpers import gid, now
 
 
 def to_runway(r) -> Runway:
@@ -31,3 +32,19 @@ async def list_runways(airport_id: str | None = None) -> list[Runway]:
     else:
         rows = await db.all("SELECT * FROM runways ORDER BY created_at")
     return [to_runway(r) for r in rows]
+
+
+async def create_runway(
+    airport_id: str, name: str, designation: str,
+    length: str | None = None, length_m: float | None = None,
+    description: str | None = None,
+) -> Runway:
+    id = gid("rwy")
+    await db.run(
+        "INSERT INTO runways (id, airport_id, name, designation, length, length_m, description, "
+        "active_status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8)",
+        id, airport_id, name, designation, length or "", length_m, description, now(),
+    )
+    r = await get_runway(id)
+    assert r is not None
+    return r

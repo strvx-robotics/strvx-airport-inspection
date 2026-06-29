@@ -20,6 +20,7 @@ import type {
   Runway,
   Severity,
   Ticket,
+  User,
   UserRole,
   Zone,
 } from "./types";
@@ -149,6 +150,8 @@ export const getOverview = () =>
   jsonReq<{ overview: Overview }>("/api/inspections").then((r) => r.overview);
 export const getInspection = (id: string) =>
   jsonReq<InspectionWithJobs>(`/api/inspections/${id}`);
+export const listUsers = () =>
+  jsonReq<{ users: User[] }>("/api/users").then((r) => r.users);
 export const runInspectionNow = () =>
   post<{ inspection: Inspection }>("/api/inspections/run-now", {
     actor: actor(),
@@ -245,6 +248,15 @@ export const createAirport = (body: {
   location?: string;
   timezone?: string;
 }) => post<{ airport: Airport }>("/api/airports", body).then((r) => r.airport);
+
+export const updateAirport = (
+  id: string,
+  patch: { name?: string; code?: string; location?: string; timezone?: string },
+) =>
+  jsonReq<{ airport: Airport }>("/api/airports", {
+    method: "PATCH",
+    body: JSON.stringify({ id, ...patch }),
+  }).then((r) => r.airport);
 
 export const createRunway = (body: {
   airportId: string;

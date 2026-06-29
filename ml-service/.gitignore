@@ -6,3 +6,5 @@ install.log
 *.pt
 models/
 runs/
+.env
+rl/artifacts/

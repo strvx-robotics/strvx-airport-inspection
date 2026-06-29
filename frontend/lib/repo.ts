@@ -168,6 +168,19 @@ export interface DraftPair {
   editDistance: number;
 }
 
+/** One reward sample per resolved candidate — the detector RL policy's signal,
+ *  and (with imageUrl + bbox) a labeled example for the fine-tuning harness. */
+export interface DecisionRecord {
+  issueId: string;
+  imageId?: string;
+  imageUrl?: string;
+  category: IssueCategory;
+  confidence: number;
+  bbox: BBox;
+  outcome: "approved" | "rejected" | "manual_review";
+  reason?: RejectionReason;
+}
+
 // ── Row shapes (DB columns) + mappers ─────────────────────────────────────────
 
 type Num = number | null;
@@ -315,6 +328,27 @@ export async function createAirport(input: { name: string; code: string; locatio
     [id, input.name, input.code, input.location ?? "", input.timezone ?? "", createdAt],
   );
   return (await getAirport(id))!;
+}
+export async function updateAirport(
+  id: string,
+  patch: { name?: string; code?: string; location?: string; timezone?: string },
+): Promise<Airport> {
+  const cols: Array<[string, string | undefined]> = [
+    ["name", patch.name],
+    ["code", patch.code],
+    ["location", patch.location],
+    ["timezone", patch.timezone],
+  ];
+  const sets = cols.filter(([, v]) => v !== undefined);
+  if (sets.length) {
+    await run(
+      `UPDATE airports SET ${sets.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`,
+      [...sets.map(([, v]) => v), id],
+    );
+  }
+  const a = await getAirport(id);
+  if (!a) throw new Error(`Airport not found: ${id}`);
+  return a;
 }
 
 export async function listRunways(airportId?: string): Promise<Runway[]> {
@@ -958,10 +992,29 @@ export async function getDraftPairs(): Promise<DraftPair[]> {
   return pairs;
 }
 
+/** Every resolved candidate as a reward sample for the detector RL policy. */
+export async function getDecisionRecords(): Promise<DecisionRecord[]> {
+  const rows = await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.status IN ('approved','rejected','manual_review')`);
+  return rows.map((r) => {
+    const issue = toIssue(r);
+    return {
+      issueId: issue.id,
+      imageId: issue.imageId,
+      imageUrl: issue.imageUrl,
+      category: issue.category,
+      confidence: issue.confidence,
+      bbox: issue.bbox,
+      outcome: issue.status as DecisionRecord["outcome"],
+      reason: issue.rejectionReason,
+    };
+  });
+}
+
 /** Admin feedback export: one JSONL line per learning record (design §13.4). */
 export async function exportFeedbackJsonl(): Promise<string> {
   const lines: string[] = [];
   for (const rec of await getRejectionRecords()) lines.push(JSON.stringify({ type: "rejection", ...rec }));
+  for (const rec of await getDecisionRecords()) lines.push(JSON.stringify({ type: "decision", ...rec }));
   for (const pair of await getDraftPairs()) lines.push(JSON.stringify({ type: "draft_pair", ...pair }));
   return lines.join("\n");
 }

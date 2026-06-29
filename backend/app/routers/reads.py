@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 
 from app.errors import AppError
-from app.repo import airports, inspections, overview, runways, schedules, users
+from app.repo import inspections, overview, runways, schedules, users
 from app.repo.inspections import list_inspections
 from app.repo.zones import list_zones
 from app.serialize import dump
@@ -57,8 +57,3 @@ async def get_users() -> dict:
 async def get_schedules(request: Request) -> dict:
     airport_id = request.query_params.get("airportId")
     return {"schedules": [dump(s) for s in await schedules.list_schedules(airport_id)]}
-
-
-@router.get("/airports")
-async def get_airports() -> dict:
-    return {"airports": [dump(a) for a in await airports.list_airports()]}
