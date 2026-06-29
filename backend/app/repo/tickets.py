@@ -64,6 +64,14 @@ async def list_tickets() -> list[Ticket]:
     return [_to_ticket(r) for r in rows]
 
 
+async def list_tickets_by_inspection(inspection_id: str) -> list[Ticket]:
+    rows = await db.all(
+        f"{_TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id WHERE ic.inspection_id = $1",
+        inspection_id,
+    )
+    return [_to_ticket(r) for r in rows]
+
+
 async def repair_ticket(id: str, notes: str | None, actor: Actor | None) -> Ticket:
     ticket = await get_ticket(id)
     if ticket is None:
