@@ -9,6 +9,7 @@ from app.routers import drones as drones_router
 from app.routers import issues as issues_router
 from app.routers import reads as reads_router
 from app.routers import tickets as tickets_router
+from app.routers import writes as writes_router
 
 
 @asynccontextmanager
@@ -25,6 +26,7 @@ app.include_router(drones_router.router)
 app.include_router(issues_router.router)
 app.include_router(reads_router.router)
 app.include_router(tickets_router.router)
+app.include_router(writes_router.router)
 
 
 @app.get("/health")
