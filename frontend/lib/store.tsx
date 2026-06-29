@@ -145,6 +145,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const i of data.issues) next[i.id] = i;
         return next;
       });
+      setTickets((p) => {
+        const next = { ...p };
+        for (const t of data.tickets) next[t.id] = t;
+        return next;
+      });
       return data;
     },
     [mergeRunway],
@@ -372,18 +377,26 @@ export function useOverview() {
 }
 
 export function useRunwayDetail(id: string) {
-  const { runways, issues, loadRunway } = useStore();
+  const { runways, issues, tickets, loadRunway } = useStore();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let live = true;
     setLoading(true);
-    loadRunway(id)
+    const pull = () => loadRunway(id).catch(() => undefined);
+    pull()
       .catch(() => undefined)
       .finally(() => {
         if (live) setLoading(false);
       });
+    const beat = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void pull();
+    }, TICKET_POLL_MS);
+    const onFocus = () => void pull();
+    if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
     return () => {
       live = false;
+      clearInterval(beat);
+      if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
     };
   }, [id, loadRunway]);
   const runway = runways[id];
@@ -394,7 +407,11 @@ export function useRunwayDetail(id: string) {
     () => Object.values(issues).filter((i) => i.runwayId === id),
     [issues, id],
   );
-  return { runway, issues: runwayIssues, loading };
+  const runwayTickets = useMemo(
+    () => Object.values(tickets).filter((t) => t.runwayId === id),
+    [tickets, id],
+  );
+  return { runway, issues: runwayIssues, tickets: runwayTickets, loading };
 }
 
 export function useIssueDetail(id: string) {

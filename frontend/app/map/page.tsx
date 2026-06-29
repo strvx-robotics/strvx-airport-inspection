@@ -6,6 +6,7 @@ import { Map as MapIcon } from "lucide-react";
 import * as api from "@/lib/api";
 import type { RunwayLayer } from "@/components/map/AirportMap";
 import type { Drone } from "@/lib/types";
+import { TICKET_POLL_MS } from "@/lib/store";
 import { cn } from "@/lib/cn";
 import { EYEBROW, MUTED } from "@/lib/vstyle";
 
@@ -22,7 +23,7 @@ export default function MapPage() {
 
   useEffect(() => {
     let live = true;
-    (async () => {
+    const pull = async () => {
       const overview = await api.getOverview();
       if (live) setAirportLabel(`${overview.airport.name} · ${overview.airport.code}`);
       // Live aircraft positions — fetched in parallel, non-blocking for the layers.
@@ -31,17 +32,26 @@ export default function MapPage() {
       const built = await Promise.all(
         ids.map(async (id) => {
           const [detail, zones] = await Promise.all([api.getRunway(id), api.listZones(id)]);
-          return { runway: detail.runway, issues: detail.issues, zones };
+          return { runway: detail.runway, issues: detail.issues, tickets: detail.tickets, zones };
         }),
       );
       if (live) setLayers(built);
-    })().catch(() => live && setLayers([]));
+    };
+    pull().catch(() => live && setLayers([]));
+    const beat = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void pull().catch(() => undefined);
+    }, TICKET_POLL_MS);
+    const onFocus = () => void pull().catch(() => undefined);
+    if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
     return () => {
       live = false;
+      clearInterval(beat);
+      if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
     };
   }, []);
 
   const located = layers?.reduce((n, l) => n + l.issues.length, 0) ?? 0;
+  const completed = layers?.reduce((n, l) => n + l.tickets.filter((t) => t.status === "repaired" || t.status === "closed").length, 0) ?? 0;
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
@@ -55,7 +65,7 @@ export default function MapPage() {
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-[#181b1e]" /> issue
           </span>
-          <span>{located} located</span>
+          <span>{located} located · {completed} complete</span>
         </p>
       </div>
       <div className="min-h-0 flex-1">

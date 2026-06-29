@@ -521,10 +521,14 @@ export async function listIssuesByInspection(inspectionId: string): Promise<Issu
 export async function getRunwayWithIssues(
   runwayId: string,
   inspectionId?: string,
-): Promise<{ runway: Runway; issues: IssueCandidate[] } | undefined> {
+): Promise<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] } | undefined> {
   const runway = await getRunway(runwayId);
   if (!runway) return undefined;
-  return { runway, issues: await listIssuesByRunway(runwayId, inspectionId) };
+  const issues = await listIssuesByRunway(runwayId, inspectionId);
+  const tickets = inspectionId
+    ? await listTicketsByInspection(inspectionId).then((ts) => ts.filter((t) => t.runwayId === runwayId))
+    : await all<TicketRow>(`${TICKET_SELECT} WHERE t.runway_id = ? ORDER BY t.created_at DESC`, [runwayId]).then((rows) => rows.map(toTicket));
+  return { runway, issues, tickets };
 }
 
 export async function createIssueCandidate(input: NewIssueCandidate): Promise<IssueCandidate> {

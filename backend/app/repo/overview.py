@@ -7,7 +7,7 @@ from app.repo.airports import get_default_airport
 from app.repo.inspections import get_inspection, get_latest_inspection, list_inspections, list_jobs
 from app.repo.runways import get_runway, list_runways
 from app.repo.issues import ISSUE_SELECT, _to_issue, list_issues_by_inspection
-from app.repo.tickets import list_tickets_by_inspection
+from app.repo.tickets import list_tickets_by_inspection, list_tickets_by_runway
 from app import db
 
 
@@ -54,7 +54,11 @@ async def get_runway_with_issues(runway_id: str, inspection_id: str | None = Non
     runway = await get_runway(runway_id)
     if runway is None:
         return None
-    return {"runway": runway, "issues": await list_issues_by_runway(runway_id, inspection_id)}
+    return {
+        "runway": runway,
+        "issues": await list_issues_by_runway(runway_id, inspection_id),
+        "tickets": await list_tickets_by_runway(runway_id, inspection_id),
+    }
 
 
 async def get_overview(inspection_id: str | None = None) -> Overview:

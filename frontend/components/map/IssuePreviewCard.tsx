@@ -3,8 +3,8 @@
 import { forwardRef } from "react";
 import { ArrowUpRight, ImageOff, X } from "lucide-react";
 import Badge from "@/components/Badge";
-import type { IssueCandidate } from "@/lib/types";
-import { CATEGORY, SEVERITY, DECISION, confidenceBand, pct } from "@/lib/ui";
+import type { IssueCandidate, Ticket } from "@/lib/types";
+import { CATEGORY, SEVERITY, DECISION, TICKET_STATUS, confidenceBand, pct } from "@/lib/ui";
 import { BTN_PRIMARY, EYEBROW } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
@@ -19,11 +19,12 @@ export const IssuePreviewCard = forwardRef<
   HTMLDivElement,
   {
     issue: IssueCandidate;
+    ticket?: Ticket;
     runwayName: string;
     onOpen: () => void;
     onClose: () => void;
   }
->(function IssuePreviewCard({ issue, runwayName, onOpen, onClose }, ref) {
+>(function IssuePreviewCard({ issue, ticket, runwayName, onOpen, onClose }, ref) {
   const band = confidenceBand(issue.confidence);
   return (
     <div
@@ -62,6 +63,7 @@ export const IssuePreviewCard = forwardRef<
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge tone={SEVERITY[issue.severity].tone}>{SEVERITY[issue.severity].label}</Badge>
           <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
+          {ticket && <Badge tone={TICKET_STATUS[ticket.status].tone}>{TICKET_STATUS[ticket.status].label}</Badge>}
           <Badge tone={band.tone}>{`${band.label} · ${pct(issue.confidence)}`}</Badge>
         </div>
         <button onClick={onOpen} className={cn(BTN_PRIMARY, "w-full px-3 py-1.5 text-[12px]")}>

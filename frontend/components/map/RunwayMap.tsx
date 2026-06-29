@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import maplibregl, { type GeoJSONSource } from "maplibre-gl";
+import { LocateFixed } from "lucide-react";
+import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
-import type { IssueCandidate, LngLat, Runway, Severity, Zone } from "@/lib/types";
-import { CATEGORY, DECISION, SEVERITY } from "@/lib/ui";
+import type { IssueCandidate, LngLat, Runway, Ticket, Zone } from "@/lib/types";
 import {
   centerline,
   issuePosition,
@@ -15,21 +15,19 @@ import {
   zoneRect,
 } from "@/lib/runwayGeom";
 import { basemapStyle } from "./mapStyle";
-
-// Pin radius grows with severity; color (below) also carries severity. Matches
-// AirportMap so pins read identically across both maps.
-const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, critical: 8 };
-const SEV_COLOR: Record<Severity, string> = { low: "#9aa1a6", medium: "#caa44e", high: "#c8762f", critical: "#b23b32" };
+import { issuePinProperties, ticketForIssue } from "./issuePinStyle";
 
 const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
 const ring = (pts: LngLat[]): [number, number][] => pts.map(pos);
+const RUNWAY_MIN_ZOOM = 13.2;
+const RUNWAY_MAX_ZOOM = 17.6;
 
 const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
 });
 
-function buildSources(runway: Runway, issues: IssueCandidate[], zones: Zone[]) {
+function buildSources(runway: Runway, issues: IssueCandidate[], tickets: Ticket[], zones: Zone[]) {
   const surface = runwayRect(runway);
   const cl = centerline(runway);
 
@@ -58,21 +56,12 @@ function buildSources(runway: Runway, issues: IssueCandidate[], zones: Zone[]) {
       .map((i) => {
         const p = issuePosition(runway, i);
         if (!p) return null;
-        const color = SEV_COLOR[i.severity];
-        const pending = i.status === "pending" || i.status === "manual_review";
-        const rejected = i.status === "rejected";
+        const pin = issuePinProperties(runway, i, ticketForIssue(i, tickets));
         return {
           type: "Feature",
           properties: {
             id: i.id,
-            radius: SEV_RADIUS[i.severity],
-            // color carries severity; fill-style carries status — solid disc =
-            // approved, colored ring on white = awaiting review, muted = rejected.
-            fill: rejected ? "#c7cdd2" : pending ? "#fbfcfd" : color,
-            stroke: rejected ? "#9aa1a6" : pending ? color : "#fbfcfd",
-            strokeWidth: pending ? 2.5 : 1.5,
-            alpha: rejected ? 0.55 : 0.95,
-            label: `${CATEGORY[i.category]} · ${SEVERITY[i.severity].label} · ${DECISION[i.status].label}`,
+            ...pin,
           },
           geometry: { type: "Point", coordinates: pos(p) },
         } as Feature<Geometry>;
@@ -91,20 +80,35 @@ function buildSources(runway: Runway, issues: IssueCandidate[], zones: Zone[]) {
 export default function RunwayMap({
   runway,
   issues,
+  tickets,
   zones,
   heightClass = "h-[420px]",
 }: {
   runway: Runway;
   issues: IssueCandidate[];
+  tickets: Ticket[];
   zones: Zone[];
   heightClass?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const boundsRef = useRef<maplibregl.LngLatBounds | null>(null);
   const router = useRouter();
   const [failed, setFailed] = useState(false);
 
   const anchor = runwayAnchor(runway);
-  const sig = `${runway.id}|${issues.map((i) => i.id).join(",")}|${zones.map((z) => z.id).join(",")}`;
+  const sig = `${runway.id}|${issues.map((i) => {
+    const ticket = ticketForIssue(i, tickets);
+    return `${i.id}@${i.severity}/${i.status}/${ticket?.status ?? "-"}`;
+  }).join(",")}|${zones.map((z) => z.id).join(",")}`;
+
+  const recenter = () => {
+    const map = mapRef.current;
+    const bounds = boundsRef.current;
+    if (map && bounds && !bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 56, maxZoom: 16.8, duration: 450, essential: true });
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current || !anchor) return;
@@ -116,6 +120,8 @@ export default function RunwayMap({
         style: basemapStyle,
         center: pos(anchor),
         zoom: 15,
+        minZoom: RUNWAY_MIN_ZOOM,
+        maxZoom: RUNWAY_MAX_ZOOM,
         attributionControl: { compact: true },
         dragRotate: false,
         cooperativeGestures: false,
@@ -124,12 +130,13 @@ export default function RunwayMap({
       setFailed(true);
       return;
     }
+    mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
 
     map.on("load", () => {
-      const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(runway, issues, zones);
+      const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(runway, issues, tickets, zones);
 
       map.addSource("surface", { type: "geojson", data: surfaceFC });
       map.addSource("zones", { type: "geojson", data: zonesFC });
@@ -155,7 +162,18 @@ export default function RunwayMap({
         },
       });
 
-      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 56, maxZoom: 17, duration: 0 });
+      if (!bounds.isEmpty()) {
+        boundsRef.current = bounds;
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+        const lngPad = Math.max((ne.lng - sw.lng) * 1.5, 0.025);
+        const latPad = Math.max((ne.lat - sw.lat) * 1.5, 0.018);
+        map.setMaxBounds([
+          [sw.lng - lngPad, sw.lat - latPad],
+          [ne.lng + lngPad, ne.lat + latPad],
+        ]);
+        map.fitBounds(bounds, { padding: 56, maxZoom: 16.8, duration: 0 });
+      }
 
       map.on("mouseenter", "pins", (e) => {
         map.getCanvas().style.cursor = "pointer";
@@ -174,7 +192,11 @@ export default function RunwayMap({
 
     map.on("error", () => {/* tile/network errors are non-fatal — geometry still renders */});
 
-    return () => map.remove();
+    return () => {
+      mapRef.current = null;
+      boundsRef.current = null;
+      map.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
@@ -194,5 +216,18 @@ export default function RunwayMap({
       </div>
     );
   }
-  return <div ref={containerRef} className={`${heightClass} w-full overflow-hidden rounded-md border border-[#dbdfe3]`} />;
+  return (
+    <div className={`relative ${heightClass} w-full`}>
+      <div ref={containerRef} className="h-full w-full overflow-hidden rounded-md border border-[#dbdfe3]" />
+      <button
+        type="button"
+        title={`Recenter on ${runway.name}`}
+        aria-label={`Recenter on ${runway.name}`}
+        onClick={recenter}
+        className="absolute right-3 top-[76px] z-10 grid h-8 w-8 place-items-center rounded-md border border-[#c7cdd2] bg-[#fbfcfd] text-[#181b1e] shadow-sm transition-colors hover:bg-[#eef1f3]"
+      >
+        <LocateFixed size={15} strokeWidth={2.1} />
+      </button>
+    </div>
+  );
 }

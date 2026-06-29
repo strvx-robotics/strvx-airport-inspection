@@ -15,7 +15,10 @@ async def _seed(conn):
                        "VALUES ('j1','i1','r1','completed',3,1,'t')")
     await conn.execute("INSERT INTO issue_candidates (id, inspection_id, runway_id, issue_type, confidence, "
                        "confidence_band, severity, status, bbox_json, ai_draft_text, draft, inspector_notes, created_at) "
-                       "VALUES ('ic1','i1','r1','pavement',0.9,'high','high','pending','{\"x\":1,\"y\":2,\"w\":3,\"h\":4}','a','d','','t')")
+                       "VALUES ('ic1','i1','r1','pavement',0.9,'high','high','approved','{\"x\":1,\"y\":2,\"w\":3,\"h\":4}','a','d','','t')")
+    await conn.execute("INSERT INTO tickets (id, issue_id, runway_id, category, status, description, severity, "
+                       "maintenance_notes, created_at) "
+                       "VALUES ('WO-1042','ic1','r1','pavement','repaired','desc','high','','t')")
 
 
 @pytest.mark.asyncio
@@ -42,6 +45,7 @@ async def test_runway_with_issues(seed):
         d = await ov.get_runway_with_issues("r1")
         assert d["runway"].id == "r1"
         assert len(d["issues"]) == 1 and d["issues"][0].id == "ic1"
+        assert len(d["tickets"]) == 1 and d["tickets"][0].status == "repaired"
         assert await ov.get_runway_with_issues("nope") is None
     finally:
         await db.disconnect()

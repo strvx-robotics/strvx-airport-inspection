@@ -37,7 +37,11 @@ async def get_runway_detail(id: str, request: Request) -> dict:
     detail = await overview.get_runway_with_issues(id, inspection_id)
     if detail is None:
         raise AppError(f"Runway not found: {id}")
-    return {"runway": dump(detail["runway"]), "issues": [dump(i) for i in detail["issues"]]}
+    return {
+        "runway": dump(detail["runway"]),
+        "issues": [dump(i) for i in detail["issues"]],
+        "tickets": [dump(t) for t in detail["tickets"]],
+    }
 
 
 @router.get("/zones")

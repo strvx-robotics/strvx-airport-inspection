@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
-import type { Drone, IssueCandidate, IssueStatus, LngLat, Runway, Severity, Zone } from "@/lib/types";
+import type { Drone, IssueCandidate, IssueStatus, LngLat, Runway, Severity, Ticket, Zone } from "@/lib/types";
 import { ISSUE_STATUSES } from "@/lib/types";
-import { CATEGORY, DECISION, SEVERITY } from "@/lib/ui";
 import {
   centerline,
   isMappable,
@@ -23,18 +22,15 @@ import { MapToolbar, type LayerKey, type LayerVis } from "./MapToolbar";
 import { MarkerEditor } from "./MarkerEditor";
 import { IssuePreviewCard } from "./IssuePreviewCard";
 import { loadMarkers, newMarkerId, saveMarkers, type MapMarker } from "@/lib/mapMarkers";
+import { issuePinProperties, ticketForIssue } from "./issuePinStyle";
 
 export interface RunwayLayer {
   runway: Runway;
   issues: IssueCandidate[];
+  tickets: Ticket[];
   zones: Zone[];
 }
 
-// Pin radius grows with severity; color (below) also carries severity, so size +
-// hue reinforce rank together.
-const SEV_RADIUS: Record<Severity, number> = { low: 4, medium: 5, high: 6.5, critical: 8 };
-// Severity ramp — matches lib/vstyle DOT so the toolbar's severity dots are a legend.
-const SEV_COLOR: Record<Severity, string> = { low: "#9aa1a6", medium: "#caa44e", high: "#c8762f", critical: "#b23b32" };
 const ALL_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
 const ISSUE_PREVIEW_PAD = 12;
 const ISSUE_PREVIEW_GAP = 16;
@@ -191,7 +187,7 @@ function buildSources(layers: RunwayLayer[]) {
   const pins: Feature<Geometry>[] = [];
   const bounds = new maplibregl.LngLatBounds();
 
-  for (const { runway, issues } of layers) {
+  for (const { runway, issues, tickets } of layers) {
     if (!isMappable(runway)) continue;
 
     const rect = runwayRect(runway);
@@ -206,23 +202,12 @@ function buildSources(layers: RunwayLayer[]) {
     for (const i of issues) {
       const p = issuePosition(runway, i);
       if (!p) continue;
-      const color = SEV_COLOR[i.severity];
-      const pending = i.status === "pending" || i.status === "manual_review";
-      const rejected = i.status === "rejected";
+      const pin = issuePinProperties(runway, i, ticketForIssue(i, tickets));
       pins.push({
         type: "Feature",
         properties: {
           id: i.id,
-          severity: i.severity,
-          status: i.status,
-          radius: SEV_RADIUS[i.severity],
-          // color carries severity; fill-style carries status — solid disc =
-          // approved, colored ring on white = awaiting review, muted gray = rejected.
-          fill: rejected ? "#c7cdd2" : pending ? "#fbfcfd" : color,
-          stroke: rejected ? "#9aa1a6" : pending ? color : "#fbfcfd",
-          strokeWidth: pending ? 2.5 : 1.5,
-          alpha: rejected ? 0.55 : 0.95,
-          label: `${runway.name} · ${CATEGORY[i.category]} · ${SEVERITY[i.severity].label} · ${DECISION[i.status].label}`,
+          ...pin,
         },
         geometry: { type: "Point", coordinates: pos(p) },
       });
@@ -281,8 +266,10 @@ export default function AirportMap({
 
   // id → {issue, runway} for the preview card lookup on render.
   const issueIndex = useMemo(() => {
-    const m = new Map<string, { issue: IssueCandidate; runway: Runway }>();
-    for (const l of layers) for (const i of l.issues) m.set(i.id, { issue: i, runway: l.runway });
+    const m = new Map<string, { issue: IssueCandidate; runway: Runway; ticket?: Ticket }>();
+    for (const l of layers) {
+      for (const i of l.issues) m.set(i.id, { issue: i, runway: l.runway, ticket: ticketForIssue(i, l.tickets) });
+    }
     return m;
   }, [layers]);
 
@@ -298,7 +285,10 @@ export default function AirportMap({
 
   const mappable = layers.filter((l) => isMappable(l.runway));
   const sig = mappable
-    .map((l) => `${l.runway.id}:${l.issues.map((i) => `${i.id}@${i.severity}/${i.status}`).join(",")}`)
+    .map((l) => `${l.runway.id}:${l.issues.map((i) => {
+      const ticket = ticketForIssue(i, l.tickets);
+      return `${i.id}@${i.severity}/${i.status}/${ticket?.status ?? "-"}`;
+    }).join(",")}`)
     .join("|");
 
   useEffect(() => {
@@ -740,6 +730,7 @@ export default function AirportMap({
             <IssuePreviewCard
               ref={issueCardElRef}
               issue={entry.issue}
+              ticket={entry.ticket}
               runwayName={entry.runway.name}
               onOpen={() => router.push(`/issue/${selectedIssueId}`)}
               onClose={() => setSelectedIssueId(null)}

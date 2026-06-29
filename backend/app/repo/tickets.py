@@ -72,6 +72,21 @@ async def list_tickets_by_inspection(inspection_id: str) -> list[Ticket]:
     return [_to_ticket(r) for r in rows]
 
 
+async def list_tickets_by_runway(runway_id: str, inspection_id: str | None = None) -> list[Ticket]:
+    if inspection_id:
+        rows = await db.all(
+            f"{_TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id "
+            "WHERE t.runway_id = $1 AND ic.inspection_id = $2 ORDER BY t.created_at DESC",
+            runway_id, inspection_id,
+        )
+    else:
+        rows = await db.all(
+            f"{_TICKET_SELECT} WHERE t.runway_id = $1 ORDER BY t.created_at DESC",
+            runway_id,
+        )
+    return [_to_ticket(r) for r in rows]
+
+
 async def start_ticket(id: str, actor: Actor | None) -> Ticket:
     """Maintenance acknowledges / starts work: sent -> in_progress."""
     ticket = await get_ticket(id)

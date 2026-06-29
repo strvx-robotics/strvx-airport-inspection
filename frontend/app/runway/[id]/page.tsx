@@ -88,7 +88,7 @@ const columns = [
 export default function RunwayDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { runway, issues, loading } = useRunwayDetail(id);
+  const { runway, issues, tickets, loading } = useRunwayDetail(id);
   const [zones, setZones] = useState<Zone[]>([]);
   // Default view: highest confidence first — every header is click-to-sort.
   const [sorting, setSorting] = useState<SortingState>([{ id: "confidence", desc: true }]);
@@ -113,6 +113,8 @@ export default function RunwayDetail() {
 
   if (!runway) return loading ? <Loading /> : <NotFound />;
 
+  const completedTickets = tickets.filter((t) => t.status === "repaired" || t.status === "closed").length;
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       <Link href="/" className={cn("h-8 px-2.5 text-[12px]", BTN)}>
@@ -135,11 +137,11 @@ export default function RunwayDetail() {
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-[#181b1e]" /> issue
             </span>
-            <span>{issues.length} located</span>
+            <span>{issues.length} located · {completedTickets} complete</span>
           </p>
         </div>
         <div className="p-3">
-          <RunwayMap runway={runway} issues={issues} zones={zones} />
+          <RunwayMap runway={runway} issues={issues} tickets={tickets} zones={zones} />
         </div>
       </section>
 

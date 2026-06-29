@@ -39,7 +39,7 @@ async def test_runways_and_runway_detail(seed, client):
     await _seed(seed)
     assert (await client.get("/runways")).json()["runways"][0]["id"] == "r1"
     rd = await client.get("/runways/r1")
-    assert set(rd.json().keys()) == {"runway", "issues"}
+    assert set(rd.json().keys()) == {"runway", "issues", "tickets"}
     assert (await client.get("/runways/nope")).status_code == 404
 
 

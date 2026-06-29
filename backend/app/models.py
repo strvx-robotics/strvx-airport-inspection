@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -210,3 +210,4 @@ class InspectionWithJobs(_Camel):
 class RunwayWithIssues(_Camel):
     runway: Runway
     issues: list[IssueCandidate]
+    tickets: list[Ticket] = Field(default_factory=list)
