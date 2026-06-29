@@ -1,11 +1,10 @@
 // POST /api/inspections/run-now — proxied to the Python backend.
+import { backendFetch } from "@/lib/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const BACKEND_URL = process.env.BACKEND_URL;
-if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
 export async function POST(req: Request) {
-  const res = await fetch(`${BACKEND_URL}/inspections/run-now`, {
+  const res = await backendFetch(`/inspections/run-now`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-actor-role": req.headers.get("x-strvx-role") ?? "" },
     body: await req.text(),

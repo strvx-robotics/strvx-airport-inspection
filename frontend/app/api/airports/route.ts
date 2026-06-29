@@ -1,13 +1,12 @@
 // /api/airports — proxied to the Python backend (strangler migration).
 
+import { backendFetch } from "@/lib/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BACKEND_URL = process.env.BACKEND_URL;
-if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
 async function relay(method: string, req: Request, withBody: boolean): Promise<Response> {
-  const res = await fetch(`${BACKEND_URL}/airports`, {
+  const res = await backendFetch(`/airports`, {
     method,
     cache: "no-store",
     headers: {

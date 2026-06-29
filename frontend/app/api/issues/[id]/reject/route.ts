@@ -1,15 +1,14 @@
 // POST /api/issues/[id]/reject — proxied to the Python backend.
+import { backendFetch } from "@/lib/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const BACKEND_URL = process.env.BACKEND_URL;
-if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const res = await fetch(`${BACKEND_URL}/issues/${id}/reject`, {
+  const res = await backendFetch(`/issues/${id}/reject`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
