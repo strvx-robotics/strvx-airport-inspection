@@ -79,6 +79,35 @@ function buildPrompt(ctx: DraftContext): string {
  * Never throws — any SDK/network error falls back to the template.
  */
 export async function draftTicket(ctx: DraftContext): Promise<string> {
+  // Prefer the RL writer policy (best-of-N reranked toward operator-accepted
+  // style) when RL_SERVICE_URL is set; fall back to the direct LLM/template path.
+  const rl = process.env.RL_SERVICE_URL;
+  if (rl) {
+    try {
+      const res = await fetch(`${rl.replace(/\/+$/, "")}/rl/draft`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          category: ctx.category,
+          confidence: ctx.confidence,
+          severity: ctx.severity,
+          runwayDesignation: ctx.runwayDesignation,
+          zoneName: ctx.zoneName,
+          sizeM: ctx.sizeM,
+          modelNotes: ctx.modelNotes,
+          n: 3,
+        }),
+        signal: AbortSignal.timeout(Number(process.env.RL_TIMEOUT_MS ?? 25_000)),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { draft?: string };
+        if (data.draft && data.draft.trim()) return data.draft.trim();
+      }
+    } catch {
+      /* fall through to the direct LLM/template path */
+    }
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) return templateDraft(ctx);
 
   try {

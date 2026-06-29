@@ -340,6 +340,13 @@ CREATE TABLE IF NOT EXISTS drones (
   created_at  TEXT NOT NULL
 );
 
+-- App-wide key/value settings (e.g. drone_hls_url for the live-capture stream).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_runway      ON issue_candidates(runway_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);
