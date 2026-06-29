@@ -134,6 +134,22 @@ class RunwayDetector:
         return out
 
 
+def _rl_threshold(category: str, default: float) -> float:
+    """The RL-learned acceptance threshold for a category if a trained policy
+    exists (rl/artifacts/policies.json), else the default. Lets the detector tighten
+    per category as operators reject false positives — closing the RL loop on FOD/FPs.
+    An explicit <CATEGORY>_CONF env var still overrides this."""
+    try:
+        path = os.path.join(os.path.dirname(__file__), "rl", "artifacts", "policies.json")
+        if os.path.exists(path):
+            from rl.policy import load_policies
+
+            return load_policies(path)[1].get(category)
+    except Exception:
+        pass
+    return default
+
+
 def build_default_detector() -> RunwayDetector:
     """Assemble the detector from env config, with a working FOD default."""
     specs: list[ModelSpec] = [
@@ -142,7 +158,7 @@ def build_default_detector() -> RunwayDetector:
             path=os.environ.get("FOD_MODEL_PATH", "yolo11n.pt"),
             class_map={c: "fod" for c in FOD_COCO_CLASSES},
             allow=FOD_COCO_CLASSES,
-            conf=float(os.environ.get("FOD_CONF", "0.35")),
+            conf=float(os.environ.get("FOD_CONF") or _rl_threshold("fod", 0.35)),
         ),
     ]
 
@@ -163,7 +179,7 @@ def build_default_detector() -> RunwayDetector:
         path = os.environ.get(env_var) or default_paths[category]
         if not os.path.exists(path):
             continue
-        conf = float(os.environ.get(f"{category.upper()}_CONF", str(default_conf[category])))
+        conf = float(os.environ.get(f"{category.upper()}_CONF") or _rl_threshold(category, default_conf[category]))
         specs.append(ModelSpec(path=path, class_map={"*": category}, conf=conf))
 
     return RunwayDetector(specs)
