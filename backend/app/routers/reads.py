@@ -9,10 +9,6 @@ from app.serialize import dump
 router = APIRouter()
 
 
-def _dump_job(job) -> dict:
-    out = dump(job)  # job.runway nested + camelCase; None runway already omitted by exclude_none
-    return out
-
 
 @router.get("/inspections")
 async def get_inspections() -> dict:
@@ -30,8 +26,9 @@ async def get_inspection_detail(id: str) -> dict:
 
 
 @router.get("/runways")
-async def get_runways() -> dict:
-    return {"runways": [dump(r) for r in await runways.list_runways()]}
+async def get_runways(request: Request) -> dict:
+    airport_id = request.query_params.get("airportId")
+    return {"runways": [dump(r) for r in await runways.list_runways(airport_id)]}
 
 
 @router.get("/runways/{id}")
@@ -57,8 +54,9 @@ async def get_users() -> dict:
 
 
 @router.get("/schedules")
-async def get_schedules() -> dict:
-    return {"schedules": [dump(s) for s in await schedules.list_schedules()]}
+async def get_schedules(request: Request) -> dict:
+    airport_id = request.query_params.get("airportId")
+    return {"schedules": [dump(s) for s in await schedules.list_schedules(airport_id)]}
 
 
 @router.get("/airports")

@@ -4,7 +4,6 @@ from fastapi import FastAPI
 
 from app import db
 from app.errors import install_error_handlers
-from app.routers import airports as airports_router
 from app.routers import drones as drones_router
 from app.routers import issues as issues_router
 from app.routers import reads as reads_router
@@ -20,7 +19,6 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="STRVX Airport Inspection Backend", lifespan=lifespan)
 install_error_handlers(app)
-app.include_router(airports_router.router)
 app.include_router(drones_router.router)
 app.include_router(issues_router.router)
 app.include_router(reads_router.router)
