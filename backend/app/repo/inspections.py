@@ -45,3 +45,15 @@ async def list_jobs(inspection_id: str) -> list[InspectionJob]:
     rows = await db.all(
         "SELECT * FROM inspection_jobs WHERE inspection_id = $1 ORDER BY created_at", inspection_id)
     return [to_job(r) for r in rows]
+
+
+async def get_inspection_with_jobs(id: str) -> dict | None:
+    from app.repo.runways import get_runway
+    inspection = await get_inspection(id)
+    if inspection is None:
+        return None
+    jobs = []
+    for job in await list_jobs(id):
+        job.runway = await get_runway(job.runway_id)   # None → omitted at serialization
+        jobs.append(job)
+    return {"inspection": inspection, "jobs": jobs}
