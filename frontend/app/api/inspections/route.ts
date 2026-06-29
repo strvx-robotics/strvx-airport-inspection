@@ -1,14 +1,13 @@
-// GET /api/inspections — dashboard overview (runways + counts + status) plus
-// the list of inspections for the default airport.
-
-import { getOverview, listInspections } from "@/lib/repo";
-import { json, route } from "@/lib/http";
-
+// GET /api/inspections — proxied to the Python backend.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const BACKEND_URL = process.env.BACKEND_URL;
+if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
 
-export const GET = route(async () => {
-  const overview = await getOverview();
-  const inspections = await listInspections();
-  return json({ overview, inspections });
-});
+export async function GET() {
+  const res = await fetch(`${BACKEND_URL}/inspections`, { cache: "no-store" });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}

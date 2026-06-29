@@ -23,3 +23,11 @@ def to_runway(r) -> Runway:
 async def get_runway(id: str) -> Runway | None:
     r = await db.one("SELECT * FROM runways WHERE id = $1", id)
     return to_runway(r) if r else None
+
+
+async def list_runways(airport_id: str | None = None) -> list[Runway]:
+    if airport_id:
+        rows = await db.all("SELECT * FROM runways WHERE airport_id = $1 ORDER BY created_at", airport_id)
+    else:
+        rows = await db.all("SELECT * FROM runways ORDER BY created_at")
+    return [to_runway(r) for r in rows]

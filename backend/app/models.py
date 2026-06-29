@@ -100,3 +100,113 @@ class IssueCandidate(_Camel):
     ticket_id: str | None = None
     created_by: str | None = None
     created_at: str
+
+
+class User(_Camel):
+    id: str
+    username: str
+    name: str
+    role: str
+    airport_id: str | None = None
+    created_at: str
+
+
+class Inspection(_Camel):
+    id: str
+    airport_id: str
+    scheduled_time: str
+    window: str
+    status: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    created_by: str | None = None
+    created_at: str
+
+
+class InspectionJob(_Camel):
+    id: str
+    inspection_id: str
+    runway_id: str
+    status: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    image_count: int
+    issue_count: int
+    created_at: str
+    runway: Runway | None = None
+
+
+class Zone(_Camel):
+    id: str
+    runway_id: str
+    name: str
+    station_start_m: float | None = None
+    station_end_m: float | None = None
+    polygon: list[LngLat] | None = None
+    notes: str | None = None
+    created_at: str
+
+
+class InspectionSchedule(_Camel):
+    id: str
+    airport_id: str
+    time: str
+    window: str
+    enabled: bool
+    created_by: str | None = None
+    created_at: str
+
+
+class RunwayStatus(_Camel):
+    label: str
+    tone: str
+
+
+class RunwayOverview(_Camel):
+    runway: Runway
+    issue_count: int
+    pending_count: int
+    tickets_open: int
+    tickets_completed: int
+    by_severity: dict[str, int]
+    image_count: int
+    status: RunwayStatus
+
+
+class IssueBreakdown(_Camel):
+    by_severity: dict[str, int]
+    by_category: dict[str, int]
+    by_status: dict[str, int]
+    by_band: dict[str, int]
+
+
+class OverviewTotals(_Camel):
+    issues: int
+    pending: int
+    manual_review: int
+    approved: int
+    rejected: int
+    tickets_open: int
+    tickets_completed: int
+    tickets_total: int
+    images: int
+
+
+class Overview(_Camel):
+    inspection: Inspection | None = None
+    airport: Airport
+    runways: list[RunwayOverview]
+    totals: OverviewTotals
+    issue_breakdown: IssueBreakdown
+    recent_tickets: list[Ticket]
+    inspections: list[Inspection]
+
+
+class InspectionWithJobs(_Camel):
+    inspection: Inspection
+    jobs: list[InspectionJob]
+
+
+class RunwayWithIssues(_Camel):
+    runway: Runway
+    issues: list[IssueCandidate]

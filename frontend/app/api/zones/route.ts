@@ -6,6 +6,8 @@ import { json, readJson, route } from "@/lib/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const BACKEND_URL = process.env.BACKEND_URL;
+
 interface Body {
   runwayId?: string;
   name?: string;
@@ -14,11 +16,15 @@ interface Body {
   notes?: string;
 }
 
-export const GET = route(async (req) => {
-  const runwayId = new URL(req.url).searchParams.get("runwayId");
-  if (!runwayId) throw new Error("runwayId query parameter is required");
-  return json({ zones: await listZones(runwayId) });
-});
+export async function GET(req: Request) {
+  if (!BACKEND_URL) throw new Error("BACKEND_URL is not set");
+  const qs = new URL(req.url).search; // ?runwayId=
+  const res = await fetch(`${BACKEND_URL}/zones${qs}`, { cache: "no-store" });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 export const POST = route(async (req) => {
   const body = await readJson<Body>(req);
