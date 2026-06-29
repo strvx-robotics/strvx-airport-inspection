@@ -32,23 +32,24 @@ const columns: DataTableColumn<Ticket>[] = [
     cellRenderer: ({ value }: { value?: string }) => (
       <span className="font-mono text-[13px] font-medium text-[#181b1e]">{value}</span>
     ),
-    minWidth: 150,
+    minWidth: 120,
+    maxWidth: 140,
   },
   {
     colId: "defect",
     headerName: "Defect",
     valueGetter: ({ data }) => (data ? CATEGORY[data.category] ?? data.category : ""),
-    cellClass: "text-[13px] text-[#3f4448]",
-    flex: 1.3,
-    minWidth: 180,
+    cellClass: "text-[13px] text-[#3f4448] whitespace-normal leading-snug",
+    flex: 1.25,
+    minWidth: 150,
   },
   {
     colId: "location",
     headerName: "Location",
     valueGetter: ({ data }) => data?.zone || "—",
-    cellClass: "font-mono text-[12px] text-[#5b6166]",
-    flex: 1,
-    minWidth: 180,
+    cellClass: "font-mono text-[12px] text-[#5b6166] whitespace-normal leading-snug",
+    flex: 0.9,
+    minWidth: 130,
   },
   {
     colId: "severity",
@@ -56,14 +57,17 @@ const columns: DataTableColumn<Ticket>[] = [
     valueGetter: ({ data }) => (data ? SEVERITY_VALUES.indexOf(data.severity) : -1),
     cellRenderer: ({ data }: { data?: Ticket }) =>
       data ? <SeverityFlames severity={data.severity} /> : null,
-    minWidth: 140,
+    minWidth: 112,
+    maxWidth: 122,
   },
   {
     colId: "status",
     headerName: "Status",
     valueGetter: ({ data }) => (data ? TICKET_STATUS[data.status]?.label ?? data.status : ""),
     cellClass: ({ data }) =>
-      `valanor-status-cell valanor-status-${data ? TICKET_STATUS[data.status]?.tone ?? "gray" : "gray"}`,
+      `valanor-status-cell valanor-status-${
+        data ? TICKET_STATUS[data.status]?.tone ?? "gray" : "gray"
+      } whitespace-normal leading-snug`,
     cellStyle: {
       alignItems: "center",
       display: "flex",
@@ -73,8 +77,8 @@ const columns: DataTableColumn<Ticket>[] = [
       const st = TICKET_STATUS[data.status];
       return <span>{st?.label ?? data.status}</span>;
     },
-    flex: 1.2,
-    minWidth: 220,
+    flex: 1.15,
+    minWidth: 160,
   },
   {
     colId: "assigned",
@@ -83,9 +87,9 @@ const columns: DataTableColumn<Ticket>[] = [
     cellRenderer: ({ data, value }: { data?: Ticket; value?: string }) => (
       <span className={data?.assignedTo ? undefined : "text-[#9aa1a6]"}>{value}</span>
     ),
-    cellClass: "text-[12px] text-[#5b6166]",
-    flex: 1,
-    minWidth: 170,
+    cellClass: "text-[12px] text-[#5b6166] whitespace-normal leading-snug",
+    flex: 0.9,
+    minWidth: 140,
   },
   {
     colId: "logged",
@@ -93,7 +97,8 @@ const columns: DataTableColumn<Ticket>[] = [
     field: "createdAt",
     cellRenderer: ({ data }: { data?: Ticket }) => rel(data?.createdAt),
     cellClass: "font-mono text-[11px] text-[#6b7176]",
-    minWidth: 130,
+    minWidth: 100,
+    maxWidth: 110,
   },
 ];
 
@@ -189,7 +194,7 @@ export default function MaintenanceTracker() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search WO, location, defect…"
-              className={cn("h-8 w-56 max-w-full pl-8 pr-3", INPUT)}
+              className={cn("h-8 w-48 max-w-full pl-8 pr-3", INPUT)}
             />
           </div>
         </div>

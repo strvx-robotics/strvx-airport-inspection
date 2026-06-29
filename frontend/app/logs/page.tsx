@@ -112,7 +112,11 @@ export default function LogsPage() {
       {
         colId: "type",
         headerName: "Type",
-        valueGetter: ({ data }) => (data ? INSPECTION_TYPE[data.type]?.label ?? "" : ""),
+        valueGetter: ({ data }) => {
+          if (!data) return "";
+          const type = data.type ?? "daily";
+          return INSPECTION_TYPE[type]?.label ?? "Daily";
+        },
         cellClass: "text-[12px] text-[#3f4448]",
         minWidth: 150,
       },

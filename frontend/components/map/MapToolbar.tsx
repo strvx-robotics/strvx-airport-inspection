@@ -15,8 +15,8 @@ import {
   Square,
 } from "lucide-react";
 import { MapPanel } from "./MapPanel";
-import { SEVERITY } from "@/lib/ui";
-import type { Runway, Severity } from "@/lib/types";
+import { DECISION, SEVERITY } from "@/lib/ui";
+import type { IssueStatus, Runway, Severity } from "@/lib/types";
 import { DOT } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
@@ -32,6 +32,13 @@ const LAYER_ROWS: { key: LayerKey; icon: ComponentType<{ size?: number; strokeWi
 ];
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
+const STATUSES: IssueStatus[] = ["pending", "manual_review", "approved", "rejected"];
+const STATUS_DOT: Record<IssueStatus, string> = {
+  pending: "bg-[#caa44e]",
+  manual_review: "bg-[#8d78bd]",
+  approved: "bg-[#44b07f]",
+  rejected: "bg-[#b23b32] ring-2 ring-[#b23b32]/25",
+};
 
 /** Left-edge tool rail: layer visibility, severity filter, recenter, markers. */
 export function MapToolbar({
@@ -41,6 +48,8 @@ export function MapToolbar({
   onToggleLayer,
   severities,
   onToggleSeverity,
+  statuses,
+  onToggleStatus,
   onRecenter,
   addMode,
   onToggleAddMode,
@@ -63,6 +72,8 @@ export function MapToolbar({
   onToggleLayer: (k: LayerKey) => void;
   severities: Set<Severity>;
   onToggleSeverity: (s: Severity) => void;
+  statuses: Set<IssueStatus>;
+  onToggleStatus: (s: IssueStatus) => void;
   onRecenter: () => void;
   addMode: boolean;
   onToggleAddMode: () => void;
@@ -118,6 +129,26 @@ export function MapToolbar({
             <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[s])} />
             <span className="flex-1 font-mono text-[11px] tracking-wide">{SEVERITY[s].label}</span>
             {severities.has(s) && <Check size={13} strokeWidth={2.4} />}
+          </button>
+        ))}
+
+        <Divider />
+        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#9aa1a6]">
+          Status filter
+        </p>
+        {STATUSES.map((s) => (
+          <button
+            key={s}
+            onClick={() => onToggleStatus(s)}
+            disabled={!layers.issues}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors disabled:opacity-35",
+              statuses.has(s) ? "text-[#181b1e]" : "text-[#6b7176] hover:text-[#3f4448]",
+            )}
+          >
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[s])} />
+            <span className="flex-1 font-mono text-[11px] tracking-wide">{DECISION[s].label}</span>
+            {statuses.has(s) && <Check size={13} strokeWidth={2.4} />}
           </button>
         ))}
 
