@@ -5,7 +5,7 @@ pillow>=10.0
 python-multipart>=0.0.9
 huggingface_hub>=0.25
 
-# live-feed worker (live_worker.py)
+# live-feed worker (app/live/worker.py)
 opencv-python>=4.8   # video-stream frame sampling (also a transitive ultralytics dep)
 requests>=2.31       # worker -> /api/live-capture POST
 anthropic>=0.40      # VLM marking/lighting detector (optional; needs ANTHROPIC_API_KEY)

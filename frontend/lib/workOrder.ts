@@ -1,4 +1,4 @@
-// Airfield work-order derivation (docs/example-ticket.md).
+// Airfield work-order derivation.
 //
 // A maintenance Ticket stores the essentials (category, severity, location,
 // description). A real airfield work order shows more: defect class, hazard,

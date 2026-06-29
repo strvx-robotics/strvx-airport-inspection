@@ -36,15 +36,31 @@ async function main(): Promise<void> {
     const insRunway = (
       id: string, name: string, designation: string, length: string,
       lengthM: number, thrLat: number, thrLng: number,
+      polygon: { lat: number; lng: number }[],
     ) =>
       run(
-        `INSERT INTO runways (id, airport_id, name, designation, length, length_m, threshold_lat, threshold_lng, active_status, created_at)
-         VALUES (?, 'ags', ?, ?, ?, ?, ?, ?, 'active', ?)`,
-        [id, name, designation, length, lengthM, thrLat, thrLng, ts],
+        `INSERT INTO runways (id, airport_id, name, designation, length, length_m, threshold_lat, threshold_lng, runway_polygon_json, map_status, active_status, created_at)
+         VALUES (?, 'ags', ?, ?, ?, ?, ?, ?, ?, 'active', 'active', ?)`,
+        [id, name, designation, length, lengthM, thrLat, thrLng, JSON.stringify(polygon), ts],
       );
-    await insRunway("r1", "Runway 1", "17 – 35", "8,001 ft", 2439, 33.371, -81.967);
-    await insRunway("r2", "Runway 2", "08 – 26", "6,000 ft", 1829, 33.3675, -81.9665);
-    await insRunway("r3", "Runway 3", "11 – 29", "5,001 ft", 1524, 33.372, -81.965);
+    await insRunway("r1", "Runway 1", "17 – 35", "8,001 ft", 2439, 33.371, -81.967, [
+      { lat: 33.3836, lng: -81.9646 },
+      { lat: 33.3832, lng: -81.9639 },
+      { lat: 33.3630, lng: -81.9733 },
+      { lat: 33.3634, lng: -81.9740 },
+    ]);
+    await insRunway("r2", "Runway 2", "08 – 26", "6,000 ft", 1829, 33.3675, -81.9665, [
+      { lat: 33.3691, lng: -81.9768 },
+      { lat: 33.3696, lng: -81.9767 },
+      { lat: 33.3724, lng: -81.9575 },
+      { lat: 33.3719, lng: -81.9574 },
+    ]);
+    await insRunway("r3", "Runway 3", "11 – 29", "5,001 ft", 1524, 33.372, -81.965, [
+      { lat: 33.3794, lng: -81.9705 },
+      { lat: 33.3798, lng: -81.9700 },
+      { lat: 33.3693, lng: -81.9578 },
+      { lat: 33.3689, lng: -81.9583 },
+    ]);
 
     const insZone = (id: string, runwayId: string, name: string, start: number, end: number) =>
       run(

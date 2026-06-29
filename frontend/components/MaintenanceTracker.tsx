@@ -2,22 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Wrench, Search, ClipboardList } from "lucide-react";
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import Badge from "@/components/Badge";
-import DataTable from "@/components/DataTable";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
+import { SeverityFlames } from "@/components/SeverityFlames";
 import * as api from "@/lib/api";
 import type { Ticket, TicketStatus } from "@/lib/types";
 import { SEVERITY_VALUES } from "@/lib/types";
-import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
+import { CATEGORY, TICKET_STATUS } from "@/lib/ui";
 import { rel } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, INPUT, EYEBROW, H2, MUTED, METRIC_CELL, DOT } from "@/lib/vstyle";
+import { CARD, BAR, INPUT, EYEBROW, H2, MUTED, METRIC_CELL } from "@/lib/vstyle";
 
 const ACTIVE: TicketStatus[] = ["draft", "sent", "in_progress", "repaired"];
 const isActive = (s: TicketStatus) => ACTIVE.includes(s);
@@ -29,73 +22,79 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-// WO · Defect · Location · Severity · Status · Assigned · Logged · › — every
-// header is click-to-sort; the default order (active first) comes from `rows`.
-const col = createColumnHelper<Ticket>();
-const columns = [
-  col.accessor((t) => t.id, {
-    id: "wo",
-    header: "Work order",
-    sortingFn: "alphanumeric",
-    cell: (c) => <span className="font-mono text-[13px] font-medium text-[#181b1e]">{c.getValue()}</span>,
-    meta: { thClass: "whitespace-nowrap", tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((t) => CATEGORY[t.category] ?? t.category, {
-    id: "defect",
-    header: "Defect",
-    sortingFn: "alphanumeric",
-    cell: (c) => c.getValue(),
-    meta: { thClass: "w-[34%]", tdClass: "truncate text-[13px] text-[#3f4448]" },
-  }),
-  // Sort by the displayed string so placeholder rows ("—") order with what's shown.
-  col.accessor((t) => t.zone || "—", {
-    id: "location",
-    header: "Location",
-    sortingFn: "alphanumeric",
-    cell: (c) => c.getValue(),
-    meta: { thClass: "w-[26%]", tdClass: "truncate font-mono text-[12px] text-[#5b6166]" },
-  }),
-  col.accessor((t) => SEVERITY_VALUES.indexOf(t.severity), {
-    id: "severity",
-    header: "Severity",
-    cell: (c) => {
-      const sev = c.row.original.severity;
-      return (
-        <span className="inline-flex items-center gap-1.5">
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[sev] ?? "bg-[#9aa1a6]")} />
-          <span className="text-[12px] text-[#3f4448]">{SEVERITY[sev]?.label ?? sev}</span>
-        </span>
-      );
-    },
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((t) => TICKET_STATUS[t.status]?.label ?? t.status, {
-    id: "status",
-    header: "Status",
-    sortingFn: "alphanumeric",
-    cell: (c) => {
-      const st = TICKET_STATUS[c.row.original.status];
-      return <Badge tone={st?.tone ?? "gray"}>{st?.label ?? c.row.original.status}</Badge>;
-    },
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
-  // Sort by the displayed string so "Unassigned" rows order with what's shown.
-  col.accessor((t) => t.assignedTo || "Unassigned", {
-    id: "assigned",
-    header: "Assigned",
-    sortingFn: "alphanumeric",
-    cell: (c) => (
-      <span className={c.row.original.assignedTo ? undefined : "text-[#9aa1a6]"}>{c.getValue()}</span>
+// WO · Defect · Location · Severity · Status · Assigned · Logged.
+// AG Grid owns sorting; the default order (active first) comes from `rows`.
+const columns: DataTableColumn<Ticket>[] = [
+  {
+    colId: "wo",
+    headerName: "Work order",
+    field: "id",
+    cellRenderer: ({ value }: { value?: string }) => (
+      <span className="font-mono text-[13px] font-medium text-[#181b1e]">{value}</span>
     ),
-    meta: { thClass: "w-[23%]", tdClass: "truncate text-[12px] text-[#5b6166]" },
-  }),
-  col.accessor((t) => t.createdAt ?? "", {
-    id: "logged",
-    header: "Logged",
-    sortingFn: "text", // ISO timestamps → plain text compare is chronological & stable
-    cell: (c) => rel(c.row.original.createdAt),
-    meta: { tdClass: "whitespace-nowrap font-mono text-[11px] text-[#6b7176]" },
-  }),
+    minWidth: 150,
+  },
+  {
+    colId: "defect",
+    headerName: "Defect",
+    valueGetter: ({ data }) => (data ? CATEGORY[data.category] ?? data.category : ""),
+    cellClass: "text-[13px] text-[#3f4448]",
+    flex: 1.3,
+    minWidth: 180,
+  },
+  {
+    colId: "location",
+    headerName: "Location",
+    valueGetter: ({ data }) => data?.zone || "—",
+    cellClass: "font-mono text-[12px] text-[#5b6166]",
+    flex: 1,
+    minWidth: 180,
+  },
+  {
+    colId: "severity",
+    headerName: "Severity",
+    valueGetter: ({ data }) => (data ? SEVERITY_VALUES.indexOf(data.severity) : -1),
+    cellRenderer: ({ data }: { data?: Ticket }) =>
+      data ? <SeverityFlames severity={data.severity} /> : null,
+    minWidth: 140,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    valueGetter: ({ data }) => (data ? TICKET_STATUS[data.status]?.label ?? data.status : ""),
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${data ? TICKET_STATUS[data.status]?.tone ?? "gray" : "gray"}`,
+    cellStyle: {
+      alignItems: "center",
+      display: "flex",
+    },
+    cellRenderer: ({ data }: { data?: Ticket }) => {
+      if (!data) return null;
+      const st = TICKET_STATUS[data.status];
+      return <span>{st?.label ?? data.status}</span>;
+    },
+    flex: 1.2,
+    minWidth: 220,
+  },
+  {
+    colId: "assigned",
+    headerName: "Assigned",
+    valueGetter: ({ data }) => data?.assignedTo || "Unassigned",
+    cellRenderer: ({ data, value }: { data?: Ticket; value?: string }) => (
+      <span className={data?.assignedTo ? undefined : "text-[#9aa1a6]"}>{value}</span>
+    ),
+    cellClass: "text-[12px] text-[#5b6166]",
+    flex: 1,
+    minWidth: 170,
+  },
+  {
+    colId: "logged",
+    headerName: "Logged",
+    field: "createdAt",
+    cellRenderer: ({ data }: { data?: Ticket }) => rel(data?.createdAt),
+    cellClass: "font-mono text-[11px] text-[#6b7176]",
+    minWidth: 130,
+  },
 ];
 
 /** The maintenance role's whole view: an enterprise work-order queue. */
@@ -103,7 +102,6 @@ export default function MaintenanceTracker() {
   const [tickets, setTickets] = useState<Ticket[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [sorting, setSorting] = useState<SortingState>([]);
 
   useEffect(() => {
     let live = true;
@@ -125,7 +123,6 @@ export default function MaintenanceTracker() {
   );
 
   // Tab + search narrow the set; default order is active-first, newest-first.
-  // TanStack starts with empty sorting so it preserves this until a header click.
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all
@@ -143,16 +140,6 @@ export default function MaintenanceTracker() {
           (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
       );
   }, [all, filter, query]);
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (t) => t.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col px-6 py-6">
@@ -208,9 +195,11 @@ export default function MaintenanceTracker() {
         </div>
 
         <DataTable
-          table={table}
+          rows={rows}
+          columns={columns}
           label="Work orders"
-          minWidth={760}
+          fill
+          getRowId={(t) => t.id}
           rowHref={(t) => `/ticket/${t.id}`}
           empty={
             tickets === null ? (

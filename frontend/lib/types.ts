@@ -1,10 +1,10 @@
 // Domain types for the STRVX runway-inspection app.
 // Mirrors PRD §11 data model + design-plan §4/§13 (feedback loop).
 //
-// Phase 0 shipped a trimmed in-memory model (Issue / Ticket / Runway). This file
-// EXTENDS that model with the full persisted domain (IssueCandidate, Inspection,
-// Image, history, …) used by the SQLite data layer, while keeping every Phase-0
-// export intact so the existing UI keeps compiling unchanged.
+// Phase 0 shipped a trimmed UI model (Issue / Ticket / Runway). This file
+// extends that model with the persisted Postgres/API domain (IssueCandidate,
+// Inspection, Image, history, ...), while keeping compatibility exports used by
+// existing screens and helpers.
 
 // ── Enums (string unions) ─────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ export type TicketStatus =
   | "sent"
   | "in_progress"
   | "repaired"
+  | "reinspected"
   | "closed"
   | "rejected";
 
@@ -67,8 +68,17 @@ export type UserRole = "admin" | "inspector" | "maintenance";
 /** How an image/candidate location was derived (design §4 [GAP 3]). */
 export type GeomConfidence = "gps" | "pose" | "manual";
 
+/** Lifecycle for manually maintained operational map geometry. */
+export type RunwayMapStatus = "draft" | "active" | "retired" | "needs_review";
+
 /** Illumination-driven inspection window (design §4 [GAP 4]). */
 export type InspectionWindow = "daylight" | "dusk_lit";
+
+/** Inspection type (PRD §3): the deduped scheduled daily pass vs ad-hoc runs. */
+export type InspectionType = "daily" | "unusual" | "accident";
+
+/** Daily self-inspection checklist result per item (PRD §6). */
+export type ChecklistResult = "pass" | "fail" | "na";
 
 /** Badge tones — mirrors components/Badge.tsx so the data layer can return tones. */
 export type BadgeTone =
@@ -105,7 +115,15 @@ export const REJECTION_REASONS: RejectionReason[] = [
   "other",
 ];
 export const USER_ROLES: UserRole[] = ["admin", "inspector", "maintenance"];
+export const RUNWAY_MAP_STATUSES: RunwayMapStatus[] = [
+  "draft",
+  "active",
+  "retired",
+  "needs_review",
+];
 export const INSPECTION_WINDOWS: InspectionWindow[] = ["daylight", "dusk_lit"];
+export const INSPECTION_TYPES: InspectionType[] = ["daily", "unusual", "accident"];
+export const CHECKLIST_RESULTS: ChecklistResult[] = ["pass", "fail", "na"];
 
 // ── Shared value objects ──────────────────────────────────────────────────────
 
@@ -160,6 +178,8 @@ export interface Runway {
   thresholdHeadingDeg?: number;
   thresholdLat?: number; // threshold anchor — origin for station_m → map projection
   thresholdLng?: number;
+  runwayPolygon?: LngLat[]; // admin-drawn runway work area; preferred map source
+  mapStatus?: RunwayMapStatus;
   activeStatus?: string;
   createdAt?: string;
 }
@@ -180,11 +200,28 @@ export interface Inspection {
   airportId: string;
   scheduledTime: string; // ISO
   window: InspectionWindow;
+  type: InspectionType;
+  reason?: string;
   status: InspectionStatus;
   startedAt?: string;
   completedAt?: string;
+  signedBy?: string;
+  signedAt?: string;
+  signatureName?: string;
+  attestation?: boolean;
   createdBy?: string;
   createdAt: string;
+}
+
+/** A daily-checklist item with its (optional) recorded response (PRD §6). */
+export interface ChecklistItem {
+  itemKey: string;
+  label: string;
+  category: IssueCategory;
+  result: ChecklistResult | null;
+  notes: string;
+  imageId?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface InspectionJob {
@@ -334,7 +371,14 @@ export interface IssueStatusHistory {
   ts: string;
 }
 
-export type TicketHistoryAction = "create" | "repair" | "close" | "reject";
+export type TicketHistoryAction =
+  | "create"
+  | "start"
+  | "repair"
+  | "reinspect"
+  | "assign"
+  | "close"
+  | "reject";
 
 export interface TicketStatusHistory {
   id: string;

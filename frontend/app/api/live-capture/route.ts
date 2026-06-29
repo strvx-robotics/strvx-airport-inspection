@@ -1,5 +1,5 @@
 // POST /api/live-capture — a frame captured off the live drone feed by the
-// server-side worker (ml-service/live_worker.py), with its detections already
+// server-side worker (ml-service/app/live/worker.py), with its detections already
 // computed. This is the live-feed sibling of /api/uploads: same storage +
 // drafting + ingest pipeline, but the worker supplies the detections (it already
 // ran the models to decide WHEN to capture) instead of the route re-detecting.

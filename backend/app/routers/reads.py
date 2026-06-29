@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 
 from app.errors import AppError
-from app.repo import inspections, overview, runways, schedules, users
+from app.repo import checklist, images, inspections, overview, runways, schedules, users
 from app.repo.inspections import list_inspections
 from app.repo.zones import list_zones
 from app.serialize import dump
@@ -22,7 +22,12 @@ async def get_inspection_detail(id: str) -> dict:
     detail = await inspections.get_inspection_with_jobs(id)
     if detail is None:
         raise AppError(f"Inspection not found: {id}")
-    return {"inspection": dump(detail["inspection"]), "jobs": [dump(j) for j in detail["jobs"]]}
+    return {
+        "inspection": dump(detail["inspection"]),
+        "jobs": [dump(j) for j in detail["jobs"]],
+        "checklist": await checklist.get_checklist(id),
+        "images": [dump(i) for i in await images.list_by_inspection(id)],
+    }
 
 
 @router.get("/runways")

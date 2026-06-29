@@ -27,9 +27,49 @@ export function runwayAnchor(runway: Runway): LngLat | undefined {
     : undefined;
 }
 
+const midpoint = (a: LngLat, b: LngLat): LngLat => ({
+  lat: (a.lat + b.lat) / 2,
+  lng: (a.lng + b.lng) / 2,
+});
+
+const interp = (a: LngLat, b: LngLat, t: number): LngLat => ({
+  lat: a.lat + (b.lat - a.lat) * t,
+  lng: a.lng + (b.lng - a.lng) * t,
+});
+
+function runwayBoxEdges(runway: Runway): { start: [LngLat, LngLat]; end: [LngLat, LngLat] } | undefined {
+  const pts = runway.runwayPolygon?.slice(0, 4);
+  if (!pts || pts.length < 4) return undefined;
+
+  const edges = pts.map((a, i) => {
+    const b = pts[(i + 1) % 4];
+    return { a, b, length: distanceM(a, b) };
+  });
+  const pair0 = edges[0].length + edges[2].length;
+  const pair1 = edges[1].length + edges[3].length;
+  const startIndex = pair0 <= pair1 ? 0 : 1;
+  const start = edges[startIndex];
+  const end = edges[(startIndex + 2) % 4];
+  return { start: [start.a, start.b], end: [end.a, end.b] };
+}
+
+function polygonCenterline(runway: Runway): [LngLat, LngLat] | undefined {
+  const edges = runwayBoxEdges(runway);
+  if (!edges) return undefined;
+  return [midpoint(edges.start[0], edges.start[1]), midpoint(edges.end[0], edges.end[1])];
+}
+
+function runwayAxis(runway: Runway): { anchor: LngLat; heading: number } | undefined {
+  const manual = polygonCenterline(runway);
+  if (manual) return { anchor: manual[0], heading: bearingBetween(manual[0], manual[1]) };
+  const anchor = runwayAnchor(runway);
+  const heading = runwayHeading(runway);
+  return anchor && heading != null ? { anchor, heading } : undefined;
+}
+
 /** Whether a runway has enough geometry to draw on the map. */
 export function isMappable(runway: Runway): boolean {
-  return runwayAnchor(runway) != null && runwayHeading(runway) != null;
+  return (runway.runwayPolygon?.length ?? 0) >= 3 || (runwayAnchor(runway) != null && runwayHeading(runway) != null);
 }
 
 /** Project a station (m from threshold) + lateral offset (m, + = right of centerline) → LngLat. */
@@ -47,6 +87,8 @@ export function stationToLngLat(
 
 /** Centerline endpoints [threshold, far end], or undefined if not mappable. */
 export function centerline(runway: Runway): [LngLat, LngLat] | undefined {
+  const manual = polygonCenterline(runway);
+  if (manual) return manual;
   const anchor = runwayAnchor(runway);
   const heading = runwayHeading(runway);
   if (!anchor || heading == null || !runway.lengthM) return undefined;
@@ -60,6 +102,26 @@ export function runwayRect(
   endM = runway.lengthM ?? 0,
   halfWidthM = RUNWAY_HALF_WIDTH_M,
 ): LngLat[] | undefined {
+  if ((runway.runwayPolygon?.length ?? 0) >= 3 && startM === 0 && endM === (runway.lengthM ?? 0)) {
+    return runway.runwayPolygon;
+  }
+  if ((runway.runwayPolygon?.length ?? 0) >= 4 && runway.lengthM) {
+    const edges = runwayBoxEdges(runway);
+    if (edges) {
+      const startF = Math.max(0, Math.min(1, startM / runway.lengthM));
+      const endF = Math.max(0, Math.min(1, endM / runway.lengthM));
+      const sideA0 = edges.start[0];
+      const sideA1 = edges.end[1];
+      const sideB0 = edges.start[1];
+      const sideB1 = edges.end[0];
+      return [
+        interp(sideA0, sideA1, startF),
+        interp(sideA0, sideA1, endF),
+        interp(sideB0, sideB1, endF),
+        interp(sideB0, sideB1, startF),
+      ];
+    }
+  }
   const anchor = runwayAnchor(runway);
   const heading = runwayHeading(runway);
   if (!anchor || heading == null) return undefined;
@@ -86,10 +148,9 @@ export function issuePosition(
   issue: Pick<IssueCandidate, "gps" | "stationM" | "lateralOffsetM">,
 ): LngLat | undefined {
   if (issue.gps) return issue.gps;
-  const anchor = runwayAnchor(runway);
-  const heading = runwayHeading(runway);
-  if (!anchor || heading == null || issue.stationM == null) return undefined;
-  return stationToLngLat(anchor, heading, issue.stationM, issue.lateralOffsetM ?? 0);
+  const axis = runwayAxis(runway);
+  if (!axis || issue.stationM == null) return undefined;
+  return stationToLngLat(axis.anchor, axis.heading, issue.stationM, issue.lateralOffsetM ?? 0);
 }
 
 /** Where a GPS point falls relative to one runway: station (m from threshold) +
@@ -98,11 +159,10 @@ export function projectOntoRunway(
   runway: Runway,
   point: LngLat,
 ): { stationM: number; lateralOffsetM: number } | undefined {
-  const anchor = runwayAnchor(runway);
-  const heading = runwayHeading(runway);
-  if (!anchor || heading == null) return undefined;
-  const dist = distanceM(anchor, point);
-  const rel = toRad(bearingBetween(anchor, point) - heading);
+  const axis = runwayAxis(runway);
+  if (!axis) return undefined;
+  const dist = distanceM(axis.anchor, point);
+  const rel = toRad(bearingBetween(axis.anchor, point) - axis.heading);
   return { stationM: dist * Math.cos(rel), lateralOffsetM: dist * Math.sin(rel) };
 }
 
@@ -157,6 +217,10 @@ function selfCheck(): void {
 
   const bare = { ...rwy, thresholdLat: undefined, thresholdLng: undefined } as Runway;
   console.assert(!isMappable(bare) && centerline(bare) === undefined, "no anchor → not mappable");
+
+  const manual = { ...bare, runwayPolygon: rect } as Runway;
+  console.assert(isMappable(manual), "manual polygon → mappable");
+  console.assert(runwayRect(manual) === rect, "manual polygon is preferred surface");
 
   console.log("runwayGeom self-check passed");
 }

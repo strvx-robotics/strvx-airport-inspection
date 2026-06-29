@@ -1,160 +1,122 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { flexRender, type RowData, type Table } from "@tanstack/react-table";
-import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import {
+  AllCommunityModule,
+  ModuleRegistry,
+  themeQuartz,
+  type ColDef,
+  type GetRowIdParams,
+  type GridSizeChangedEvent,
+  type RowClickedEvent,
+} from "ag-grid-community";
+import { AgGridReact } from "ag-grid-react";
 import { cn } from "@/lib/cn";
 
-// Per-column styling hooks, read off columnDef.meta in the cell/header renderers.
-declare module "@tanstack/react-table" {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData extends RowData, TValue> {
-    thClass?: string; // header cell extras (width hints, alignment)
-    tdClass?: string; // body cell extras (font, color, text-right)
-  }
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+export type DataTableColumn<T> = ColDef<T>;
+
+const gridTheme = themeQuartz.withParams({
+  accentColor: "#181b1e",
+  backgroundColor: "#fbfcfd",
+  borderColor: "#dbdfe3",
+  browserColorScheme: "light",
+  chromeBackgroundColor: "#eef1f4",
+  fontFamily: "var(--font-ibm-sans), ui-sans-serif, system-ui, sans-serif",
+  fontSize: 12,
+  foregroundColor: "#181b1e",
+  headerBackgroundColor: "#eef1f4",
+  headerTextColor: "#6b7176",
+  rowBorder: true,
+  rowHoverColor: "#eef1f4",
+  spacing: 6,
+  wrapperBorderRadius: 4,
+});
+
+function isInteractiveEvent(event?: Event | null) {
+  const target = event?.target;
+  return target instanceof HTMLElement
+    ? Boolean(target.closest("a, button, input, textarea, select, [role='button']"))
+    : false;
 }
 
-// Shared right/bottom rule on every cell; border-collapse on the <table> fuses
-// them into one continuous grid (the thing a per-row CSS grid can't do).
-// last:border-r-0 drops the redundant outer edge; first/last padding lines the
-// outer columns up with the card's px-4 header.
-const CELL = "border-r border-[#dbdfe3] px-3 align-middle first:pl-4 last:border-r-0 last:pr-4";
-
-/**
- * The Valanor data-table shell: a real <table> driven by a TanStack table
- * instance. Owns markup, borders, sort affordances, and row interaction so
- * every table (runways, work orders, …) is pixel-identical. Sorting/filtering
- * logic lives in the TanStack instance the caller passes in.
- *
- * Navigation (rowHref) is wired the accessible way: the whole row is a pointer
- * convenience (mouse click → navigate), while the first cell is a real <Link> —
- * the keyboard-focusable, properly-named target — so table row/cell semantics
- * stay intact for assistive tech.
- */
-export default function DataTable<T>({
-  table,
+export default function DataTable<T extends object>({
+  rows,
+  columns,
   label,
-  minWidth = 720,
+  height = 360,
+  fill = false,
   rowHref,
   onRowClick,
+  getRowId,
   empty,
+  className,
 }: {
-  table: Table<T>;
+  rows: T[];
+  columns: DataTableColumn<T>[];
   label: string;
-  minWidth?: number;
-  /** Internal nav: the first cell becomes a real <Link>, the row a pointer shortcut. */
+  height?: number | string;
+  fill?: boolean;
   rowHref?: (row: T) => string;
-  /** Generic row action (e.g. open an external report). The caller must supply
-   *  its own focusable control in a cell for keyboard/AT users. */
   onRowClick?: (row: T) => void;
+  getRowId?: (row: T) => string;
   empty?: ReactNode;
+  className?: string;
 }) {
   const router = useRouter();
-  const colCount = table.getVisibleLeafColumns().length;
-  const rows = table.getRowModel().rows;
+
+  const defaultColDef = useMemo<ColDef<T>>(
+    () => ({
+      filter: false,
+      resizable: true,
+      sortable: true,
+      suppressMovable: true,
+      unSortIcon: true,
+    }),
+    [],
+  );
+
+  const handleRowClicked = (event: RowClickedEvent<T>) => {
+    if (!event.data || isInteractiveEvent(event.event)) return;
+    const href = rowHref?.(event.data);
+    if (href) router.push(href);
+    else onRowClick?.(event.data);
+  };
+
+  const handleGridSizeChanged = (event: GridSizeChangedEvent<T>) => {
+    event.api.sizeColumnsToFit();
+  };
+
+  if (rows.length === 0 && empty) return <>{empty}</>;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <table aria-label={label} className="w-full border-collapse text-left" style={{ minWidth }}>
-        <thead>
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="border-b border-[#dbdfe3]">
-              {hg.headers.map((h) => {
-                const sortable = h.column.getCanSort();
-                const sorted = h.column.getIsSorted();
-                const meta = h.column.columnDef.meta;
-                const headerEl = flexRender(h.column.columnDef.header, h.getContext());
-                return (
-                  <th
-                    key={h.id}
-                    scope="col"
-                    aria-sort={
-                      sorted === "asc"
-                        ? "ascending"
-                        : sorted === "desc"
-                          ? "descending"
-                          : sortable
-                            ? "none"
-                            : undefined
-                    }
-                    className={cn(
-                      CELL,
-                      "select-none py-2 font-mono text-[10px] font-normal uppercase tracking-wide text-[#6b7176]",
-                      meta?.thClass,
-                    )}
-                  >
-                    {sortable ? (
-                      <button
-                        type="button"
-                        onClick={h.column.getToggleSortingHandler()}
-                        className="inline-flex items-center gap-1 font-mono text-[10px] font-normal uppercase tracking-wide text-[#6b7176] transition-colors hover:text-[#181b1e] focus-visible:text-[#181b1e] focus-visible:underline focus-visible:outline-none"
-                      >
-                        {headerEl}
-                        {sorted === "asc" ? (
-                          <ChevronUp size={12} strokeWidth={2.5} aria-hidden className="text-[#181b1e]" />
-                        ) : sorted === "desc" ? (
-                          <ChevronDown size={12} strokeWidth={2.5} aria-hidden className="text-[#181b1e]" />
-                        ) : (
-                          <ChevronsUpDown size={12} strokeWidth={2} aria-hidden className="text-[#c6cbcf]" />
-                        )}
-                      </button>
-                    ) : (
-                      headerEl
-                    )}
-                  </th>
-                );
-              })}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {rows.length === 0 && empty ? (
-            <tr>
-              <td colSpan={colCount}>{empty}</td>
-            </tr>
-          ) : (
-            rows.map((row) => {
-              const href = rowHref?.(row.original);
-              const onClick = href
-                ? () => router.push(href)
-                : onRowClick
-                  ? () => onRowClick(row.original)
-                  : undefined;
-              return (
-                <tr
-                  key={row.id}
-                  onClick={onClick}
-                  className={cn(
-                    "border-b border-[#dbdfe3] transition-colors last:border-b-0",
-                    onClick && "cursor-pointer hover:bg-[#eef1f4]",
-                  )}
-                >
-                  {row.getVisibleCells().map((cell, ci) => {
-                    const content = flexRender(cell.column.columnDef.cell, cell.getContext());
-                    return (
-                      <td key={cell.id} className={cn(CELL, "py-3", cell.column.columnDef.meta?.tdClass)}>
-                        {href && ci === 0 ? (
-                          <Link
-                            href={href}
-                            onClick={(e) => e.stopPropagation()}
-                            className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#181b1e]"
-                          >
-                            {content}
-                          </Link>
-                        ) : (
-                          content
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+    <div
+      role="region"
+      aria-label={label}
+      className={cn("valanor-data-grid min-h-0 overflow-hidden", fill && "flex-1", className)}
+      style={{ height: fill ? "100%" : height }}
+    >
+      <AgGridReact<T>
+        aria-label={label}
+        theme={gridTheme}
+        rowData={rows}
+        columnDefs={columns}
+        defaultColDef={defaultColDef}
+        autoSizeStrategy={{ type: "fitGridWidth", defaultMinWidth: 64 }}
+        getRowId={getRowId ? (params: GetRowIdParams<T>) => getRowId(params.data) : undefined}
+        onRowClicked={rowHref || onRowClick ? handleRowClicked : undefined}
+        onGridSizeChanged={handleGridSizeChanged}
+        headerHeight={38}
+        rowHeight={58}
+        animateRows={false}
+        enableCellTextSelection
+        ensureDomOrder
+        suppressCellFocus
+        suppressHorizontalScroll
+      />
     </div>
   );
 }

@@ -25,6 +25,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Protect everything except Next's static assets.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Protect everything except Next's static assets and branding icons.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|valanor-icon-.*\\.png).*)"],
 };

@@ -61,6 +61,9 @@ interface Store {
   editIssue: (id: string, patch: EditIssuePatch) => Promise<void>;
   repairTicket: (id: string, notes?: string) => Promise<void>;
   closeTicket: (id: string) => Promise<void>;
+  startTicket: (id: string) => Promise<void>;
+  reinspectTicket: (id: string, notes?: string) => Promise<void>;
+  assignTicket: (id: string, assignedTo: string) => Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -273,6 +276,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [tickets, mergeTicket, loadOverview],
   );
 
+  const startTicket = useCallback(
+    async (id: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, { status: "in_progress" });
+      try {
+        mergeTicket(await api.startTicket(id));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
+
+  const reinspectTicket = useCallback(
+    async (id: string, notes?: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, {
+        status: "reinspected",
+        ...(notes !== undefined ? { maintenanceNotes: notes } : {}),
+      });
+      try {
+        mergeTicket(await api.reinspectTicket(id, notes));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
+
+  const assignTicket = useCallback(
+    async (id: string, assignedTo: string) => {
+      const prev = tickets[id];
+      patchTicketLocal(setTickets, id, { assignedTo });
+      try {
+        mergeTicket(await api.assignTicket(id, assignedTo));
+        void loadOverview();
+      } catch (err) {
+        if (prev) mergeTicket(prev);
+        throw err;
+      }
+    },
+    [tickets, mergeTicket, loadOverview],
+  );
+
   const store: Store = {
     role,
     setRole,
@@ -292,6 +343,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     editIssue,
     repairTicket,
     closeTicket,
+    startTicket,
+    reinspectTicket,
+    assignTicket,
   };
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

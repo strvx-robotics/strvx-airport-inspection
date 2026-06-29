@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -26,6 +28,11 @@ class Drone(_Camel):
     created_at: str
 
 
+class LngLat(_Camel):
+    lat: float
+    lng: float
+
+
 class Runway(_Camel):
     id: str
     airport_id: str
@@ -37,6 +44,8 @@ class Runway(_Camel):
     threshold_heading_deg: float | None = None
     threshold_lat: float | None = None
     threshold_lng: float | None = None
+    runway_polygon: list[LngLat] | None = None
+    map_status: str = "draft"
     active_status: str | None = None
     created_at: str
 
@@ -64,11 +73,6 @@ class BBox(_Camel):
     y: float
     w: float
     h: float
-
-
-class LngLat(_Camel):
-    lat: float
-    lng: float
 
 
 class IssueCandidate(_Camel):
@@ -116,9 +120,15 @@ class Inspection(_Camel):
     airport_id: str
     scheduled_time: str
     window: str
+    type: str = "daily"
+    reason: str | None = None
     status: str
     started_at: str | None = None
     completed_at: str | None = None
+    signed_by: str | None = None
+    signed_at: str | None = None
+    signature_name: str | None = None
+    attestation: bool = False
     created_by: str | None = None
     created_at: str
 
@@ -134,6 +144,35 @@ class InspectionJob(_Camel):
     issue_count: int
     created_at: str
     runway: Runway | None = None
+
+
+class Image(_Camel):
+    id: str
+    job_id: str | None = None
+    runway_id: str
+    zone_id: str | None = None
+    file_url: str
+    gps: LngLat | None = None
+    station_m: float | None = None
+    lateral_offset_m: float | None = None
+    geom_confidence: str = "manual"
+    timestamp: str
+    source_file: str | None = None
+    created_by: str | None = None
+    created_at: str
+
+
+class ChecklistResponse(_Camel):
+    id: str
+    inspection_id: str
+    item_key: str
+    result: str             # pass | fail | na
+    notes: str = ""
+    image_id: str | None = None
+    created_by: str | None = None
+    actor_role: str | None = None
+    updated_at: str
+    created_at: str
 
 
 class Zone(_Camel):

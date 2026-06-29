@@ -81,3 +81,35 @@ async def test_close_returns_wrapped_ticket(seed, client):
     t = res.json()["ticket"]
     assert t["status"] == "closed"
     assert t["closedAt"].endswith("Z")
+
+
+@pytest.mark.asyncio
+async def test_start_ticket(seed, client):
+    await _seed_ticket(seed, status="sent")
+    res = await client.post("/tickets/WO-1042/start", json={"actor": {"role": "maintenance"}})
+    assert res.status_code == 200
+    assert res.json()["ticket"]["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_assign_ticket(seed, client):
+    await _seed_ticket(seed, status="sent")
+    res = await client.post(
+        "/tickets/WO-1042/assign",
+        json={"assignedTo": "Field Maintenance", "actor": {"role": "admin"}},
+    )
+    assert res.status_code == 200
+    assert res.json()["ticket"]["assignedTo"] == "Field Maintenance"
+
+
+@pytest.mark.asyncio
+async def test_reinspect_ticket(seed, client):
+    await _seed_ticket(seed, status="repaired")
+    res = await client.post(
+        "/tickets/WO-1042/reinspect",
+        json={"notes": "verified", "actor": {"role": "inspector"}},
+    )
+    assert res.status_code == 200
+    t = res.json()["ticket"]
+    assert t["status"] == "reinspected"
+    assert t["maintenanceNotes"] == "verified"

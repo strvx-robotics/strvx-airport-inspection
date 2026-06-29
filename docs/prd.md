@@ -33,6 +33,23 @@ Build a dashboard that lets airport operations teams run or review drone-based r
 
 The drone collects images of each runway. The system analyzes those images for four issue categories, flags possible findings, and creates reviewable issue cards. A human inspector approves, rejects, or escalates each finding. Approved findings become maintenance tickets.
 
+## Current Implementation Status
+
+This PRD remains the product source of truth. The implementation has moved beyond the original Phase 0 mock demo into a three-service Postgres app:
+
+* `frontend/` is a Next.js App Router UI and BFF. Most `/api/*` routes proxy to the backend; upload, live capture, reports, settings, and feedback export still run in the frontend server.
+* `backend/` is a FastAPI service on port 8080 that owns most reads, writes, issues, tickets, drones, airports, and admin setup APIs.
+* `ml-service/` is a FastAPI service on port 8000 for YOLO/VLM detection, live detection relay, and RL/draft improvement endpoints.
+* `npm run db:setup` applies the Postgres schema only. `npm run db:bootstrap` optionally creates the AGS airport, runways, zones, and daily schedule without demo operational data.
+
+The Phase 0 section below is historical context. The current MVP already has real persistence, upload ingestion, issue review, ticket repair/closeout, report export, feedback export, live feed UI, and backend extraction for most CRUD/read APIs.
+
+## Current Geometry Direction
+
+Runway geometry is operational data, not just display metadata. The current app supports manually stored runway work-area polygons and a map lifecycle status (`draft`, `active`, `retired`, `needs_review`). Manual polygons are the preferred map source because inferred threshold/heading geometry can drift from the real runway surface.
+
+The next geometry layer should separate raw `Observation` records from reviewable `IssueCandidate` records. Multiple drones or images can observe the same physical defect, especially around intersecting runways. Those observations should dedupe into one candidate with traceable sources, merge/split controls, affected-runway assignments, and an unmapped-observation queue for detections that fall outside active mapped surfaces.
+
 ## 4. MVP Issue Categories
 
 The MVP will inspect for four issue types:

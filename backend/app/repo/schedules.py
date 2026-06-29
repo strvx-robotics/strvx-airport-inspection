@@ -1,5 +1,6 @@
 from app import db
 from app.deps import Actor
+from app.errors import AppError
 from app.models import InspectionSchedule
 from app.repo.helpers import actor_name, gid, now
 
@@ -33,3 +34,27 @@ async def create_schedule(
     )
     r = await db.one("SELECT * FROM inspection_schedules WHERE id = $1", id)
     return to_schedule(r)
+
+
+async def update_schedule(
+    id: str, *, time: str | None = None, window: str | None = None,
+    enabled: bool | None = None,
+) -> InspectionSchedule:
+    existing = await db.one("SELECT id FROM inspection_schedules WHERE id = $1", id)
+    if existing is None:
+        raise AppError(f"Schedule not found: {id}")
+    enabled_val = None if enabled is None else (1 if enabled else 0)
+    await db.run(
+        'UPDATE inspection_schedules SET time = COALESCE($1, time), '
+        '"window" = COALESCE($2, "window"), enabled = COALESCE($3, enabled) WHERE id = $4',
+        time, window, enabled_val, id,
+    )
+    r = await db.one("SELECT * FROM inspection_schedules WHERE id = $1", id)
+    return to_schedule(r)
+
+
+async def delete_schedule(id: str) -> None:
+    existing = await db.one("SELECT id FROM inspection_schedules WHERE id = $1", id)
+    if existing is None:
+        raise AppError(f"Schedule not found: {id}")
+    await db.run("DELETE FROM inspection_schedules WHERE id = $1", id)

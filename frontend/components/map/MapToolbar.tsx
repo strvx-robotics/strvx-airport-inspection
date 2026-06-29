@@ -10,10 +10,13 @@ import {
   SquareDashed,
   MapPin,
   Plus,
+  RotateCcw,
+  Save,
+  Square,
 } from "lucide-react";
 import { MapPanel } from "./MapPanel";
 import { SEVERITY } from "@/lib/ui";
-import type { Severity } from "@/lib/types";
+import type { Runway, Severity } from "@/lib/types";
 import { DOT } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
@@ -41,6 +44,18 @@ export function MapToolbar({
   onRecenter,
   addMode,
   onToggleAddMode,
+  runways,
+  selectedRunwayId,
+  onSelectRunway,
+  areaDrawMode,
+  onToggleAreaDraw,
+  areaPointCount,
+  areaCanSave,
+  areaSaving,
+  areaMessage,
+  onSaveArea,
+  onResetArea,
+  onClearArea,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -51,6 +66,18 @@ export function MapToolbar({
   onRecenter: () => void;
   addMode: boolean;
   onToggleAddMode: () => void;
+  runways: Runway[];
+  selectedRunwayId: string;
+  onSelectRunway: (id: string) => void;
+  areaDrawMode: boolean;
+  onToggleAreaDraw: () => void;
+  areaPointCount: number;
+  areaCanSave: boolean;
+  areaSaving: boolean;
+  areaMessage?: string;
+  onSaveArea: () => void;
+  onResetArea: () => void;
+  onClearArea: () => void;
 }) {
   return (
     <MapPanel
@@ -58,7 +85,7 @@ export function MapToolbar({
       icon={Layers}
       collapsed={collapsed}
       onToggle={onToggleCollapsed}
-      className="pointer-events-auto absolute left-3 top-3 z-10 w-48"
+      className="pointer-events-auto absolute left-3 top-3 z-10 w-56"
     >
       <div className="flex flex-col gap-0.5 p-1.5">
         <button
@@ -115,6 +142,68 @@ export function MapToolbar({
         <p className="px-2 pt-1 font-mono text-[10px] leading-snug text-[#9aa1a6]">
           Click a marker to rename or delete it.
         </p>
+
+        <Divider />
+        <p className="px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wide text-[#9aa1a6]">
+          Runway areas
+        </p>
+        <select
+          value={selectedRunwayId}
+          onChange={(e) => onSelectRunway(e.target.value)}
+          className="mx-2 h-8 rounded border border-[#c7cdd2] bg-white px-2 font-mono text-[11px] text-[#181b1e] outline-none focus:border-[#6b7176]"
+          aria-label="Select runway area"
+        >
+          {runways.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} · {r.designation}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={onToggleAreaDraw}
+          className={cn(
+            "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
+            areaDrawMode
+              ? "bg-[#181b1e] text-[#eef1f4]"
+              : "text-[#3f4448] hover:bg-white/5 hover:text-[#181b1e]",
+          )}
+        >
+          <Square size={15} strokeWidth={2.1} className={areaDrawMode ? "text-[#eef1f4]" : "text-[#5b6166]"} />
+          <span className="flex-1 font-mono text-[11px] tracking-wide">Draw area</span>
+          <span className={cn("font-mono text-[10px]", areaDrawMode ? "text-[#dce2e8]" : "text-[#9aa1a6]")}>
+            {areaPointCount}/4
+          </span>
+        </button>
+        <div className="grid grid-cols-3 gap-1 px-2 pt-1">
+          <button
+            onClick={onSaveArea}
+            disabled={!areaCanSave || areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Save area"
+            aria-label="Save runway area"
+          >
+            <Save size={13} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onResetArea}
+            disabled={areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+            title="Reset draft"
+            aria-label="Reset runway area draft"
+          >
+            <RotateCcw size={13} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onClearArea}
+            disabled={areaSaving}
+            className="flex h-7 items-center justify-center rounded border border-[#c7cdd2] bg-white font-mono text-[10px] uppercase tracking-wide text-[#3f4448] transition-colors hover:text-[#181b1e] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            Clear
+          </button>
+        </div>
+        {areaMessage && (
+          <p className="px-2 pt-1 font-mono text-[10px] leading-snug text-[#6b7176]">{areaMessage}</p>
+        )}
       </div>
     </MapPanel>
   );

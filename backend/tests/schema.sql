@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS runways (
   threshold_heading_deg DOUBLE PRECISION,
   threshold_lat         DOUBLE PRECISION,
   threshold_lng         DOUBLE PRECISION,
+  runway_polygon_json   TEXT,
+  map_status            TEXT NOT NULL DEFAULT 'draft',
   active_status         TEXT,
   created_at            TEXT NOT NULL
 );
@@ -49,9 +51,15 @@ CREATE TABLE IF NOT EXISTS inspections (
   airport_id     TEXT NOT NULL REFERENCES airports(id),
   scheduled_time TEXT NOT NULL,
   "window"       TEXT NOT NULL,
+  type           TEXT NOT NULL DEFAULT 'daily',
+  reason         TEXT,
   status         TEXT NOT NULL,
   started_at     TEXT,
   completed_at   TEXT,
+  signed_by      TEXT,
+  signed_at      TEXT,
+  signature_name TEXT,
+  attestation    INTEGER NOT NULL DEFAULT 0,
   created_by     TEXT,
   created_at     TEXT NOT NULL,
   UNIQUE (airport_id, scheduled_time)
@@ -84,7 +92,22 @@ CREATE TABLE IF NOT EXISTS images (
   timestamp        TEXT NOT NULL,
   source_file      TEXT,
   metadata_json    TEXT,
+  created_by       TEXT,
   created_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS checklist_responses (
+  id            TEXT PRIMARY KEY,
+  inspection_id TEXT NOT NULL REFERENCES inspections(id),
+  item_key      TEXT NOT NULL,
+  result        TEXT NOT NULL,
+  notes         TEXT NOT NULL DEFAULT '',
+  image_id      TEXT REFERENCES images(id),
+  created_by    TEXT,
+  actor_role    TEXT,
+  updated_at    TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  UNIQUE (inspection_id, item_key)
 );
 
 CREATE TABLE IF NOT EXISTS issue_candidates (
@@ -193,3 +216,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_
 CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);

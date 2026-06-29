@@ -98,6 +98,74 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
+  .valanor-data-grid {
+    --ag-cell-horizontal-padding: 12px;
+  }
+  .valanor-data-grid .ag-header-cell,
+  .valanor-data-grid .ag-cell {
+    align-items: center;
+    border-right: 1px solid var(--color-line) !important;
+    display: flex;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .valanor-data-grid .ag-header-cell:last-child,
+  .valanor-data-grid .ag-cell:last-child {
+    border-right: 0 !important;
+  }
+  .valanor-data-grid .ag-header-cell-label {
+    gap: 4px;
+  }
+  .valanor-data-grid .ag-right-aligned-header .ag-header-cell-label {
+    justify-content: flex-end;
+  }
+  .valanor-data-grid .ag-sort-order {
+    display: none !important;
+  }
+  .valanor-data-grid .ag-cell-value,
+  .valanor-data-grid .ag-cell-wrapper {
+    align-items: center;
+    display: flex;
+    width: 100%;
+  }
+  .valanor-data-grid .valanor-status-cell {
+    align-items: center !important;
+    display: flex !important;
+    font-family: var(--font-ibm-mono), ui-monospace, "SF Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .valanor-data-grid .valanor-status-green {
+    background-color: #e4efe8 !important;
+    color: #356b4c !important;
+  }
+  .valanor-data-grid .valanor-status-gray {
+    background-color: #e9ecef !important;
+    color: #4f5358 !important;
+  }
+  .valanor-data-grid .valanor-status-blue {
+    background-color: #e0e9f3 !important;
+    color: #2f5b85 !important;
+  }
+  .valanor-data-grid .valanor-status-purple {
+    background-color: #e8e3f1 !important;
+    color: #574a82 !important;
+  }
+  .valanor-data-grid .valanor-status-amber {
+    background-color: #f5ecd7 !important;
+    color: #866018 !important;
+  }
+  .valanor-data-grid .valanor-status-red,
+  .valanor-data-grid .valanor-status-black {
+    background-color: #b23b32 !important;
+    color: #fbeae8 !important;
+  }
+  .valanor-data-grid .valanor-status-cell .ag-cell-value,
+  .valanor-data-grid .valanor-status-cell span {
+    color: inherit !important;
+  }
 }
 
 /* Print only the work-order sheet ("Save PDF" on the issue-review preview). */

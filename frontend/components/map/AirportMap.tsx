@@ -6,6 +6,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
 import type { IssueCandidate, LngLat, Runway, Severity, Zone } from "@/lib/types";
+import * as api from "@/lib/api";
 import { CATEGORY, SEVERITY } from "@/lib/ui";
 import {
   centerline,
@@ -35,22 +36,94 @@ const ALL_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
 const MARKER_SOURCE = "user-markers";
 const MARKER_DOT = "user-markers-dot";
 const MARKER_LABEL = "user-markers-label";
+const SELECTED_AREA_SOURCE = "selected-runway-area";
+const SELECTED_AREA_FILL = "selected-runway-area-fill";
+const SELECTED_AREA_LINE = "selected-runway-area-line";
+const AREA_DRAFT_SOURCE = "runway-area-draft";
+const AREA_DRAFT_FILL = "runway-area-draft-fill";
+const AREA_DRAFT_LINE = "runway-area-draft-line";
+const AREA_DRAFT_POINTS_SOURCE = "runway-area-draft-points";
+const AREA_DRAFT_POINTS = "runway-area-draft-points";
 
 // Which MapLibre layer ids each toolbar toggle controls.
 const LAYER_GROUPS: Record<LayerKey, string[]> = {
   satellite: ["sat"],
-  runways: ["surface-fill", "surface-line"],
+  runways: [
+    "surface-fill",
+    "surface-line",
+    SELECTED_AREA_FILL,
+    SELECTED_AREA_LINE,
+    AREA_DRAFT_FILL,
+    AREA_DRAFT_LINE,
+    AREA_DRAFT_POINTS,
+  ],
   zones: ["zones-fill", "zones-line"],
   centerline: ["centerline"],
   issues: ["pins"],
 };
 
 const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
-const ring = (pts: LngLat[]): [number, number][] => pts.map(pos);
+const ring = (pts: LngLat[]): [number, number][] => {
+  const coords = pts.map(pos);
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) coords.push(first);
+  return coords;
+};
 const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
 });
+
+function orderedPolygonPoints(points: LngLat[]): LngLat[] {
+  if (points.length < 3) return points;
+  const center = points.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat / points.length, lng: acc.lng + p.lng / points.length }),
+    { lat: 0, lng: 0 },
+  );
+  return [...points].sort((a, b) =>
+    Math.atan2(a.lat - center.lat, a.lng - center.lng) -
+    Math.atan2(b.lat - center.lat, b.lng - center.lng),
+  );
+}
+
+const areaFeature = (points: LngLat[], props: Record<string, unknown> = {}): Feature<Geometry> | undefined => {
+  if (points.length < 3) return undefined;
+  return {
+    type: "Feature",
+    properties: props,
+    geometry: { type: "Polygon", coordinates: [ring(orderedPolygonPoints(points))] },
+  };
+};
+
+const selectedAreaFC = (runway?: Runway): FeatureCollection => {
+  const rect = runway ? runwayRect(runway) : undefined;
+  const feature = rect ? areaFeature(rect, { id: runway?.id }) : undefined;
+  return fc(feature ? [feature] : []);
+};
+
+const draftAreaFC = (points: LngLat[]): FeatureCollection => {
+  const features: Feature<Geometry>[] = [];
+  const polygon = areaFeature(points);
+  if (polygon) features.push(polygon);
+  if (points.length > 1) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: orderedPolygonPoints(points).map(pos) },
+    });
+  }
+  return fc(features);
+};
+
+const draftPointsFC = (points: LngLat[]): FeatureCollection =>
+  fc(
+    points.map((p, index) => ({
+      type: "Feature",
+      properties: { index },
+      geometry: { type: "Point", coordinates: pos(p) },
+    })),
+  );
 
 const markersFC = (markers: MapMarker[]): FeatureCollection =>
   fc(
@@ -132,9 +205,11 @@ function buildSources(layers: RunwayLayer[]) {
 export default function AirportMap({
   layers,
   heightClass = "h-full",
+  onRunwayChange,
 }: {
   layers: RunwayLayer[];
   heightClass?: string;
+  onRunwayChange?: (runway: Runway) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -142,6 +217,11 @@ export default function AirportMap({
   const loadedRef = useRef(false);
   const router = useRouter();
   const [failed, setFailed] = useState(false);
+  const [selectedRunwayId, setSelectedRunwayId] = useState(() => layers[0]?.runway.id ?? "");
+  const [areaDrawMode, setAreaDrawMode] = useState(false);
+  const [draftPoints, setDraftPoints] = useState<LngLat[]>([]);
+  const [areaSaving, setAreaSaving] = useState(false);
+  const [areaMessage, setAreaMessage] = useState<string | undefined>();
 
   // Toolbar state — layer visibility + severity filter.
   const [collapsed, setCollapsed] = useState(false);
@@ -167,14 +247,110 @@ export default function AirportMap({
   const markersRef = useRef(markers);
   const addModeRef = useRef(addMode);
   const selectedRef = useRef(selectedId);
+  const areaDrawRef = useRef(areaDrawMode);
+  const draftPointsRef = useRef(draftPoints);
+  const draggingAreaPointRef = useRef<number | null>(null);
   useEffect(() => { markersRef.current = markers; }, [markers]);
   useEffect(() => { addModeRef.current = addMode; }, [addMode]);
   useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { areaDrawRef.current = areaDrawMode; }, [areaDrawMode]);
+  useEffect(() => { draftPointsRef.current = draftPoints; }, [draftPoints]);
 
   const mappable = layers.filter((l) => isMappable(l.runway));
-  const sig = mappable
-    .map((l) => `${l.runway.id}:${l.issues.map((i) => i.id).join(",")}:${l.zones.map((z) => z.id).join(",")}`)
+  const selectedRunway = layers.find((l) => l.runway.id === selectedRunwayId)?.runway ?? layers[0]?.runway;
+  const selectedPolygonSig = selectedRunway?.runwayPolygon
+    ?.map((p) => `${p.lat.toFixed(7)},${p.lng.toFixed(7)}`)
+    .join("|") ?? "";
+  const areaCanSave = Boolean(selectedRunway && draftPoints.length === 4 && !areaSaving);
+  const mapSig = mappable
+    .map((l) => [
+      l.runway.id,
+      l.runway.thresholdLat,
+      l.runway.thresholdLng,
+      l.runway.thresholdHeadingDeg,
+      l.runway.lengthM,
+    ].join(":"))
     .join("|");
+
+  useEffect(() => {
+    if (!layers.length) return;
+    if (!selectedRunwayId || !layers.some((l) => l.runway.id === selectedRunwayId)) {
+      setSelectedRunwayId(layers[0].runway.id);
+    }
+  }, [layers, selectedRunwayId]);
+
+  useEffect(() => {
+    if (!selectedRunway || areaDrawRef.current) return;
+    setDraftPoints(selectedRunway.runwayPolygon ?? []);
+    setAreaMessage(selectedRunway.runwayPolygon?.length ? "Area active" : "No saved area");
+  }, [selectedRunway?.id, selectedPolygonSig, selectedRunway]);
+
+  const selectRunwayArea = (id: string) => {
+    setSelectedRunwayId(id);
+    setAreaDrawMode(false);
+    setAddMode(false);
+    setSelectedId(null);
+    setAreaMessage(undefined);
+  };
+
+  const toggleAreaDraw = () => {
+    setAreaDrawMode((current) => {
+      const next = !current;
+      if (next) {
+        setAddMode(false);
+        setSelectedId(null);
+        setAreaMessage("0/4 points");
+      } else {
+        setAreaMessage(selectedRunway?.runwayPolygon?.length ? "Area active" : "No saved area");
+      }
+      return next;
+    });
+  };
+
+  const resetAreaDraft = () => {
+    setDraftPoints(selectedRunway?.runwayPolygon ?? []);
+    setAreaMessage(selectedRunway?.runwayPolygon?.length ? "Draft reset" : "Draft cleared");
+  };
+
+  const saveArea = async () => {
+    if (!selectedRunway || draftPoints.length !== 4) return;
+    setAreaSaving(true);
+    setAreaMessage("Saving...");
+    try {
+      const runway = await api.updateRunway(selectedRunway.id, {
+        runwayPolygon: orderedPolygonPoints(draftPoints),
+        mapStatus: "active",
+      });
+      onRunwayChange?.(runway);
+      setDraftPoints(runway.runwayPolygon ?? []);
+      setAreaDrawMode(false);
+      setAreaMessage("Area saved");
+    } catch {
+      setAreaMessage("Save failed");
+    } finally {
+      setAreaSaving(false);
+    }
+  };
+
+  const clearArea = async () => {
+    if (!selectedRunway) return;
+    setAreaSaving(true);
+    setAreaMessage("Clearing...");
+    try {
+      const runway = await api.updateRunway(selectedRunway.id, {
+        runwayPolygon: null,
+        mapStatus: "needs_review",
+      });
+      onRunwayChange?.(runway);
+      setDraftPoints([]);
+      setAreaDrawMode(false);
+      setAreaMessage("Area cleared");
+    } catch {
+      setAreaMessage("Clear failed");
+    } finally {
+      setAreaSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current || mappable.length === 0) return;
@@ -226,6 +402,44 @@ export default function AirportMap({
           "circle-opacity": 0.95,
         },
       });
+      map.addSource(SELECTED_AREA_SOURCE, { type: "geojson", data: selectedAreaFC(selectedRunway) });
+      map.addLayer({
+        id: SELECTED_AREA_FILL,
+        type: "fill",
+        source: SELECTED_AREA_SOURCE,
+        paint: { "fill-color": "#1a73e8", "fill-opacity": 0.08 },
+      });
+      map.addLayer({
+        id: SELECTED_AREA_LINE,
+        type: "line",
+        source: SELECTED_AREA_SOURCE,
+        paint: { "line-color": "#1a73e8", "line-opacity": 0.95, "line-width": 2 },
+      });
+      map.addSource(AREA_DRAFT_SOURCE, { type: "geojson", data: draftAreaFC(draftPointsRef.current) });
+      map.addLayer({
+        id: AREA_DRAFT_FILL,
+        type: "fill",
+        source: AREA_DRAFT_SOURCE,
+        paint: { "fill-color": "#f5b84b", "fill-opacity": 0.16 },
+      });
+      map.addLayer({
+        id: AREA_DRAFT_LINE,
+        type: "line",
+        source: AREA_DRAFT_SOURCE,
+        paint: { "line-color": "#b36b00", "line-opacity": 0.95, "line-width": 2, "line-dasharray": [2, 1] },
+      });
+      map.addSource(AREA_DRAFT_POINTS_SOURCE, { type: "geojson", data: draftPointsFC(draftPointsRef.current) });
+      map.addLayer({
+        id: AREA_DRAFT_POINTS,
+        type: "circle",
+        source: AREA_DRAFT_POINTS_SOURCE,
+        paint: {
+          "circle-radius": 5,
+          "circle-color": "#ffffff",
+          "circle-stroke-color": "#b36b00",
+          "circle-stroke-width": 2,
+        },
+      });
 
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 64, maxZoom: 16, duration: 0 });
 
@@ -246,9 +460,42 @@ export default function AirportMap({
         popup.remove();
       });
       map.on("click", "pins", (e) => {
+        if (areaDrawRef.current) return;
         const id = e.features?.[0]?.properties?.id;
         if (id) router.push(`/issue/${id}`);
       });
+
+      map.on("mouseenter", AREA_DRAFT_POINTS, () => {
+        if (areaDrawRef.current) map.getCanvas().style.cursor = "grab";
+      });
+      map.on("mouseleave", AREA_DRAFT_POINTS, () => {
+        if (areaDrawRef.current && draggingAreaPointRef.current == null) {
+          map.getCanvas().style.cursor = "crosshair";
+        }
+      });
+      map.on("mousedown", AREA_DRAFT_POINTS, (e) => {
+        if (!areaDrawRef.current) return;
+        const index = Number(e.features?.[0]?.properties?.index);
+        if (!Number.isFinite(index)) return;
+        draggingAreaPointRef.current = index;
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "grabbing";
+        e.preventDefault();
+      });
+      map.on("mousemove", (e) => {
+        const index = draggingAreaPointRef.current;
+        if (index == null) return;
+        const nextPoint = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+        setDraftPoints((prev) => prev.map((p, i) => (i === index ? nextPoint : p)));
+      });
+      const finishAreaDrag = () => {
+        if (draggingAreaPointRef.current == null) return;
+        draggingAreaPointRef.current = null;
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = areaDrawRef.current ? "crosshair" : "";
+      };
+      map.on("mouseup", finishAreaDrag);
+      map.on("mouseleave", finishAreaDrag);
 
       // ── User markers: drop-at-cursor named annotations ────────────────────
       map.addSource(MARKER_SOURCE, { type: "geojson", data: markersFC(markersRef.current) });
@@ -316,6 +563,15 @@ export default function AirportMap({
 
       // Map-level click: drop at the cursor in add-mode, else deselect on empty map.
       map.on("click", (e) => {
+        if (areaDrawRef.current) {
+          const points = draftPointsRef.current;
+          if (points.length < 4) {
+            const next = [...points, { lat: e.lngLat.lat, lng: e.lngLat.lng }];
+            setDraftPoints(next);
+            setAreaMessage(`${next.length}/4 points`);
+          }
+          return;
+        }
         if (addModeRef.current) {
           const m: MapMarker = { id: newMarkerId(), lng: e.lngLat.lng, lat: e.lngLat.lat, name: "" };
           setMarkers((prev) => [...prev, m]);
@@ -336,7 +592,41 @@ export default function AirportMap({
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig]);
+  }, [mapSig]);
+
+  // Hydrate changing data in place. The map should not be torn down just because
+  // a slow runway-detail request finally returned with zones or issue pins.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    const { surfaceFC, zonesFC, centerlineFC, pinsFC, bounds } = buildSources(layers);
+    (map.getSource("surface") as maplibregl.GeoJSONSource | undefined)?.setData(surfaceFC);
+    (map.getSource("zones") as maplibregl.GeoJSONSource | undefined)?.setData(zonesFC);
+    (map.getSource("centerline") as maplibregl.GeoJSONSource | undefined)?.setData(centerlineFC);
+    (map.getSource("pins") as maplibregl.GeoJSONSource | undefined)?.setData(pinsFC);
+    (map.getSource(SELECTED_AREA_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      selectedAreaFC(selectedRunway),
+    );
+    boundsRef.current = bounds;
+    applySevFilter(map, sevSet);
+  }, [layers, sevSet, selectedRunway]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    (map.getSource(SELECTED_AREA_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      selectedAreaFC(selectedRunway),
+    );
+  }, [selectedRunway]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!loadedRef.current || !map) return;
+    (map.getSource(AREA_DRAFT_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(draftAreaFC(draftPoints));
+    (map.getSource(AREA_DRAFT_POINTS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      draftPointsFC(draftPoints),
+    );
+  }, [draftPoints]);
 
   // Reapply toolbar state to the live map when it changes.
   useEffect(() => {
@@ -362,8 +652,8 @@ export default function AirportMap({
   // Crosshair cursor while placing a marker.
   useEffect(() => {
     const m = mapRef.current;
-    if (m) m.getCanvas().style.cursor = addMode ? "crosshair" : "";
-  }, [addMode]);
+    if (m) m.getCanvas().style.cursor = areaDrawMode || addMode ? "crosshair" : "";
+  }, [addMode, areaDrawMode]);
 
   // Position the editor (pre-paint) whenever it opens or its marker moves.
   useLayoutEffect(() => {
@@ -429,9 +719,22 @@ export default function AirportMap({
         }}
         addMode={addMode}
         onToggleAddMode={() => {
+          setAreaDrawMode(false);
           setAddMode((v) => !v);
           setSelectedId(null);
         }}
+        runways={layers.map((l) => l.runway)}
+        selectedRunwayId={selectedRunway?.id ?? ""}
+        onSelectRunway={selectRunwayArea}
+        areaDrawMode={areaDrawMode}
+        onToggleAreaDraw={toggleAreaDraw}
+        areaPointCount={draftPoints.length}
+        areaCanSave={areaCanSave}
+        areaSaving={areaSaving}
+        areaMessage={areaMessage}
+        onSaveArea={() => void saveArea()}
+        onResetArea={resetAreaDraft}
+        onClearArea={() => void clearArea()}
       />
       {selectedId &&
         (() => {

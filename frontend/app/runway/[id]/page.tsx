@@ -5,15 +5,8 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeft, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
 import Badge from "@/components/Badge";
-import DataTable from "@/components/DataTable";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import RunwayImage from "@/components/RunwayImage";
 import { useRunwayDetail } from "@/lib/store";
 import * as api from "@/lib/api";
@@ -31,58 +24,66 @@ const RunwayMap = dynamic(() => import("@/components/map/RunwayMap"), {
 // Detected-issues table: same shared DataTable as the overview Runways grid.
 // First cell is the evidence thumbnail; the Type cell carries the real <Link>
 // (keyboard/AT target) while the whole row is a pointer shortcut to the issue.
-const col = createColumnHelper<IssueCandidate>();
-const columns = [
-  col.display({
-    id: "thumb",
-    header: "",
-    cell: ({ row }) => (
-      <div className="w-16">
-        {/* No label badge — the Type column already names it; it'd clip at this size. */}
-        <RunwayImage bbox={row.original.bbox} src={row.original.imageUrl} heightClass="h-12" />
-      </div>
-    ),
-    meta: { thClass: "w-[88px]" },
-  }),
-  col.accessor((i) => CATEGORY[i.category], {
-    id: "type",
-    header: "Type",
-    sortingFn: "alphanumeric",
-    cell: ({ row, getValue }) => (
-      <>
-        <Link
-          href={`/issue/${row.original.id}`}
-          onClick={(e) => e.stopPropagation()}
-          className="block truncate text-[13px] font-semibold leading-tight text-[#181b1e] hover:underline focus-visible:underline focus-visible:outline-none"
-        >
-          {getValue()}
-        </Link>
-        <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>{row.original.zone}</p>
-      </>
-    ),
-    meta: { thClass: "w-full", tdClass: "min-w-0" },
-  }),
-  col.accessor((i) => i.confidence, {
-    id: "confidence",
-    header: "Confidence",
-    cell: ({ row }) => {
-      const band = confidenceBand(row.original.confidence);
+const columns: DataTableColumn<IssueCandidate>[] = [
+  {
+    colId: "thumb",
+    headerName: "",
+    sortable: false,
+    cellRenderer: ({ data }: { data?: IssueCandidate }) =>
+      data ? (
+        <div className="w-16">
+          <RunwayImage bbox={data.bbox} src={data.imageUrl} heightClass="h-12" />
+        </div>
+      ) : null,
+    width: 88,
+    minWidth: 88,
+    maxWidth: 96,
+  },
+  {
+    colId: "type",
+    headerName: "Type",
+    valueGetter: ({ data }) => (data ? CATEGORY[data.category] : ""),
+    cellRenderer: ({ data, value }: { data?: IssueCandidate; value?: string }) =>
+      data ? (
+        <>
+          <Link
+            href={`/issue/${data.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block truncate text-[13px] font-semibold leading-tight text-[#181b1e] hover:underline focus-visible:underline focus-visible:outline-none"
+          >
+            {value}
+          </Link>
+          <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>{data.zone}</p>
+        </>
+      ) : null,
+    flex: 1,
+    minWidth: 220,
+  },
+  {
+    colId: "confidence",
+    headerName: "Confidence",
+    field: "confidence",
+    sort: "desc",
+    cellRenderer: ({ data }: { data?: IssueCandidate }) => {
+      if (!data) return null;
+      const band = confidenceBand(data.confidence);
       return (
         <div className="flex items-center gap-2">
           <Badge tone={band.tone}>{band.label}</Badge>
-          <span className={cn("font-mono text-[12px] tabular-nums", MUTED)}>{pct(row.original.confidence)}</span>
+          <span className={cn("font-mono text-[12px] tabular-nums", MUTED)}>{pct(data.confidence)}</span>
         </div>
       );
     },
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
-  col.accessor((i) => DECISION[i.status].label, {
-    id: "status",
-    header: "Status",
-    sortingFn: "alphanumeric",
-    cell: ({ row }) => <Badge tone={DECISION[row.original.status].tone}>{DECISION[row.original.status].label}</Badge>,
-    meta: { tdClass: "whitespace-nowrap" },
-  }),
+    minWidth: 170,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    valueGetter: ({ data }) => (data ? DECISION[data.status].label : ""),
+    cellRenderer: ({ data }: { data?: IssueCandidate }) =>
+      data ? <Badge tone={DECISION[data.status].tone}>{DECISION[data.status].label}</Badge> : null,
+    minWidth: 160,
+  },
 ];
 
 export default function RunwayDetail() {
@@ -90,8 +91,6 @@ export default function RunwayDetail() {
   const router = useRouter();
   const { runway, issues, loading } = useRunwayDetail(id);
   const [zones, setZones] = useState<Zone[]>([]);
-  // Default view: highest confidence first — every header is click-to-sort.
-  const [sorting, setSorting] = useState<SortingState>([{ id: "confidence", desc: true }]);
 
   useEffect(() => {
     let live = true;
@@ -100,16 +99,6 @@ export default function RunwayDetail() {
       live = false;
     };
   }, [id]);
-
-  const table = useReactTable({
-    data: issues,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (i) => i.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   if (!runway) return loading ? <Loading /> : <NotFound />;
 
@@ -165,9 +154,11 @@ export default function RunwayDetail() {
             </p>
           </div>
           <DataTable
-            table={table}
+            rows={issues}
+            columns={columns}
             label="Detected issues"
-            minWidth={640}
+            height={320}
+            getRowId={(i) => i.id}
             onRowClick={(i) => router.push(`/issue/${i.id}`)}
           />
         </section>

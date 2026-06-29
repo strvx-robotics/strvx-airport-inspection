@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Map as MapIcon } from "lucide-react";
 import * as api from "@/lib/api";
 import type { RunwayLayer } from "@/components/map/AirportMap";
+import type { Runway } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { EYEBROW, MUTED } from "@/lib/vstyle";
 
@@ -22,15 +23,50 @@ export default function MapPage() {
     let live = true;
     (async () => {
       const overview = await api.getOverview();
-      if (live) setAirportLabel(`${overview.airport.name} · ${overview.airport.code}`);
-      const ids = overview.runways.map((r) => r.runway.id);
-      const built = await Promise.all(
-        ids.map(async (id) => {
-          const [detail, zones] = await Promise.all([api.getRunway(id), api.listZones(id)]);
-          return { runway: detail.runway, issues: detail.issues, zones };
+      if (!live) return;
+
+      setAirportLabel(`${overview.airport.name} · ${overview.airport.code}`);
+
+      // Render runway geometry immediately from the overview response. Production
+      // cold starts can make the per-runway detail calls slow, so issues/zones
+      // hydrate progressively instead of blocking the whole map.
+      const baseLayers = overview.runways.map(({ runway }) => ({
+        runway,
+        issues: [],
+        zones: [],
+      }));
+      setLayers(baseLayers);
+
+      await Promise.allSettled(
+        baseLayers.map(async ({ runway }) => {
+          const [detailResult, zonesResult] = await Promise.allSettled([
+            api.getRunway(runway.id),
+            api.listZones(runway.id),
+          ]);
+          if (!live) return;
+
+          setLayers((current) => {
+            if (!current) return current;
+            return current.map((layer) => {
+              if (layer.runway.id !== runway.id) return layer;
+              return {
+                runway:
+                  detailResult.status === "fulfilled"
+                    ? detailResult.value.runway
+                    : layer.runway,
+                issues:
+                  detailResult.status === "fulfilled"
+                    ? detailResult.value.issues
+                    : layer.issues,
+                zones:
+                  zonesResult.status === "fulfilled"
+                    ? zonesResult.value
+                    : layer.zones,
+              };
+            });
+          });
         }),
       );
-      if (live) setLayers(built);
     })().catch(() => live && setLayers([]));
     return () => {
       live = false;
@@ -38,6 +74,11 @@ export default function MapPage() {
   }, []);
 
   const located = layers?.reduce((n, l) => n + l.issues.length, 0) ?? 0;
+  const updateRunwayLayer = (runway: Runway) => {
+    setLayers((current) =>
+      current?.map((layer) => (layer.runway.id === runway.id ? { ...layer, runway } : layer)) ?? current,
+    );
+  };
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
@@ -58,7 +99,7 @@ export default function MapPage() {
         {layers === null ? (
           <div className="h-full w-full animate-pulse rounded-md bg-[#f3f5f7]" />
         ) : (
-          <AirportMap layers={layers} />
+          <AirportMap layers={layers} onRunwayChange={updateRunwayLayer} />
         )}
       </div>
     </div>

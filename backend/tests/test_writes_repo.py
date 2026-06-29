@@ -39,10 +39,43 @@ async def test_update_airport_partial_and_missing(seed):
 async def test_create_runway_zone(seed):
     await db.connect()
     try:
-        r = await rrepo.create_runway("ags", "Runway 9", "14 - 32", length="7,000 ft")
+        polygon = [
+            {"lat": 33.371, "lng": -81.967},
+            {"lat": 33.372, "lng": -81.965},
+            {"lat": 33.370, "lng": -81.964},
+        ]
+        r = await rrepo.create_runway(
+            "ags",
+            "Runway 9",
+            "14 - 32",
+            length="7,000 ft",
+            runway_polygon=polygon,
+            map_status="active",
+        )
         assert r.id.startswith("rwy_") and r.designation == "14 - 32" and r.active_status == "active"
+        assert [p.model_dump() for p in (r.runway_polygon or [])] == polygon
+        assert r.map_status == "active"
         z = await zrepo.create_zone(r.id, "Zone Z", station_start_m=250.0)
         assert z.id.startswith("zone_") and z.station_start_m == 250.0
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_runway_polygon(seed):
+    await db.connect()
+    try:
+        polygon = [
+            {"lat": 33.371, "lng": -81.967},
+            {"lat": 33.372, "lng": -81.965},
+            {"lat": 33.370, "lng": -81.964},
+        ]
+        updated = await rrepo.update_runway("r1", runway_polygon=polygon, map_status="active")
+        assert [p.model_dump() for p in (updated.runway_polygon or [])] == polygon
+        assert updated.map_status == "active"
+        cleared = await rrepo.update_runway("r1", runway_polygon=None, map_status="needs_review")
+        assert cleared.runway_polygon is None
+        assert cleared.map_status == "needs_review"
     finally:
         await db.disconnect()
 

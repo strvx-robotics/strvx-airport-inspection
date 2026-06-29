@@ -40,6 +40,27 @@ async def post_close(id: str, request: Request) -> dict:
     return {"ticket": dump(ticket)}
 
 
+@router.post("/tickets/{id}/start")
+async def post_start(id: str, request: Request) -> dict:
+    body = await _json(request)
+    ticket = await repo.start_ticket(id, actor_from(request, body))
+    return {"ticket": dump(ticket)}
+
+
+@router.post("/tickets/{id}/reinspect")
+async def post_reinspect(id: str, request: Request) -> dict:
+    body = await _json(request)
+    ticket = await repo.reinspect_ticket(id, body.get("notes"), actor_from(request, body))
+    return {"ticket": dump(ticket)}
+
+
+@router.post("/tickets/{id}/assign")
+async def post_assign(id: str, request: Request) -> dict:
+    body = await _json(request)
+    ticket = await repo.assign_ticket(id, body.get("assignedTo"), actor_from(request, body))
+    return {"ticket": dump(ticket)}
+
+
 async def _json(request: Request) -> dict:
     # Tolerate an empty/absent body (mirrors http.ts readJson).
     try:

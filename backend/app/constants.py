@@ -6,7 +6,10 @@ ISSUE_STATUSES = ["pending", "approved", "rejected", "manual_review"]
 CONFIDENCE_BANDS = ["high", "medium", "low"]
 
 # Ticket statuses counted as "open" (lib/repo.ts TICKET_OPEN); "closed" is the complement.
-TICKET_OPEN = {"sent", "in_progress", "repaired"}
+TICKET_OPEN = {"sent", "in_progress", "repaired", "reinspected"}
+
+# Ad-hoc inspection types (PRD §3). 'daily' is the deduped scheduled pass.
+INSPECTION_TYPES = ["daily", "unusual", "accident"]
 
 
 def zero_counts(keys: list[str]) -> dict[str, int]:

@@ -9,8 +9,8 @@ TEST_DB = os.environ.get("TEST_DATABASE_URL", "postgresql://localhost/strvx_test
 os.environ["DATABASE_URL"] = TEST_DB  # must be set before app.config import
 
 TABLES = [
-    "ticket_status_history", "issue_status_history", "tickets", "issue_candidates",
-    "images", "inspection_jobs", "inspections", "inspection_schedules",
+    "checklist_responses", "ticket_status_history", "issue_status_history", "tickets",
+    "issue_candidates", "images", "inspection_jobs", "inspections", "inspection_schedules",
     "zones", "runways", "drones", "users", "airports",
 ]
 

@@ -20,6 +20,19 @@ export const metadata: Metadata = {
   title: "Valanor Airfield Inspection Console",
   description:
     "Autonomous drone runway inspection: detection review, work-order lifecycle, and audit trail for airport operations.",
+  icons: {
+    icon: [
+      {
+        url: "/valanor-icon-light.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/valanor-icon-dark.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+    apple: "/valanor-icon-light.png",
+  },
 };
 
 export default function RootLayout({
