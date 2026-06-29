@@ -30,6 +30,11 @@ async def test_default_airport_raises_when_empty():
         with pytest.raises(AppError, match="No airport seeded"):
             await arepo.get_default_airport()
     finally:
+        await db.run(
+            "INSERT INTO airports (id, name, code, location, timezone, created_at) "
+            "VALUES ('ags','Augusta Regional','AGS','Augusta, GA','America/New_York','2026-06-22T06:30:00.000Z') "
+            "ON CONFLICT (id) DO NOTHING"
+        )
         await db.disconnect()
 
 
@@ -44,5 +49,16 @@ async def test_schedules_and_users(seed):
         users = await urepo.list_users()
         assert {u.role for u in users} >= {"admin", "maintenance"}
         assert (await urepo.get_user_by_role("maintenance")).name == "Field Maintenance"
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_airport_null_location_timezone_coerced_to_empty(seed):
+    await seed.execute("UPDATE airports SET location = NULL, timezone = NULL WHERE id = 'ags'")
+    await db.connect()
+    try:
+        d = dump(await arepo.get_default_airport())
+        assert d["location"] == "" and d["timezone"] == ""  # coerced, never omitted
     finally:
         await db.disconnect()
