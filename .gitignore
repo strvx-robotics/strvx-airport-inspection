@@ -21,3 +21,8 @@ HANDOFF.md
 # playwright-mcp browser cache (tool junk)
 .playwright-mcp/
 .gstack/
+
+# playwright-cli captures + local preview/report artifacts (tool junk)
+.playwright-cli/
+/output/
+/inspection-insp_seed-*.pdf
