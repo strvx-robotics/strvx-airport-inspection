@@ -18,7 +18,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const res = await backendFetch(`/zones/${id}`, {
+  const qs = new URL(req.url).search;
+  const res = await backendFetch(`/zones/${id}${qs}`, {
     method: "DELETE",
     headers: { "content-type": "application/json", "x-actor-role": req.headers.get("x-strvx-role") ?? "" },
     body: await req.text(),

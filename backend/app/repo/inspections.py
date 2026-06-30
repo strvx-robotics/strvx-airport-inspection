@@ -1,19 +1,23 @@
 from datetime import datetime
 
 from app import db
+from app.constants import SPECIAL_TRIGGERS
 from app.deps import Actor
 from app.errors import AppError
 from app.models import Inspection, InspectionJob
 from app.repo.helpers import actor_name, gid, now
 
 
-VALID_INSPECTION_TYPES = {"daily", "unusual", "accident"}
+VALID_INSPECTION_TYPES = {"daily", "periodic", "special", "unusual", "accident"}
+# Types that are always a brand-new record (never deduped against a daily slot).
+AD_HOC_INSPECTION_TYPES = {"periodic", "special", "unusual", "accident"}
 
 
 def to_inspection(r) -> Inspection:
     return Inspection(
         id=r["id"], airport_id=r["airport_id"], scheduled_time=r["scheduled_time"],
-        window=r["window"], type=r["type"], reason=r["reason"], status=r["status"],
+        window=r["window"], type=r["type"], trigger=r["trigger"], reason=r["reason"],
+        status=r["status"],
         started_at=r["started_at"], completed_at=r["completed_at"],
         signed_by=r["signed_by"], signed_at=r["signed_at"],
         signature_name=r["signature_name"], attestation=bool(r["attestation"]),
@@ -59,7 +63,8 @@ async def list_jobs(inspection_id: str) -> list[InspectionJob]:
 
 
 async def run_inspection_now(
-    airport_id: str | None = None, type: str = "daily", reason: str | None = None
+    airport_id: str | None = None, type: str = "daily",
+    reason: str | None = None, trigger: str | None = None,
 ) -> Inspection:
     from app.repo.airports import get_airport, get_default_airport
     from app.repo.runways import list_runways
@@ -68,6 +73,13 @@ async def run_inspection_now(
         raise AppError("Airport not found")
     if type not in VALID_INSPECTION_TYPES:
         type = "daily"
+
+    # The trigger only applies to event-driven special inspections.
+    if type == "special":
+        if trigger and trigger not in SPECIAL_TRIGGERS:
+            raise AppError(f"trigger must be one of: {', '.join(SPECIAL_TRIGGERS)}")
+    else:
+        trigger = None
 
     created_at = now()
     if type == "daily":
@@ -81,16 +93,16 @@ async def run_inspection_now(
         if existing:
             return to_inspection(existing)
     else:
-        # Ad-hoc unusual-condition / accident inspections are always NEW; a unique
-        # timestamp slot sidesteps the (airport_id, scheduled_time) dedup.
+        # Ad-hoc periodic / special inspections are always NEW; a unique timestamp
+        # slot sidesteps the (airport_id, scheduled_time) dedup.
         scheduled = created_at
 
     async with db.tx():
         await db.run(
-            'INSERT INTO inspections (id, airport_id, scheduled_time, "window", type, reason, status, created_by, created_at) '
-            "VALUES ($1,$2,$3,'daylight',$4,$5,'not_started','scheduler',$6) "
+            'INSERT INTO inspections (id, airport_id, scheduled_time, "window", type, trigger, reason, status, created_by, created_at) '
+            "VALUES ($1,$2,$3,'daylight',$4,$5,$6,'not_started','scheduler',$7) "
             "ON CONFLICT (airport_id, scheduled_time) DO NOTHING",
-            gid("insp"), airport.id, scheduled, type, reason, created_at,
+            gid("insp"), airport.id, scheduled, type, trigger, reason, created_at,
         )
         canon = await db.one(
             "SELECT id FROM inspections WHERE airport_id = $1 AND scheduled_time = $2",

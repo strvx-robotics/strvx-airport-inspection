@@ -30,9 +30,9 @@ inspection schedule or run-now
 
 Issue categories are `fod`, `pavement`, `marking`, and `lighting`.
 
-Runway map geometry is manually maintained. Admins can store the runway work-area
-polygon and map lifecycle status so the airport map uses explicit operational
-geometry instead of inferred threshold markings when available.
+Runway work-area polygons and map lifecycle status are stored in Admin for
+operational use. **They are never drawn on the in-app satellite maps** — see
+`frontend/docs.md` § Map policy.
 
 ## Local Setup
 

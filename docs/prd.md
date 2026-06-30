@@ -46,7 +46,7 @@ The Phase 0 section below is historical context. The current MVP already has rea
 
 ## Current Geometry Direction
 
-Runway geometry is operational data, not just display metadata. The current app supports manually stored runway work-area polygons and a map lifecycle status (`draft`, `active`, `retired`, `needs_review`). Manual polygons are the preferred map source because inferred threshold/heading geometry can drift from the real runway surface.
+Runway map geometry is operational data, not display metadata. The current app supports manually stored runway work-area polygons and a map lifecycle status (`draft`, `active`, `retired`, `needs_review`). **These polygons are never drawn on the in-app satellite maps** — see `frontend/docs.md` § Map policy.
 
 The next geometry layer should separate raw `Observation` records from reviewable `IssueCandidate` records. Multiple drones or images can observe the same physical defect, especially around intersecting runways. Those observations should dedupe into one candidate with traceable sources, merge/split controls, affected-runway assignments, and an unmapped-observation queue for detections that fall outside active mapped surfaces.
 
@@ -728,3 +728,115 @@ Demo flow:
 The MVP should not try to prove that Strvx can fully replace airport inspectors.
 
 The MVP should prove that Strvx can help airport operations teams inspect faster, document better, and create maintenance tickets with less manual effort.
+
+## 17. Part 139 Compliance Platform
+
+Daily self-inspection reports are the foundation of Part 139 compliance, but they are only one piece of the regulatory puzzle. A comprehensive Part 139 SaaS must support a **closed-loop system**: it is not enough to find hazards — the FAA requires documentation of how and when they were fixed, who found them, and what risks they pose.
+
+This section maps the five regulatory reporting modules to current product coverage and planned work.
+
+### 17.1 Module Architecture
+
+```mermaid
+flowchart TB
+  subgraph inspect [1. Self-Inspection Suite]
+    Daily[Daily reports]
+    Special[Special / event-triggered]
+    Periodic[Periodic surveillance]
+  end
+
+  subgraph correct [2. Corrective Action]
+    Disc[Discrepancy logs]
+    WO[Work orders]
+    Close[Closed-loop verification]
+  end
+
+  subgraph people [3. Personnel Training]
+    Train[Training records]
+    Dash[Compliance dashboard]
+  end
+
+  subgraph notam [4. Airport Condition / NOTAM]
+    ACR[Condition report]
+    NOTAM[NOTAM language assist]
+  end
+
+  subgraph sms [5. Safety Management System]
+    Hazard[Hazard logs]
+    Risk[Risk assessments]
+    Mit[Mitigation tracking]
+  end
+
+  Daily --> Disc
+  Special --> Disc
+  Periodic --> Disc
+  Disc --> WO
+  WO --> Close
+  Close --> Daily
+  Disc --> ACR
+  ACR --> NOTAM
+  Hazard --> Risk
+  Risk --> Mit
+  Disc -.-> Hazard
+  Train --> Daily
+```
+
+### 17.2 Coverage Matrix
+
+| Module | Regulatory basis | Retention | Shipped today | In inspection PDF | Planned |
+| --- | --- | --- | --- | --- | --- |
+| **1. Self-Inspection Suite** | 14 CFR §139.327 | 12 calendar months | Partial | Yes | Expand |
+| Daily runway / taxiway / apron checks | §139.327(a) | 12 mo | **Built** — scheduled daily pass, movement-area checklist, inspector sign-off, PDF/CSV/HTML export | Checklist, attestation, runway findings | Per-airport checklist templates |
+| Special inspection reports | §139.327(b) — unusual conditions | 12 mo | **Built** — `special` type with a structured trigger taxonomy (weather, aircraft incident, construction, complaint, wildlife, other) + condition notes; Launch-inspection modal on the Logs page; legacy `unusual`/`accident` retained | Type + trigger + reason on cover and inspection record | Auto-launch hooks from weather/incident feeds |
+| Periodic surveillance | §139.327(c) — weekly/monthly/quarterly | 12 mo | **Partial** — `periodic` type launchable ad-hoc with a surveillance description | Type + description on report | Recurring weekly/monthly/quarterly cadence + fuel-farm / friction-test templates |
+| **2. Corrective Action & Work Orders** | §139.327(d) reporting system | 12 mo (with inspection) | Partial | Yes | Expand |
+| Discrepancy logs | Prompt correction of unsafe conditions | 12 mo | **Built** — AI findings → issue candidates → approve/reject with actor audit trail | Per-runway discrepancy table with severity, status, evidence | Standalone discrepancy register export |
+| Work order integration | Airport maintenance system | 12 mo | **Partial** — in-app ticket lifecycle; external CMMS handoff planned | Corrective Action Log with work order ID, status, notes | Aeros Simple / email / CMMS API |
+| Closed-loop verification | Discovery → resolution dates | 12 mo | **Partial** — draft → sent → in progress → repaired → reinspected → closed with `ticket_status_history` | Repair/close timestamps on corrective action rows | Automated reinspection + before/after compare |
+| **3. Personnel Training Records** | Part 139 inspector qualification | 24 calendar months | **Planned** | — | P2 |
+| Initial / recurrent (12 mo) training | Airfield familiarization, NOTAM, emergency plans | 24 mo | User accounts exist; no training module | — | Training record entity, compliance dashboard, expiry alerts |
+| **4. Airport Condition Reporting (NOTAM)** | Part 139 + FAA NOTAM procedures | 12 mo | **Planned** | Partial mention | P2 |
+| Condition report when ops affected | Threshold obscured, standing water, etc. | 12 mo | PDF flags "NOTAM review" when discrepancies open; no NOTAM log | Deficiency status references NOTAM review | Airport Condition Report generator + RCAM snow/ice language assist |
+| **5. Safety Management System (SMS)** | Part 139 SMS (certain airports, 2023+) | 36 calendar months | **Planned** | — | P3 |
+| Hazard and risk logs | Systemic hazards, risk assessments, mitigations | 36 mo | Not modeled | — | SMS hazard register, risk matrix, mitigation status reports |
+
+### 17.3 Current Inspection Report Contents (PDF)
+
+Each exported inspection report (`/api/inspections/[id]/report?format=pdf`) currently includes:
+
+1. **Cover** — Part 139 self-inspection record title, inspection type (daily / unusual / accident), schedule, sign-off, checklist/runway/ticket metrics.
+2. **Inspection record** — Airfield condition status, checklist pass/fail/N/A counts, inspector attestation, trigger reason for special inspections.
+3. **Movement-area checklist** — Standard §139-style items (pavement, FOD, markings, lighting, drainage, safety areas, obstructions).
+4. **Runway discrepancy sections** — AI-detected findings with evidence, location, confidence, severity, disposition, linked work order.
+5. **Corrective action log** — Work orders from this inspection with status, maintenance notes, repair and close dates.
+6. **Reference assets** — Airport/FAA diagram links where configured.
+7. **Footer** — 12-month retention reminder per §139.327.
+
+JSON and CSV exports carry the same underlying `InspectionReport` payload for spreadsheet and archive systems.
+
+### 17.4 Retention & Archive Requirements
+
+| Record type | Minimum retention | Current behavior | Target |
+| --- | --- | --- | --- |
+| Self-inspection reports | 12 consecutive calendar months | Postgres persistence + export; no automated purge | Retention policy flag + archive export job |
+| Training records | 24 consecutive calendar months | Not implemented | Training module with expiry enforcement |
+| SMS records | 36 consecutive calendar months | Not implemented | SMS module with extended retention tier |
+
+### 17.5 Build Phases (Part 139)
+
+| Phase | Focus | Key deliverables |
+| --- | --- | --- |
+| **P1 (current)** | Self-inspection + closed-loop foundation | Daily/special inspection PDF, checklist, sign-off, discrepancy → work order → close |
+| **P2** | Periodic inspections + NOTAM + training | Periodic schedules, Airport Condition Report, training compliance dashboard (24 mo) |
+| **P3** | SMS + external integrations | Hazard/risk/mitigation logs (36 mo), CMMS handoff, automated reinspection |
+
+### 17.6 Acceptance Criteria (Part 139 Pilot)
+
+A Part 139 pilot airport can demonstrate:
+
+1. Daily self-inspection documented with checklist, findings, sign-off, and export retained ≥12 months.
+2. Special inspection launched after an event with reason captured on the report.
+3. Every approved discrepancy linked to a work order with discovery → repair → close timestamps.
+4. Inspector identity recorded on sign-off and status history (audit trail).
+5. *(P2)* Training compliance visible per inspector; NOTAM suggested when condition affects operations.
+6. *(P3)* SMS hazard register with 36-month retention for qualifying airports.

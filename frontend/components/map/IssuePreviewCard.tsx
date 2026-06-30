@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
  * Floating triage card for a clicked issue pin. The parent owns positioning: it
  * writes `left`/`top` straight to this card's DOM node (forwarded ref) on every
  * map move, so the card tracks its pin without re-rendering React — same pattern
- * as MarkerEditor. Lets an inspector triage a finding (photo + facts) without
+ * Floating preview card for map-side issue triage (photo + facts) without
  * leaving the map; "Open issue" navigates to the full review screen.
  */
 export const IssuePreviewCard = forwardRef<

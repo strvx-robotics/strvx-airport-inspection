@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "db:setup": "node --env-file=.env.local --import tsx scripts/db-setup.ts",
-    "db:bootstrap": "node --env-file=.env.local --import tsx scripts/bootstrap.ts"
+    "db:bootstrap": "node --env-file=.env.local --import tsx scripts/bootstrap.ts",
+    "build:us-airports": "tsx scripts/build-us-airports.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
@@ -16,6 +17,7 @@
     "@types/pdfkit": "^0.17.6",
     "ag-grid-community": "^36.0.0",
     "ag-grid-react": "^36.0.0",
+    "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
     "hls.js": "^1.6.16",
@@ -30,6 +32,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/diff": "^8.0.0",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",

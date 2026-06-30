@@ -6,8 +6,10 @@
 // bundle.
 
 import { bandFor } from "./types";
+import { hashPassword } from "./passwords";
 import { one, run, tx } from "./db";
 import { PAVEMENT_DRAFT, FOD_DRAFT } from "./seed";
+import { SEED_ZONE_ANCHORS, zoneSeedPolygon } from "./zoneSeedPolygons";
 
 const TS_SCHEDULED = "2026-06-22T06:00:00.000Z";
 const TS_COMPLETED = "2026-06-22T06:28:00.000Z";
@@ -31,11 +33,12 @@ export async function seedDatabase(): Promise<void> {
       ["ags", "Augusta Regional", "AGS", "Augusta, GA", "America/New_York", TS],
     );
 
+    const demoPassword = hashPassword("valanor123");
     const insUser = (id: string, username: string, name: string, role: string) =>
       run(
-        `INSERT INTO users (id, username, name, role, airport_id, created_at)
-         VALUES (?, ?, ?, ?, 'ags', ?)`,
-        [id, username, name, role, TS],
+        `INSERT INTO users (id, username, name, role, airport_id, password_hash, created_at)
+         VALUES (?, ?, ?, ?, 'ags', ?, ?)`,
+        [id, username, name, role, demoPassword, TS],
       );
     await insUser("u_admin", "admin", "A. Chen · Admin", "admin");
     await insUser("u_inspector", "jrivera", "J. Rivera · Inspector", "inspector");
@@ -57,19 +60,19 @@ export async function seedDatabase(): Promise<void> {
     await insRunway("r2", "Runway 2", "08 – 26", "6,000 ft", 1829, 33.3675, -81.9665);
     await insRunway("r3", "Runway 3", "11 – 29", "5,001 ft", 1524, 33.372, -81.965);
 
-    const insZone = (id: string, runwayId: string, name: string, start: number, end: number) =>
+    const insZone = (id: string, runwayId: string, name: string, start: number, end: number, polygonJson: string) =>
       run(
-        `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, notes, created_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-        [id, runwayId, name, start, end, TS],
+        `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, polygon_json, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+        [id, runwayId, name, start, end, polygonJson, TS],
       );
-    // r2 carries the two zones referenced by the seeded candidates.
-    await insZone("z_r2_a", "r2", "Zone A · threshold", 0, 600);
-    await insZone("z_r2_b", "r2", "Zone B · midfield", 600, 1200);
-    await insZone("z_r1_a", "r1", "Zone A · threshold", 0, 800);
-    await insZone("z_r1_b", "r1", "Zone B · midfield", 800, 1600);
-    await insZone("z_r3_a", "r3", "Zone A · threshold", 0, 500);
-    await insZone("z_r3_b", "r3", "Zone B · midfield", 500, 1000);
+    const seedZone = (id: string, runwayId: string, name: string, start: number, end: number) => {
+      const anchor = SEED_ZONE_ANCHORS[id];
+      return insZone(id, runwayId, name, start, end, zoneSeedPolygon(anchor.lat, anchor.lng));
+    };
+    await seedZone("z_r1", "r1", "Runway 1 zone", 0, 2439);
+    await seedZone("z_r2", "r2", "Runway 2 zone", 0, 1829);
+    await seedZone("z_r3", "r3", "Runway 3 zone", 0, 1524);
 
     await run(
       `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, created_by, created_at)
@@ -105,8 +108,8 @@ export async function seedDatabase(): Promise<void> {
     // Captured-frame stand-ins shipped in public/seed (real uploads replace these).
     // The PNGs are top-down runway views with the stored candidate bbox baked in,
     // so the map preview shows realistic evidence instead of an empty placeholder.
-    await insImage("img1", "job_r2", "r2", "z_r2_b", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.png", "/seed/ags-rwy0826-pavement-crack.png");
-    await insImage("img2", "job_r2", "r2", "z_r2_a", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.png", "/seed/ags-rwy0826-fod.png");
+    await insImage("img1", "job_r2", "r2", "z_r2", 33.3699, -81.9645, "ags-rwy0826-midfield-0042.png", "/seed/ags-rwy0826-pavement-crack.png");
+    await insImage("img2", "job_r2", "r2", "z_r2", 33.3681, -81.9628, "ags-rwy0826-threshold-0017.png", "/seed/ags-rwy0826-fod.png");
 
     const insIssue = (
       id: string, runwayId: string, zoneId: string, imageId: string, category: string,
@@ -124,12 +127,12 @@ export async function seedDatabase(): Promise<void> {
          bbox, lat, lng, draft, draft, modelNotes, TS],
       );
     await insIssue(
-      "i1", "r2", "z_r2_b", "img1", "pavement", 0.92, "high",
+      "i1", "r2", "z_r2", "img1", "pavement", 0.92, "high",
       JSON.stringify({ x: 33, y: 52, w: 24, h: 16 }), 33.3699, -81.9645,
       PAVEMENT_DRAFT, "Transverse crack with spalling; est. length 1.2 m.",
     );
     await insIssue(
-      "i2", "r2", "z_r2_a", "img2", "fod", 0.68, "medium",
+      "i2", "r2", "z_r2", "img2", "fod", 0.68, "medium",
       JSON.stringify({ x: 58, y: 38, w: 13, h: 13 }), 33.3681, -81.9628,
       FOD_DRAFT, "Reflective metallic object; est. 15 cm.",
     );
@@ -186,14 +189,14 @@ export async function seedDatabase(): Promise<void> {
 
     await insApprovedIssue("wo_iss_1", "r1", null, "marking", 0.78, "medium",
       "Faded centerline marking near midpoint; recommend remarking before next operating window.");
-    await insApprovedIssue("wo_iss_2", "r1", "z_r1_b", "pavement", 0.9, "high", PAVEMENT_DRAFT);
-    await insApprovedIssue("wo_iss_3", "r3", "z_r3_a", "fod", 0.71, "medium", FOD_DRAFT);
+    await insApprovedIssue("wo_iss_2", "r1", "z_r1", "pavement", 0.9, "high", PAVEMENT_DRAFT);
+    await insApprovedIssue("wo_iss_3", "r3", "z_r3", "fod", 0.71, "medium", FOD_DRAFT);
 
     await insTicket("wo_iss_1", "r1", null, "", "marking", "medium", "sent",
       "Faded centerline marking near midpoint; recommend remarking before next operating window.", null, null);
-    await insTicket("wo_iss_2", "r1", "z_r1_b", "Zone B · midfield", "pavement", "high", "repaired",
+    await insTicket("wo_iss_2", "r1", "z_r1", "Runway 1 zone", "pavement", "high", "repaired",
       PAVEMENT_DRAFT, TS, null);
-    await insTicket("wo_iss_3", "r3", "z_r3_a", "Zone A · threshold", "fod", "medium", "closed",
+    await insTicket("wo_iss_3", "r3", "z_r3", "Runway 3 zone", "fod", "medium", "closed",
       FOD_DRAFT, TS, TS);
   });
 }

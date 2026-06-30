@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS airports (
   code        TEXT NOT NULL,
   location    TEXT,
   timezone    TEXT,
+  center_lat  DOUBLE PRECISION,
+  center_lng  DOUBLE PRECISION,
   org_id      TEXT,
   created_at  TEXT NOT NULL
 );
@@ -36,14 +38,31 @@ CREATE TABLE IF NOT EXISTS zones (
   created_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS keep_out_zones (
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  name            TEXT NOT NULL,
+  reason          TEXT,
+  polygon_json    TEXT NOT NULL,
+  station_start_m DOUBLE PRECISION,
+  station_end_m   DOUBLE PRECISION,
+  active          INTEGER NOT NULL DEFAULT 1,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS inspection_schedules (
-  id          TEXT PRIMARY KEY,
-  airport_id  TEXT NOT NULL REFERENCES airports(id),
-  time        TEXT NOT NULL,
-  "window"    TEXT NOT NULL,
-  enabled     INTEGER NOT NULL DEFAULT 1,
-  created_by  TEXT,
-  created_at  TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  time            TEXT NOT NULL,
+  "window"        TEXT NOT NULL,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  frequency       TEXT NOT NULL DEFAULT 'daily',
+  inspection_type TEXT NOT NULL DEFAULT 'daily',
+  label           TEXT,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS inspections (
@@ -52,6 +71,7 @@ CREATE TABLE IF NOT EXISTS inspections (
   scheduled_time TEXT NOT NULL,
   "window"       TEXT NOT NULL,
   type           TEXT NOT NULL DEFAULT 'daily',
+  trigger        TEXT,
   reason         TEXT,
   status         TEXT NOT NULL,
   started_at     TEXT,
@@ -191,12 +211,13 @@ CREATE TABLE IF NOT EXISTS ticket_status_history (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-  id         TEXT PRIMARY KEY,
-  username   TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  role       TEXT NOT NULL,
-  airport_id TEXT,
-  created_at TEXT NOT NULL
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  role          TEXT NOT NULL,
+  airport_id    TEXT,
+  password_hash TEXT,
+  created_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS drones (
@@ -217,3 +238,9 @@ CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
+
+-- Allow runway/zone config deletes while keeping inspection history rows.
+ALTER TABLE images ALTER COLUMN runway_id DROP NOT NULL;
+ALTER TABLE issue_candidates ALTER COLUMN runway_id DROP NOT NULL;
+ALTER TABLE tickets ALTER COLUMN runway_id DROP NOT NULL;

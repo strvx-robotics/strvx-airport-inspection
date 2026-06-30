@@ -9,7 +9,9 @@ import type {
   InspectionType,
   InspectionWindow,
   RejectionReason,
+  ScheduleFrequency,
   Severity,
+  SpecialTrigger,
   Ticket,
   TicketStatus,
   UserRole,
@@ -49,11 +51,50 @@ export const INSPECTION_WINDOW: Record<InspectionWindow, string> = {
   dusk_lit: "Dusk · lit",
 };
 
-/** Inspection-type labels (PRD §3). */
+/** Schedule recurrence cadence labels (PRD §17). */
+export const SCHEDULE_FREQUENCY: Record<ScheduleFrequency, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+};
+
+/** Inspection-type labels (PRD §17 — Part 139 self-inspection suite). */
 export const INSPECTION_TYPE: Record<InspectionType, { label: string; tone: Tone }> = {
   daily: { label: "Daily", tone: "blue" },
-  unusual: { label: "Unusual condition", tone: "amber" },
-  accident: { label: "Accident / incident", tone: "red" },
+  periodic: { label: "Periodic surveillance", tone: "purple" },
+  special: { label: "Special inspection", tone: "amber" },
+  // Legacy values — surfaced as special inspections.
+  unusual: { label: "Special · unusual condition", tone: "amber" },
+  accident: { label: "Special · accident / incident", tone: "red" },
+};
+
+/** Short labels + descriptions for special-inspection triggers (§139.327(b)). */
+export const SPECIAL_TRIGGER: Record<SpecialTrigger, { label: string; detail: string }> = {
+  weather: {
+    label: "Severe weather",
+    detail: "After thunderstorms, snow/ice, high winds, or heavy rain.",
+  },
+  aircraft_incident: {
+    label: "Aircraft incident / accident",
+    detail: "Following an aircraft accident, incident, or emergency on the airfield.",
+  },
+  construction: {
+    label: "Construction activity",
+    detail: "After a sudden change in construction or maintenance activity.",
+  },
+  complaint: {
+    label: "Complaint received",
+    detail: "Triggered by a pilot, tenant, or operations complaint.",
+  },
+  wildlife: {
+    label: "Wildlife activity",
+    detail: "After a wildlife strike or significant wildlife presence.",
+  },
+  other: {
+    label: "Other condition",
+    detail: "Any other unusual condition affecting safe operations.",
+  },
 };
 
 /** Daily-checklist result labels + tones (PRD §6). */

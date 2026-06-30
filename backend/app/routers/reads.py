@@ -4,6 +4,7 @@ from app.errors import AppError
 from app.repo import checklist, images, inspections, overview, runways, schedules, users
 from app.repo.inspections import list_inspections
 from app.repo.zones import list_zones
+from app.repo.keep_out_zones import list_by_airport, list_by_runway
 from app.serialize import dump
 
 router = APIRouter()
@@ -55,6 +56,20 @@ async def get_zones(request: Request) -> dict:
     if not runway_id:
         raise AppError("runwayId is required")
     return {"zones": [dump(z) for z in await list_zones(runway_id)]}
+
+
+@router.get("/keep-out-zones")
+async def get_keep_out_zones(request: Request) -> dict:
+    runway_id = request.query_params.get("runwayId")
+    airport_id = request.query_params.get("airportId")
+    active_only = request.query_params.get("activeOnly") == "1"
+    if runway_id:
+        zones = await list_by_runway(runway_id, active_only=active_only)
+    elif airport_id:
+        zones = await list_by_airport(airport_id, active_only=active_only)
+    else:
+        raise AppError("runwayId or airportId is required")
+    return {"keepOutZones": [dump(z) for z in zones]}
 
 
 @router.get("/users")

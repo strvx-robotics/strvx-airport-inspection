@@ -1,15 +1,17 @@
 from fastapi import APIRouter, Request
 
+from app.constants import INSPECTION_TYPES as _INSPECTION_TYPES
 from app.deps import actor_from
 from app.errors import AppError
-from app.repo import checklist, runways, schedules, zones
+from app.repo import checklist, runways, schedules, users, zones
+from app.repo import keep_out_zones
 from app.repo.inspections import run_inspection_now, sign_inspection
 from app.repo.overview import get_overview
 from app.serialize import dump
 
 router = APIRouter()
 MAP_STATUSES = {"draft", "active", "retired", "needs_review"}
-INSPECTION_TYPES = {"daily", "unusual", "accident"}
+INSPECTION_TYPES = set(_INSPECTION_TYPES)
 
 
 async def _json(request: Request) -> dict:
@@ -85,9 +87,12 @@ async def post_zone(request: Request) -> dict:
     body = await _json(request)
     if not body.get("runwayId") or not body.get("name"):
         raise AppError("runwayId and name are required")
+    if not body.get("polygon"):
+        raise AppError("polygon is required (plot the zone on the map)")
     zone = await zones.create_zone(
         body["runwayId"], body["name"],
         body.get("stationStartM"), body.get("stationEndM"), body.get("notes"),
+        body.get("polygon"),
     )
     return {"zone": dump(zone)}
 
@@ -98,13 +103,63 @@ async def patch_zone(id: str, request: Request) -> dict:
     zone = await zones.update_zone(
         id, name=body.get("name"), station_start_m=body.get("stationStartM"),
         station_end_m=body.get("stationEndM"), notes=body.get("notes"),
+        polygon=body.get("polygon"),
     )
     return {"zone": dump(zone)}
 
 
 @router.delete("/zones/{id}")
-async def delete_zone_route(id: str) -> dict:
-    await zones.delete_zone(id)
+async def delete_zone_route(id: str, request: Request) -> dict:
+    reassign_to = request.query_params.get("reassignToZoneId")
+    if not reassign_to:
+        try:
+            body = await _json(request)
+            reassign_to = body.get("reassignToZoneId")
+        except Exception:
+            pass
+    await zones.delete_zone(id, reassign_to=reassign_to)
+    return {"ok": True}
+
+
+@router.post("/keep-out-zones", status_code=201)
+async def post_keep_out_zone(request: Request) -> dict:
+    body = await _json(request)
+    if not body.get("airportId") or not body.get("runwayId") or not body.get("name"):
+        raise AppError("airportId, runwayId, and name are required")
+    if not body.get("polygon"):
+        raise AppError("polygon is required (plot the zone on the map)")
+    actor = actor_from(request, body)
+    zone = await keep_out_zones.create_zone(
+        body["airportId"],
+        body["runwayId"],
+        body["name"],
+        body["polygon"],
+        reason=body.get("reason"),
+        station_start_m=body.get("stationStartM"),
+        station_end_m=body.get("stationEndM"),
+        created_by=actor.id if actor else None,
+    )
+    return {"keepOutZone": dump(zone)}
+
+
+@router.patch("/keep-out-zones/{id}")
+async def patch_keep_out_zone(id: str, request: Request) -> dict:
+    body = await _json(request)
+    zone = await keep_out_zones.update_zone(
+        id,
+        name=body.get("name"),
+        reason=body.get("reason"),
+        polygon=body.get("polygon"),
+        station_start_m=body.get("stationStartM"),
+        station_end_m=body.get("stationEndM"),
+        active=body.get("active"),
+    )
+    return {"keepOutZone": dump(zone)}
+
+
+@router.delete("/keep-out-zones/{id}")
+async def delete_keep_out_zone(id: str) -> dict:
+    await keep_out_zones.delete_zone(id)
     return {"ok": True}
 
 
@@ -116,6 +171,9 @@ async def post_schedule(request: Request) -> dict:
     schedule = await schedules.create_schedule(
         body["airportId"], body["time"], body.get("window"), body.get("enabled"),
         actor_from(request, body),
+        frequency=body.get("frequency"),
+        inspection_type=body.get("inspectionType"),
+        label=body.get("label"),
     )
     return {"schedule": dump(schedule)}
 
@@ -125,6 +183,7 @@ async def patch_schedule(id: str, request: Request) -> dict:
     body = await _json(request)
     schedule = await schedules.update_schedule(
         id, time=body.get("time"), window=body.get("window"), enabled=body.get("enabled"),
+        frequency=body.get("frequency"), label=body.get("label"),
     )
     return {"schedule": dump(schedule)}
 
@@ -135,14 +194,33 @@ async def delete_schedule_route(id: str) -> dict:
     return {"ok": True}
 
 
+@router.post("/users", status_code=201)
+async def post_user(request: Request) -> dict:
+    body = await _json(request)
+    if not body.get("name") or not body.get("username") or not body.get("role") or not body.get("password"):
+        raise AppError("name, username, role, and password are required")
+    user = await users.create_user(
+        body["name"], body["username"], body["password"], body["role"], body.get("airportId"),
+    )
+    return {"user": dump(user)}
+
+
+@router.delete("/users/{id}")
+async def delete_user_route(id: str) -> dict:
+    await users.delete_user(id)
+    return {"ok": True}
+
+
 @router.post("/inspections/run-now")
 async def post_run_now(request: Request) -> dict:
     body = await _json(request)
     actor_from(request, body)  # advisory; scheduler owns the records
     type_ = body.get("type") or "daily"
     if type_ not in INSPECTION_TYPES:
-        raise AppError("type must be one of: daily, unusual, accident")
-    inspection = await run_inspection_now(body.get("airportId"), type_, body.get("reason"))
+        raise AppError(f"type must be one of: {', '.join(sorted(INSPECTION_TYPES))}")
+    inspection = await run_inspection_now(
+        body.get("airportId"), type_, body.get("reason"), body.get("trigger"),
+    )
     overview = await get_overview(inspection.id)
     return {"inspection": dump(inspection), "overview": dump(overview)}
 

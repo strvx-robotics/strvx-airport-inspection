@@ -49,6 +49,7 @@ export default function DataTable<T extends object>({
   label,
   height = 360,
   fill = false,
+  rowHeight = 58,
   rowHref,
   onRowClick,
   getRowId,
@@ -60,6 +61,7 @@ export default function DataTable<T extends object>({
   label: string;
   height?: number | string;
   fill?: boolean;
+  rowHeight?: number;
   rowHref?: (row: T) => string;
   onRowClick?: (row: T) => void;
   getRowId?: (row: T) => string;
@@ -110,7 +112,7 @@ export default function DataTable<T extends object>({
         onRowClicked={rowHref || onRowClick ? handleRowClicked : undefined}
         onGridSizeChanged={handleGridSizeChanged}
         headerHeight={38}
-        rowHeight={58}
+        rowHeight={rowHeight}
         animateRows={false}
         enableCellTextSelection
         ensureDomOrder

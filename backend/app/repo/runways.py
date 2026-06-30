@@ -92,12 +92,19 @@ async def update_runway(
 async def delete_runway(id: str) -> None:
     if await get_runway(id) is None:
         raise AppError(f"Runway not found: {id}")
-    deps = await db.one(
-        "SELECT (SELECT count(*) FROM zones WHERE runway_id = $1) AS zones, "
-        "(SELECT count(*) FROM images WHERE runway_id = $1) AS images, "
-        "(SELECT count(*) FROM issue_candidates WHERE runway_id = $1) AS issues, "
-        "(SELECT count(*) FROM inspection_jobs WHERE runway_id = $1) AS jobs", id,
-    )
-    if deps and (deps["zones"] or deps["images"] or deps["issues"] or deps["jobs"]):
-        raise AppError("Cannot delete a runway that has zones or inspection data — retire it instead.")
-    await db.run("DELETE FROM runways WHERE id = $1", id)
+    from app.repo import zones as zrepo
+
+    async with db.tx():
+        for z in await zrepo.list_zones(id):
+            await zrepo.delete_zone(z.id)
+        await db.run("DELETE FROM keep_out_zones WHERE runway_id = $1", id)
+        await db.run(
+            "UPDATE images SET job_id = NULL "
+            "WHERE job_id IN (SELECT id FROM inspection_jobs WHERE runway_id = $1)",
+            id,
+        )
+        await db.run("DELETE FROM inspection_jobs WHERE runway_id = $1", id)
+        await db.run("UPDATE images SET runway_id = NULL WHERE runway_id = $1", id)
+        await db.run("UPDATE issue_candidates SET runway_id = NULL WHERE runway_id = $1", id)
+        await db.run("UPDATE tickets SET runway_id = NULL WHERE runway_id = $1", id)
+        await db.run("DELETE FROM runways WHERE id = $1", id)

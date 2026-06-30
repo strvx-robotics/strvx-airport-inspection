@@ -74,8 +74,27 @@ export type RunwayMapStatus = "draft" | "active" | "retired" | "needs_review";
 /** Illumination-driven inspection window (design §4 [GAP 4]). */
 export type InspectionWindow = "daylight" | "dusk_lit";
 
-/** Inspection type (PRD §3): the deduped scheduled daily pass vs ad-hoc runs. */
-export type InspectionType = "daily" | "unusual" | "accident";
+/**
+ * Part 139 self-inspection taxonomy (PRD §17). `daily` is the deduped scheduled
+ * pass; `periodic` is recurring surveillance (weekly/monthly/quarterly); `special`
+ * is event-triggered. `unusual`/`accident` are legacy values kept for stored rows
+ * and surfaced as special inspections.
+ */
+export type InspectionType =
+  | "daily"
+  | "periodic"
+  | "special"
+  | "unusual"
+  | "accident";
+
+/** What triggered a special (event-driven) inspection — 14 CFR §139.327(b). */
+export type SpecialTrigger =
+  | "weather"
+  | "aircraft_incident"
+  | "construction"
+  | "complaint"
+  | "wildlife"
+  | "other";
 
 /** Daily self-inspection checklist result per item (PRD §6). */
 export type ChecklistResult = "pass" | "fail" | "na";
@@ -122,7 +141,27 @@ export const RUNWAY_MAP_STATUSES: RunwayMapStatus[] = [
   "needs_review",
 ];
 export const INSPECTION_WINDOWS: InspectionWindow[] = ["daylight", "dusk_lit"];
-export const INSPECTION_TYPES: InspectionType[] = ["daily", "unusual", "accident"];
+export const INSPECTION_TYPES: InspectionType[] = [
+  "daily",
+  "periodic",
+  "special",
+  "unusual",
+  "accident",
+];
+/** Selectable inspection types in the launch UI (legacy values are read-only). */
+export const LAUNCHABLE_INSPECTION_TYPES: InspectionType[] = [
+  "daily",
+  "periodic",
+  "special",
+];
+export const SPECIAL_TRIGGERS: SpecialTrigger[] = [
+  "weather",
+  "aircraft_incident",
+  "construction",
+  "complaint",
+  "wildlife",
+  "other",
+];
 export const CHECKLIST_RESULTS: ChecklistResult[] = ["pass", "fail", "na"];
 
 // ── Shared value objects ──────────────────────────────────────────────────────
@@ -164,6 +203,8 @@ export interface Airport {
   code: string;
   location: string;
   timezone: string;
+  centerLat?: number;
+  centerLng?: number;
   createdAt: string;
 }
 
@@ -178,7 +219,7 @@ export interface Runway {
   thresholdHeadingDeg?: number;
   thresholdLat?: number; // threshold anchor — origin for station_m → map projection
   thresholdLng?: number;
-  runwayPolygon?: LngLat[]; // admin-drawn runway work area; preferred map source
+  runwayPolygon?: LngLat[]; // admin operational boundary — never rendered on satellite maps
   mapStatus?: RunwayMapStatus;
   activeStatus?: string;
   createdAt?: string;
@@ -195,12 +236,28 @@ export interface Zone {
   createdAt?: string;
 }
 
+/** Operational no-fly area plotted on the map — restricts drone inspection passes. */
+export interface KeepOutZone {
+  id: string;
+  airportId: string;
+  runwayId: string;
+  name: string;
+  reason?: string;
+  polygon?: LngLat[];
+  stationStartM?: number;
+  stationEndM?: number;
+  active: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
 export interface Inspection {
   id: string;
   airportId: string;
   scheduledTime: string; // ISO
   window: InspectionWindow;
   type: InspectionType;
+  trigger?: SpecialTrigger; // set for special (event-driven) inspections
   reason?: string;
   status: InspectionStatus;
   startedAt?: string;
@@ -236,12 +293,33 @@ export interface InspectionJob {
   createdAt: string;
 }
 
+/** Recurrence cadence for an inspection schedule (PRD §17). */
+export type ScheduleFrequency = "daily" | "weekly" | "monthly" | "quarterly";
+/** What kind of inspection a schedule produces. */
+export type ScheduleInspectionType = "daily" | "periodic";
+
+export const SCHEDULE_FREQUENCIES: ScheduleFrequency[] = [
+  "daily",
+  "weekly",
+  "monthly",
+  "quarterly",
+];
+/** Cadences a periodic surveillance schedule can take (excludes daily). */
+export const PERIODIC_FREQUENCIES: ScheduleFrequency[] = [
+  "weekly",
+  "monthly",
+  "quarterly",
+];
+
 export interface InspectionSchedule {
   id: string;
   airportId: string;
   time: string; // "06:00"
   window: InspectionWindow;
   enabled: boolean;
+  frequency: ScheduleFrequency;
+  inspectionType: ScheduleInspectionType;
+  label?: string; // surveillance description, e.g. "Quarterly fuel farm inspection"
   createdBy?: string;
   createdAt: string;
 }

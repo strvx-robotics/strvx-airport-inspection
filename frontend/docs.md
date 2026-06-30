@@ -45,7 +45,7 @@ npm run dev
 - `/ticket/[id]` - maintenance work order, repair, and closeout.
 - `/upload` - manual image upload and zone tag.
 - `/live` - HLS drone feed plus live detection overlay.
-- `/map` - airport/runway map view.
+- `/map` - satellite map with issue review panels, keep-out zones, and inspection zone drawing.
 - `/admin` - airport, runway, zone, schedule, user, and setting setup.
 - `/logs` - inspection and ticket logs.
 
@@ -89,15 +89,33 @@ downstream services directly:
 
 Runways can carry an admin-maintained `runwayPolygon` plus `mapStatus`:
 
-- `draft` - being drawn or edited.
-- `active` - used for inspection map placement.
+- `draft` - polygon stored but not validated.
+- `active` - polygon validated for operational use.
 - `retired` - kept for historical context.
-- `needs_review` - detections or intersections indicate the map needs attention.
+- `needs_review` - geometry may need attention.
 
-The admin runway form accepts polygon JSON for now. The airport map prefers that
-manual polygon over inferred threshold/heading geometry. Future drawing tools
-should write the same `runwayPolygon` field instead of introducing a parallel
-geometry model.
+The admin runway form stores map approval status only. Inspection zone boundaries
+are drawn on the satellite map — not entered as coordinates in admin. See § Map policy.
+
+## Map Policy
+
+**Do not draw arbitrary markings on the map.** Issue pins, runway boxes, inferred
+geometry, user-dropped markers, and ad-hoc GeoJSON overlays remain forbidden.
+
+The `/map` view shows **satellite imagery** plus two approved polygon types only.
+Issue review still happens primarily in list/table/detail screens.
+
+Runway threshold anchors may be used **only** to center or recenter the camera.
+Stored `runwayPolygon` data remains a backend operational field and is **not**
+rendered on the map.
+
+**Keep-out zones** (red): inspectors plot them on the map. Station ranges along
+the runway are derived from the plotted shape — never typed manually.
+
+**Inspection zones** (blue): admins plot them on the map from the runway admin
+page or the map draw tool. Each zone is associated with a runway; boundaries are
+stored as `polygon_json` and rendered on the map. Hover a saved zone to edit
+(runway settings) or delete.
 
 ## Database Scripts
 

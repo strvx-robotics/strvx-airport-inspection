@@ -184,6 +184,8 @@ CREATE TABLE IF NOT EXISTS airports (
   code        TEXT NOT NULL,
   location    TEXT,
   timezone    TEXT,
+  center_lat  DOUBLE PRECISION,
+  center_lng  DOUBLE PRECISION,
   org_id      TEXT,
   created_at  TEXT NOT NULL
 );
@@ -216,14 +218,31 @@ CREATE TABLE IF NOT EXISTS zones (
   created_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS keep_out_zones (
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  name            TEXT NOT NULL,
+  reason          TEXT,
+  polygon_json    TEXT NOT NULL,
+  station_start_m DOUBLE PRECISION,
+  station_end_m   DOUBLE PRECISION,
+  active          INTEGER NOT NULL DEFAULT 1,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS inspection_schedules (
-  id          TEXT PRIMARY KEY,
-  airport_id  TEXT NOT NULL REFERENCES airports(id),
-  time        TEXT NOT NULL,
-  "window"    TEXT NOT NULL,
-  enabled     INTEGER NOT NULL DEFAULT 1,
-  created_by  TEXT,
-  created_at  TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  time            TEXT NOT NULL,
+  "window"        TEXT NOT NULL,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  frequency       TEXT NOT NULL DEFAULT 'daily',
+  inspection_type TEXT NOT NULL DEFAULT 'daily',
+  label           TEXT,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS inspections (
@@ -232,6 +251,7 @@ CREATE TABLE IF NOT EXISTS inspections (
   scheduled_time TEXT NOT NULL,
   "window"       TEXT NOT NULL,
   type           TEXT NOT NULL DEFAULT 'daily',
+  trigger        TEXT,
   reason         TEXT,
   status         TEXT NOT NULL,
   started_at     TEXT,
@@ -374,12 +394,13 @@ CREATE TABLE IF NOT EXISTS ticket_status_history (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-  id         TEXT PRIMARY KEY,
-  username   TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  role       TEXT NOT NULL,
-  airport_id TEXT,
-  created_at TEXT NOT NULL
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  role          TEXT NOT NULL,
+  airport_id    TEXT,
+  password_hash TEXT,
+  created_at    TEXT NOT NULL
 );
 
 -- Generic key/value app configuration (e.g. the drone HLS stream URL). Kept in
@@ -408,18 +429,34 @@ CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
 `;
 
 export const ADDITIVE_MIGRATIONS = `
+ALTER TABLE airports ADD COLUMN IF NOT EXISTS center_lat DOUBLE PRECISION;
+ALTER TABLE airports ADD COLUMN IF NOT EXISTS center_lng DOUBLE PRECISION;
+UPDATE airports SET center_lat = sub.lat, center_lng = sub.lng
+FROM (
+  SELECT airport_id, AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng
+  FROM runways
+  WHERE threshold_lat IS NOT NULL AND threshold_lng IS NOT NULL
+  GROUP BY airport_id
+) sub
+WHERE airports.id = sub.airport_id AND airports.center_lat IS NULL;
 ALTER TABLE runways ADD COLUMN IF NOT EXISTS runway_polygon_json TEXT;
 ALTER TABLE runways ADD COLUMN IF NOT EXISTS map_status TEXT NOT NULL DEFAULT 'draft';
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'daily';
+ALTER TABLE inspections ADD COLUMN IF NOT EXISTS trigger TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS reason TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_by TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_at TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signature_name TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS attestation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE images ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE inspection_schedules ADD COLUMN IF NOT EXISTS frequency TEXT NOT NULL DEFAULT 'daily';
+ALTER TABLE inspection_schedules ADD COLUMN IF NOT EXISTS inspection_type TEXT NOT NULL DEFAULT 'daily';
+ALTER TABLE inspection_schedules ADD COLUMN IF NOT EXISTS label TEXT;
 CREATE TABLE IF NOT EXISTS checklist_responses (
   id            TEXT PRIMARY KEY,
   inspection_id TEXT NOT NULL REFERENCES inspections(id),
@@ -434,4 +471,42 @@ CREATE TABLE IF NOT EXISTS checklist_responses (
   UNIQUE (inspection_id, item_key)
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);
+CREATE TABLE IF NOT EXISTS keep_out_zones (
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  name            TEXT NOT NULL,
+  reason          TEXT,
+  polygon_json    TEXT NOT NULL,
+  station_start_m DOUBLE PRECISION,
+  station_end_m   DOUBLE PRECISION,
+  active          INTEGER NOT NULL DEFAULT 1,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
+ALTER TABLE keep_out_zones ADD COLUMN IF NOT EXISTS polygon_json TEXT;
+ALTER TABLE keep_out_zones ALTER COLUMN station_start_m DROP NOT NULL;
+ALTER TABLE keep_out_zones ALTER COLUMN station_end_m DROP NOT NULL;
+
+-- Allow runway/zone config deletes while keeping inspection history rows.
+ALTER TABLE images ALTER COLUMN runway_id DROP NOT NULL;
+ALTER TABLE issue_candidates ALTER COLUMN runway_id DROP NOT NULL;
+ALTER TABLE tickets ALTER COLUMN runway_id DROP NOT NULL;
+-- Dedup only the canonical daily passes; periodic surveillance entries may share
+-- a time slot (e.g. quarterly fuel-farm and monthly friction both at 08:00).
+DELETE FROM inspection_schedules
+WHERE inspection_type = 'daily' AND id IN (
+  SELECT id FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY airport_id, time, "window" ORDER BY created_at ASC, id ASC) AS rn
+    FROM inspection_schedules WHERE inspection_type = 'daily'
+  ) ranked WHERE rn > 1
+);
+DELETE FROM inspection_schedules
+WHERE time !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$';
+-- The unique slot constraint applies to daily passes only (partial index).
+DROP INDEX IF EXISTS idx_schedules_airport_time_window;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_daily_slot
+  ON inspection_schedules(airport_id, time, "window") WHERE inspection_type = 'daily';
 `;

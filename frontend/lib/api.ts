@@ -21,11 +21,15 @@ import type {
   InspectionType,
   InspectionWindow,
   Image,
+  KeepOutZone,
   LngLat,
   RejectionReason,
   Runway,
   RunwayMapStatus,
+  ScheduleFrequency,
+  ScheduleInspectionType,
   Severity,
+  SpecialTrigger,
   Ticket,
   User,
   UserRole,
@@ -122,6 +126,19 @@ export class ApiError extends Error {
   }
 }
 
+/** Extract a human-readable message from a failed API call. */
+export function apiErrorMessage(err: unknown, fallback = "Action failed"): string {
+  if (!(err instanceof ApiError)) {
+    return err instanceof Error ? err.message : fallback;
+  }
+  try {
+    const body = JSON.parse(err.message) as { error?: string };
+    return body.error ?? err.message;
+  } catch {
+    return err.message || fallback;
+  }
+}
+
 /** Active demo role; mutations attach it so route handlers can record the actor. */
 let currentRole: UserRole = "inspector";
 export function setActiveRole(role: UserRole): void {
@@ -176,10 +193,25 @@ export const getInspection = (id: string) =>
   jsonReq<InspectionWithJobs>(`/api/inspections/${id}`);
 export const listUsers = () =>
   jsonReq<{ users: User[] }>("/api/users").then((r) => r.users);
-export const runInspectionNow = (type: InspectionType = "daily", reason?: string) =>
+export const createUser = (body: {
+  name: string;
+  username: string;
+  password: string;
+  role: UserRole;
+  airportId?: string;
+}) =>
+  post<{ user: User }>("/api/users", { ...body, actor: actor() }).then((r) => r.user);
+export const deleteUser = (id: string) =>
+  del<{ ok: boolean }>(`/api/users/${id}`, { actor: actor() });
+export const runInspectionNow = (
+  type: InspectionType = "daily",
+  reason?: string,
+  trigger?: SpecialTrigger,
+) =>
   post<{ inspection: Inspection }>("/api/inspections/run-now", {
     type,
     reason,
+    trigger,
     actor: actor(),
   }).then((r) => r.inspection);
 
@@ -210,8 +242,10 @@ export const signInspection = (inspectionId: string, signatureName: string) =>
 
 // ── Runways / issues ──────────────────────────────────────────────────────────
 
-export const getRunway = (id: string) =>
-  jsonReq<RunwayWithIssues>(`/api/runways/${id}`);
+export const getRunway = (id: string, inspectionId?: string) =>
+  jsonReq<RunwayWithIssues>(
+    `/api/runways/${id}${inspectionId ? `?inspectionId=${encodeURIComponent(inspectionId)}` : ""}`,
+  );
 export const getIssue = (id: string) =>
   jsonReq<{ issue: IssueCandidate }>(`/api/issues/${id}`).then((r) => r.issue);
 
@@ -250,6 +284,45 @@ export const listZones = (runwayId: string) =>
   jsonReq<{ zones: Zone[] }>(
     `/api/zones?runwayId=${encodeURIComponent(runwayId)}`,
   ).then((r) => r.zones);
+
+export const listKeepOutZones = (params: { runwayId?: string; airportId?: string; activeOnly?: boolean }) => {
+  const qs = new URLSearchParams();
+  if (params.runwayId) qs.set("runwayId", params.runwayId);
+  if (params.airportId) qs.set("airportId", params.airportId);
+  if (params.activeOnly) qs.set("activeOnly", "1");
+  return jsonReq<{ keepOutZones: KeepOutZone[] }>(`/api/keep-out-zones?${qs}`).then((r) => r.keepOutZones);
+};
+
+export const createKeepOutZone = (body: {
+  airportId: string;
+  runwayId: string;
+  name: string;
+  polygon: LngLat[];
+  reason?: string;
+  stationStartM?: number;
+  stationEndM?: number;
+}) =>
+  post<{ keepOutZone: KeepOutZone }>("/api/keep-out-zones", { ...body, actor: actor() }).then(
+    (r) => r.keepOutZone,
+  );
+
+export const updateKeepOutZone = (
+  id: string,
+  patch_: {
+    name?: string;
+    reason?: string;
+    polygon?: LngLat[];
+    stationStartM?: number;
+    stationEndM?: number;
+    active?: boolean;
+  },
+) =>
+  patch<{ keepOutZone: KeepOutZone }>(`/api/keep-out-zones/${id}`, { ...patch_, actor: actor() }).then(
+    (r) => r.keepOutZone,
+  );
+
+export const deleteKeepOutZone = (id: string) =>
+  del<{ ok: boolean }>(`/api/keep-out-zones/${id}`, { actor: actor() });
 
 // ── Fleet ─────────────────────────────────────────────────────────────────────
 
@@ -311,7 +384,14 @@ export const createAirport = (body: {
 
 export const updateAirport = (
   id: string,
-  patch: { name?: string; code?: string; location?: string; timezone?: string },
+  patch: {
+    name?: string;
+    code?: string;
+    location?: string;
+    timezone?: string;
+    centerLat?: number;
+    centerLng?: number;
+  },
 ) =>
   jsonReq<{ airport: Airport }>("/api/airports", {
     method: "PATCH",
@@ -335,6 +415,7 @@ export const createZone = (body: {
   stationStartM?: number;
   stationEndM?: number;
   notes?: string;
+  polygon: LngLat[];
 }) =>
   post<{ zone: Zone }>("/api/zones", { ...body, actor: actor() }).then(
     (r) => r.zone,
@@ -345,6 +426,9 @@ export const createSchedule = (body: {
   time: string;
   window?: InspectionWindow;
   enabled?: boolean;
+  frequency?: ScheduleFrequency;
+  inspectionType?: ScheduleInspectionType;
+  label?: string;
 }) =>
   post<{ schedule: { id: string } }>("/api/schedules", {
     ...body,
@@ -373,14 +457,18 @@ export const deleteRunway = (id: string) =>
 
 export const updateZone = (
   id: string,
-  patch_: { name?: string; stationStartM?: number; stationEndM?: number; notes?: string },
+  patch_: { name?: string; stationStartM?: number; stationEndM?: number; notes?: string; polygon?: LngLat[] },
 ) =>
   patch<{ zone: Zone }>(`/api/zones/${id}`, { ...patch_, actor: actor() }).then(
     (r) => r.zone,
   );
 
-export const deleteZone = (id: string) =>
-  del<{ ok: boolean }>(`/api/zones/${id}`, { actor: actor() });
+export const deleteZone = (id: string, opts?: { reassignToZoneId?: string }) => {
+  const qs = opts?.reassignToZoneId
+    ? `?reassignToZoneId=${encodeURIComponent(opts.reassignToZoneId)}`
+    : "";
+  return del<{ ok: boolean }>(`/api/zones/${id}${qs}`, { actor: actor() });
+};
 
 export const listSchedules = (airportId: string) =>
   jsonReq<{ schedules: InspectionSchedule[] }>(
@@ -389,7 +477,13 @@ export const listSchedules = (airportId: string) =>
 
 export const updateSchedule = (
   id: string,
-  patch_: { time?: string; window?: InspectionWindow; enabled?: boolean },
+  patch_: {
+    time?: string;
+    window?: InspectionWindow;
+    enabled?: boolean;
+    frequency?: ScheduleFrequency;
+    label?: string;
+  },
 ) =>
   patch<{ schedule: InspectionSchedule }>(`/api/schedules/${id}`, {
     ...patch_,

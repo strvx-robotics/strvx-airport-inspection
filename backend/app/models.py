@@ -14,6 +14,8 @@ class Airport(_Camel):
     code: str
     location: str = ""
     timezone: str = ""
+    center_lat: float | None = None
+    center_lng: float | None = None
     created_at: str
 
 
@@ -121,6 +123,7 @@ class Inspection(_Camel):
     scheduled_time: str
     window: str
     type: str = "daily"
+    trigger: str | None = None
     reason: str | None = None
     status: str
     started_at: str | None = None
@@ -186,12 +189,29 @@ class Zone(_Camel):
     created_at: str
 
 
+class KeepOutZone(_Camel):
+    id: str
+    airport_id: str
+    runway_id: str
+    name: str
+    reason: str | None = None
+    polygon: list[LngLat] | None = None
+    station_start_m: float | None = None
+    station_end_m: float | None = None
+    active: bool
+    created_by: str | None = None
+    created_at: str
+
+
 class InspectionSchedule(_Camel):
     id: str
     airport_id: str
     time: str
     window: str
     enabled: bool
+    frequency: str = "daily"
+    inspection_type: str = "daily"
+    label: str | None = None
     created_by: str | None = None
     created_at: str
 

@@ -1,108 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Feature, FeatureCollection, Geometry, Point } from "geojson";
-import type { IssueCandidate, LngLat, Runway, Ticket, Zone } from "@/lib/types";
-import {
-  issuePosition,
-  runwayAnchor,
-  runwayRect,
-  zoneRect,
-} from "@/lib/runwayGeom";
+import type { Runway } from "@/lib/types";
+import { runwayAnchor } from "@/lib/runwayGeom";
 import { basemapStyle } from "./mapStyle";
-import { issuePinProperties, ticketForIssue } from "./issuePinStyle";
 
-const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
-const ring = (pts: LngLat[]): [number, number][] => pts.map(pos);
-const RUNWAY_MIN_ZOOM = 13.2;
-const RUNWAY_MAX_ZOOM = 17.6;
+const pos = (p: { lat: number; lng: number }): [number, number] => [p.lng, p.lat];
 
-const fc = (features: Feature<Geometry>[]): FeatureCollection => ({
-  type: "FeatureCollection",
-  features,
-});
-
-function buildSources(runway: Runway, issues: IssueCandidate[], tickets: Ticket[], zones: Zone[]) {
-  const surface = runwayRect(runway);
-
-  const surfaceFC = fc(
-    surface ? [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring(surface)] } }] : [],
-  );
-  const zonesFC = fc(
-    zones
-      .map((z) => {
-        const r = zoneRect(runway, z);
-        return r
-          ? ({
-              type: "Feature",
-              properties: { name: z.name },
-              geometry: { type: "Polygon", coordinates: [ring(r)] },
-            } as Feature<Geometry>)
-          : null;
-      })
-      .filter((f): f is Feature<Geometry> => f != null),
-  );
-  const pinsFC = fc(
-    issues
-      .map((i) => {
-        const p = issuePosition(runway, i);
-        if (!p) return null;
-        const pin = issuePinProperties(runway, i, ticketForIssue(i, tickets));
-        return {
-          type: "Feature",
-          properties: {
-            id: i.id,
-            ...pin,
-          },
-          geometry: { type: "Point", coordinates: pos(p) },
-        } as Feature<Geometry>;
-      })
-      .filter((f): f is Feature<Geometry> => f != null),
-  );
-
-  // Fit bounds across runway surface + every pin.
-  const bounds = new maplibregl.LngLatBounds();
-  for (const c of surface ?? []) bounds.extend(pos(c));
-  for (const f of pinsFC.features) bounds.extend((f.geometry as Point).coordinates as [number, number]);
-
-  return { surfaceFC, zonesFC, pinsFC, bounds };
-}
-
+/** Satellite reference map only — no drawn overlays. See frontend/docs.md § Map policy. */
 export default function RunwayMap({
   runway,
-  issues,
-  tickets,
-  zones,
   heightClass = "h-[420px]",
 }: {
   runway: Runway;
-  issues: IssueCandidate[];
-  tickets: Ticket[];
-  zones: Zone[];
   heightClass?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const boundsRef = useRef<maplibregl.LngLatBounds | null>(null);
-  const router = useRouter();
   const [failed, setFailed] = useState(false);
 
   const anchor = runwayAnchor(runway);
-  const sig = `${runway.id}|${issues.map((i) => {
-    const ticket = ticketForIssue(i, tickets);
-    return `${i.id}@${i.severity}/${i.status}/${ticket?.status ?? "-"}`;
-  }).join(",")}|${zones.map((z) => z.id).join(",")}`;
+  const sig = `${runway.id}|${runway.thresholdLat}|${runway.thresholdLng}`;
 
   const recenter = () => {
     const map = mapRef.current;
-    const bounds = boundsRef.current;
-    if (map && bounds && !bounds.isEmpty()) {
-      map.fitBounds(bounds, { padding: 56, maxZoom: 16.8, duration: 450, essential: true });
-    }
+    if (map && anchor) map.easeTo({ center: pos(anchor), zoom: 15, duration: 450, essential: true });
   };
 
   useEffect(() => {
@@ -115,8 +40,8 @@ export default function RunwayMap({
         style: basemapStyle,
         center: pos(anchor),
         zoom: 15,
-        minZoom: RUNWAY_MIN_ZOOM,
-        maxZoom: RUNWAY_MAX_ZOOM,
+        minZoom: 12,
+        maxZoom: 18,
         attributionControl: { compact: true },
         dragRotate: false,
         cooperativeGestures: false,
@@ -128,64 +53,10 @@ export default function RunwayMap({
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
-    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
-
-    map.on("load", () => {
-      const { surfaceFC, zonesFC, pinsFC, bounds } = buildSources(runway, issues, tickets, zones);
-
-      map.addSource("surface", { type: "geojson", data: surfaceFC });
-      map.addSource("zones", { type: "geojson", data: zonesFC });
-      map.addSource("pins", { type: "geojson", data: pinsFC });
-
-      map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#5b6166", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#3f4448", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [3, 2] } });
-      map.addLayer({
-        id: "pins",
-        type: "circle",
-        source: "pins",
-        paint: {
-          "circle-radius": ["get", "radius"],
-          "circle-color": ["get", "fill"],
-          "circle-stroke-color": ["get", "stroke"],
-          "circle-stroke-width": ["get", "strokeWidth"],
-          "circle-opacity": ["get", "alpha"],
-          "circle-stroke-opacity": ["get", "alpha"],
-        },
-      });
-
-      if (!bounds.isEmpty()) {
-        boundsRef.current = bounds;
-        const sw = bounds.getSouthWest();
-        const ne = bounds.getNorthEast();
-        const lngPad = Math.max((ne.lng - sw.lng) * 1.5, 0.025);
-        const latPad = Math.max((ne.lat - sw.lat) * 1.5, 0.018);
-        map.setMaxBounds([
-          [sw.lng - lngPad, sw.lat - latPad],
-          [ne.lng + lngPad, ne.lat + latPad],
-        ]);
-        map.fitBounds(bounds, { padding: 56, maxZoom: 16.8, duration: 0 });
-      }
-
-      map.on("mouseenter", "pins", (e) => {
-        map.getCanvas().style.cursor = "pointer";
-        const f = e.features?.[0];
-        if (f) popup.setLngLat((f.geometry as Point).coordinates as [number, number]).setText(String(f.properties?.label ?? "")).addTo(map);
-      });
-      map.on("mouseleave", "pins", () => {
-        map.getCanvas().style.cursor = "";
-        popup.remove();
-      });
-      map.on("click", "pins", (e) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (id) router.push(`/issue/${id}`);
-      });
-    });
-
-    map.on("error", () => {/* tile/network errors are non-fatal — geometry still renders */});
+    map.on("error", () => {/* tile/network errors are non-fatal */});
 
     return () => {
       mapRef.current = null;
-      boundsRef.current = null;
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +66,7 @@ export default function RunwayMap({
     return (
       <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#dbdfe3] bg-[#f3f5f7] text-center`}>
         <p className="px-6 text-[12px] text-[#6b7176]">
-          No map geometry for this runway yet — add a threshold anchor to place it.
+          No threshold anchor for this runway — add coordinates in Admin.
         </p>
       </div>
     );

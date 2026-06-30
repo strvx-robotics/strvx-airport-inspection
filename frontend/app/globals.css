@@ -166,6 +166,21 @@
   .valanor-data-grid .valanor-status-cell span {
     color: inherit !important;
   }
+  .valanor-data-grid .valanor-action-cell {
+    align-items: center !important;
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .valanor-data-grid .valanor-action-cell .ag-cell-wrapper,
+  .valanor-data-grid .valanor-action-cell .ag-cell-value,
+  .valanor-data-grid .valanor-action-cell .ag-react-container {
+    align-items: center !important;
+    display: flex !important;
+    height: 100% !important;
+    justify-content: center !important;
+    width: 100% !important;
+  }
 }
 
 /* Print only the work-order sheet ("Save PDF" on the issue-review preview). */

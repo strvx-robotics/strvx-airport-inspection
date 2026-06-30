@@ -29,7 +29,13 @@ async def patch_airport(request: Request) -> dict:
     if not body.get("id"):
         raise AppError("id is required")
     airport = await repo.update_airport(
-        body["id"], body.get("name"), body.get("code"), body.get("location"), body.get("timezone")
+        body["id"],
+        body.get("name"),
+        body.get("code"),
+        body.get("location"),
+        body.get("timezone"),
+        body.get("centerLat"),
+        body.get("centerLng"),
     )
     return {"airport": dump(airport)}
 

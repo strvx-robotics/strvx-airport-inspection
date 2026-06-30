@@ -194,19 +194,28 @@ const u = <T>(v: T | null | undefined): T | undefined => v ?? undefined;
 const gps = (lat: Num, lng: Num): LngLat | undefined =>
   lat == null || lng == null ? undefined : { lat, lng };
 
-interface AirportRow { id: string; name: string; code: string; location: Str; timezone: Str; created_at: string }
+interface AirportRow { id: string; name: string; code: string; location: Str; timezone: Str; center_lat: Num; center_lng: Num; created_at: string }
 interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; runway_polygon_json: Str; map_status: Str; active_status: Str; created_at: string }
 interface ZoneRow { id: string; runway_id: string; name: string; station_start_m: Num; station_end_m: Num; polygon_json: Str; notes: Str; created_at: string }
-interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; type: string; reason: Str; status: string; started_at: Str; completed_at: Str; signed_by: Str; signed_at: Str; signature_name: Str; attestation: number; created_by: Str; created_at: string }
+interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; type: string; trigger: Str; reason: Str; status: string; started_at: Str; completed_at: Str; signed_by: Str; signed_at: Str; signature_name: Str; attestation: number; created_by: Str; created_at: string }
 interface JobRow { id: string; inspection_id: string; runway_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
-interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; created_by: Str; created_at: string }
+interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; frequency: string; inspection_type: string; label: Str; created_by: Str; created_at: string }
 interface ImageRow { id: string; job_id: Str; runway_id: string; zone_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
 interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; created_by: Str; created_at: string; zone_name?: Str; image_url?: Str }
 interface TicketRow { id: string; issue_id: string; runway_id: string; zone_id: Str; zone: Str; category: string; status: string; description: string; severity: string; assigned_to: Str; created_by: Str; maintenance_notes: string; created_at: string; repaired_at: Str; closed_at: Str; zone_name?: Str }
 interface UserRow { id: string; username: string; name: string; role: string; airport_id: Str; created_at: string }
 
 function toAirport(r: AirportRow): Airport {
-  return { id: r.id, name: r.name, code: r.code, location: r.location ?? "", timezone: r.timezone ?? "", createdAt: r.created_at };
+  return {
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    location: r.location ?? "",
+    timezone: r.timezone ?? "",
+    centerLat: u(r.center_lat),
+    centerLng: u(r.center_lng),
+    createdAt: r.created_at,
+  };
 }
 function toRunway(r: RunwayRow): Runway {
   return {
@@ -230,13 +239,13 @@ function toZone(r: ZoneRow): Zone {
   return { id: r.id, runwayId: r.runway_id, name: r.name, stationStartM: u(r.station_start_m), stationEndM: u(r.station_end_m), polygon: r.polygon_json ? (JSON.parse(r.polygon_json) as LngLat[]) : undefined, notes: u(r.notes), createdAt: r.created_at };
 }
 function toInspection(r: InspectionRow): Inspection {
-  return { id: r.id, airportId: r.airport_id, scheduledTime: r.scheduled_time, window: r.window as InspectionWindow, type: (u(r.type) as Inspection["type"]) ?? "daily", reason: u(r.reason), status: r.status as Inspection["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), signedBy: u(r.signed_by), signedAt: u(r.signed_at), signatureName: u(r.signature_name), attestation: r.attestation === 1, createdBy: u(r.created_by), createdAt: r.created_at };
+  return { id: r.id, airportId: r.airport_id, scheduledTime: r.scheduled_time, window: r.window as InspectionWindow, type: (u(r.type) as Inspection["type"]) ?? "daily", trigger: u(r.trigger) as Inspection["trigger"], reason: u(r.reason), status: r.status as Inspection["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), signedBy: u(r.signed_by), signedAt: u(r.signed_at), signatureName: u(r.signature_name), attestation: r.attestation === 1, createdBy: u(r.created_by), createdAt: r.created_at };
 }
 function toJob(r: JobRow): InspectionJob {
   return { id: r.id, inspectionId: r.inspection_id, runwayId: r.runway_id, status: r.status as InspectionJob["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), imageCount: r.image_count, issueCount: r.issue_count, createdAt: r.created_at };
 }
 function toSchedule(r: ScheduleRow): InspectionSchedule {
-  return { id: r.id, airportId: r.airport_id, time: r.time, window: r.window as InspectionWindow, enabled: r.enabled === 1, createdBy: u(r.created_by), createdAt: r.created_at };
+  return { id: r.id, airportId: r.airport_id, time: r.time, window: r.window as InspectionWindow, enabled: r.enabled === 1, frequency: (u(r.frequency) as InspectionSchedule["frequency"]) ?? "daily", inspectionType: (u(r.inspection_type) as InspectionSchedule["inspectionType"]) ?? "daily", label: u(r.label), createdBy: u(r.created_by), createdAt: r.created_at };
 }
 function toImage(r: ImageRow): Image {
   return { id: r.id, jobId: u(r.job_id), runwayId: r.runway_id, zoneId: u(r.zone_id), fileUrl: r.file_url, gps: gps(r.gps_lat, r.gps_lng), stationM: u(r.station_m), lateralOffsetM: u(r.lateral_offset_m), geomConfidence: r.geom_confidence as GeomConfidence, timestamp: r.timestamp, sourceFile: u(r.source_file), metadata: r.metadata_json ? (JSON.parse(r.metadata_json) as Record<string, unknown>) : undefined, createdAt: r.created_at };
@@ -351,13 +360,60 @@ export async function createAirport(input: { name: string; code: string; locatio
 }
 export async function updateAirport(
   id: string,
-  patch: { name?: string; code?: string; location?: string; timezone?: string },
+  patch: {
+    name?: string;
+    code?: string;
+    location?: string;
+    timezone?: string;
+    centerLat?: number;
+    centerLng?: number;
+  },
 ): Promise<Airport> {
-  const cols: Array<[string, string | undefined]> = [
+  const existing = await getAirport(id);
+  if (!existing) throw new Error(`Airport not found: ${id}`);
+
+  const centerLat = patch.centerLat;
+  const centerLng = patch.centerLng;
+  if (centerLat != null && centerLng != null) {
+    // Reposition runway geometry only on a genuine airport switch — a center
+    // more than ~1 km from where the runways currently sit. Smaller deltas are
+    // coordinate refinements and must not wipe a mapped airport's data.
+    const MOVE_THRESHOLD_DEG = 0.01;
+    const anchor = await one<{ lat: Num; lng: Num }>(
+      `SELECT AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng FROM runways
+       WHERE airport_id = ? AND threshold_lat IS NOT NULL AND threshold_lng IS NOT NULL`,
+      [id],
+    );
+    const shouldReposition =
+      anchor?.lat == null ||
+      anchor.lng == null ||
+      Math.abs(anchor.lat - centerLat) > MOVE_THRESHOLD_DEG ||
+      Math.abs(anchor.lng - centerLng) > MOVE_THRESHOLD_DEG;
+
+    if (shouldReposition) {
+      const runways = await listRunways(id);
+      for (let i = 0; i < runways.length; i++) {
+        const offset = i * 0.0003;
+        await run(
+          `UPDATE runways SET threshold_lat = ?, threshold_lng = ?, runway_polygon_json = NULL, map_status = 'draft' WHERE id = ?`,
+          [centerLat + offset, centerLng, runways[i].id],
+        );
+      }
+      await run(`DELETE FROM keep_out_zones WHERE airport_id = ?`, [id]);
+      await run(
+        `UPDATE zones SET polygon_json = NULL WHERE runway_id IN (SELECT id FROM runways WHERE airport_id = ?)`,
+        [id],
+      );
+    }
+  }
+
+  const cols: Array<[string, string | number | undefined]> = [
     ["name", patch.name],
     ["code", patch.code],
     ["location", patch.location],
     ["timezone", patch.timezone],
+    ["center_lat", patch.centerLat],
+    ["center_lng", patch.centerLng],
   ];
   const sets = cols.filter(([, v]) => v !== undefined);
   if (sets.length) {
@@ -408,11 +464,18 @@ export async function getZone(id: string): Promise<Zone | undefined> {
   const r = await one<ZoneRow>("SELECT * FROM zones WHERE id = ?", [id]);
   return r ? toZone(r) : undefined;
 }
-export async function createZone(input: { runwayId: string; name: string; stationStartM?: number; stationEndM?: number; notes?: string }): Promise<Zone> {
+export async function createZone(input: {
+  runwayId: string;
+  name: string;
+  stationStartM?: number;
+  stationEndM?: number;
+  notes?: string;
+  polygon: LngLat[];
+}): Promise<Zone> {
   const id = gid("zone");
   await run(
-    `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.runwayId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, input.notes ?? null, now()],
+    `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, polygon_json, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, input.runwayId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, JSON.stringify(input.polygon), input.notes ?? null, now()],
   );
   return (await getZone(id))!;
 }
@@ -435,11 +498,24 @@ export async function listSchedules(airportId?: string): Promise<InspectionSched
     : await all<ScheduleRow>("SELECT * FROM inspection_schedules ORDER BY time");
   return rows.map(toSchedule);
 }
-export async function createSchedule(input: { airportId: string; time: string; window?: InspectionWindow; enabled?: boolean; actor?: Actor }): Promise<InspectionSchedule> {
+export async function createSchedule(input: {
+  airportId: string;
+  time: string;
+  window?: InspectionWindow;
+  enabled?: boolean;
+  inspectionType?: InspectionSchedule["inspectionType"];
+  frequency?: InspectionSchedule["frequency"];
+  label?: string;
+  actor?: Actor;
+}): Promise<InspectionSchedule> {
   const id = gid("sch");
+  const inspectionType = input.inspectionType ?? "daily";
+  // Daily passes always recur daily; only periodic surveillance carries a cadence.
+  const frequency = inspectionType === "daily" ? "daily" : input.frequency ?? "monthly";
+  const label = (input.label ?? "").trim() || null;
   await run(
-    `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.airportId, input.time, input.window ?? "daylight", input.enabled === false ? 0 : 1, await actorName(input.actor), now()],
+    `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, frequency, inspection_type, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, input.airportId, input.time, input.window ?? "daylight", input.enabled === false ? 0 : 1, frequency, inspectionType, label, await actorName(input.actor), now()],
   );
   const r = await one<ScheduleRow>("SELECT * FROM inspection_schedules WHERE id = ?", [id]);
   return toSchedule(r!);
@@ -962,8 +1038,84 @@ const REPORT_CATEGORY: Record<string, string> = {
   marking: "Runway marking",
   lighting: "Lighting / signage",
 };
+const REPORT_REVIEW_STATUSES = new Set(["pending", "manual_review"]);
+const REPORT_ACTIVE_TICKET_STATUSES = new Set([
+  "draft",
+  "sent",
+  "in_progress",
+  "repaired",
+  "reinspected",
+]);
 const titleCase = (s: string): string =>
   s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+function summarizeReportRunway(entry: InspectionReport["runways"][number]) {
+  const reviewCount = entry.issues.filter((issue) => REPORT_REVIEW_STATUSES.has(issue.status)).length;
+  const approvedCount = entry.issues.filter((issue) => issue.status === "approved").length;
+  const openTickets = entry.tickets.filter((ticket) => REPORT_ACTIVE_TICKET_STATUSES.has(ticket.status)).length;
+  const closedTickets = entry.tickets.filter((ticket) => ticket.status === "closed").length;
+  const state =
+    reviewCount > 0
+      ? { label: `${reviewCount} awaiting review`, tone: "amber", priority: 0 }
+      : openTickets > 0
+        ? { label: `${openTickets} active ticket${openTickets === 1 ? "" : "s"}`, tone: "blue", priority: 1 }
+        : entry.issues.length > 0
+          ? { label: "Reviewed", tone: "green", priority: 2 }
+          : { label: "Clear", tone: "green", priority: 3 };
+  return { ...entry, ...state, reviewCount, approvedCount, openTickets, closedTickets };
+}
+
+function inspectionObjectiveHtml(input: {
+  allComplete: boolean;
+  remainingChecklist: number;
+  signedAt?: string;
+  reviewQueue: number;
+  activeTickets: number;
+  attentionRunways: number;
+  totalRunways: number;
+  totalIssues: number;
+}) {
+  if (!input.allComplete) {
+    return {
+      title: "Finish the inspection checklist",
+      detail: `${input.remainingChecklist} checklist item${input.remainingChecklist === 1 ? "" : "s"} still need a response before sign-off unlocks.`,
+      tone: "amber",
+    };
+  }
+  if (!input.signedAt) {
+    return {
+      title: "Capture inspector sign-off",
+      detail: "Checklist is complete. Record the inspector attestation to finalize this pass.",
+      tone: "blue",
+    };
+  }
+  if (input.reviewQueue > 0) {
+    return {
+      title: "Work the findings queue",
+      detail: `${input.reviewQueue} candidate${input.reviewQueue === 1 ? "" : "s"} still require review across ${input.attentionRunways} runway${input.attentionRunways === 1 ? "" : "s"}.`,
+      tone: "amber",
+    };
+  }
+  if (input.activeTickets > 0) {
+    return {
+      title: "Track active remediation",
+      detail: `${input.activeTickets} ticket${input.activeTickets === 1 ? "" : "s"} remain open from this inspection.`,
+      tone: "blue",
+    };
+  }
+  if (input.totalIssues === 0) {
+    return {
+      title: "Inspection is clear",
+      detail: `All ${input.totalRunways} runway${input.totalRunways === 1 ? "" : "s"} were inspected with no findings recorded.`,
+      tone: "green",
+    };
+  }
+  return {
+    title: "Inspection record is in good shape",
+    detail: "Checklist, sign-off, and runway findings are all documented.",
+    tone: "green",
+  };
+}
 
 /** Clean, light, print-ready HTML inspection report (PRD §14). Dark ink on
  *  white with a no-print toolbar — Cmd/Ctrl-P saves a legible PDF. */
@@ -981,25 +1133,75 @@ export function renderReportHtml(report: InspectionReport): string {
     }
   };
 
-  const sections = report.runways
+  const checklistComplete = report.checklist.filter((item) => item.result).length;
+  const checklistRemaining = Math.max(0, report.checklist.length - checklistComplete);
+  const allChecklistComplete = report.checklist.length > 0 && checklistComplete === report.checklist.length;
+  const runwaySummaries = report.runways
+    .map(summarizeReportRunway)
+    .sort(
+      (a, b) =>
+        a.priority - b.priority ||
+        b.reviewCount - a.reviewCount ||
+        b.openTickets - a.openTickets ||
+        b.issues.length - a.issues.length ||
+        a.runway.name.localeCompare(b.runway.name),
+    );
+  const findingRunways = runwaySummaries.filter((entry) => entry.issues.length > 0);
+  const clearRunways = runwaySummaries.filter((entry) => entry.issues.length === 0);
+  const reviewQueue = runwaySummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
+  const activeTickets = runwaySummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
+  const attentionRunways = runwaySummaries.filter((entry) => entry.reviewCount > 0 || entry.openTickets > 0).length;
+  const objective = inspectionObjectiveHtml({
+    allComplete: allChecklistComplete,
+    remainingChecklist: checklistRemaining,
+    signedAt: report.inspection.signedAt,
+    reviewQueue,
+    activeTickets,
+    attentionRunways,
+    totalRunways: report.runways.length,
+    totalIssues: report.totals.issues,
+  });
+
+  const summaryText =
+    report.totals.issues === 0
+      ? "This pass is clear. No runway findings or work orders were generated."
+      : `${report.totals.issues} finding${report.totals.issues === 1 ? "" : "s"} were recorded across ${findingRunways.length} runway${findingRunways.length === 1 ? "" : "s"}. ${
+          reviewQueue > 0
+            ? `${reviewQueue} candidate${reviewQueue === 1 ? "" : "s"} still need review.`
+            : "All findings have already been dispositioned."
+        }`;
+
+  const sections = findingRunways
     .map((r) => {
-      const body = r.issues.length
-        ? `<table><thead><tr><th>Category</th><th>Zone</th><th>Confidence</th><th>Severity</th><th>Status</th></tr></thead><tbody>${r.issues
-            .map(
-              (i) =>
-                `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td></tr>`,
-            )
-            .join("")}</tbody></table>`
-        : `<p class="none">No issues found.</p>`;
-      return `<section><h3>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h3>${body}</section>`;
+      const body = `<div class="runway-metrics">
+        <div><span class="metric-label">Awaiting review</span><strong>${r.reviewCount}</strong></div>
+        <div><span class="metric-label">Approved</span><strong>${r.approvedCount}</strong></div>
+        <div><span class="metric-label">Active tickets</span><strong>${r.openTickets}</strong></div>
+        <div><span class="metric-label">Closed tickets</span><strong>${r.closedTickets}</strong></div>
+      </div>
+      <table><thead><tr><th>Category</th><th>Zone</th><th>Confidence</th><th>Severity</th><th>Status</th></tr></thead><tbody>${r.issues
+        .map(
+          (i) =>
+            `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td></tr>`,
+        )
+        .join("")}</tbody></table>`;
+      return `<section class="runway-card"><div class="runway-head"><div><h3>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h3><p class="section-copy">${r.issues.length} finding${r.issues.length === 1 ? "" : "s"} logged. ${r.reviewCount > 0 ? `${r.reviewCount} still need review.` : "All findings have already been reviewed."}</p></div><span class="pill pill-${r.tone}">${esc(r.label)}</span></div>${body}</section>`;
     })
     .join("");
+  const clearRunwaySection = clearRunways.length
+    ? `<details class="clear-runways"><summary>Clear runways <span>${clearRunways.length}</span></summary><div class="clear-grid">${clearRunways
+        .map(
+          (r) =>
+            `<article class="clear-card"><h4>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h4><p>No findings were recorded on this runway during the selected pass.</p></article>`,
+        )
+        .join("")}</div></details>`
+    : "";
 
   const resultLabel = (res: string): string => (res === "na" ? "N/A" : titleCase(res));
   const imageUrl = (id: string | null | undefined): string =>
     id ? (report.images.find((i) => i.id === id)?.fileUrl ?? "") : "";
   const checklistSection = report.checklist.length
-    ? `<section><h3>Daily self-inspection checklist</h3><table><thead><tr><th>Item</th><th>Result</th><th>Notes</th><th>Evidence</th></tr></thead><tbody>${report.checklist
+    ? `<section class="checklist-section"><div class="section-head"><div><p class="eyebrow">Required before sign-off</p><h3>Daily self-inspection checklist</h3></div><span class="pill pill-${allChecklistComplete ? "green" : "amber"}">${allChecklistComplete ? "Complete" : `${checklistRemaining} remaining`}</span></div><table><thead><tr><th>Item</th><th>Result</th><th>Notes</th><th>Evidence</th></tr></thead><tbody>${report.checklist
         .map(
           (c) =>
             `<tr><td><strong>${esc(c.label)}</strong></td><td>${c.result ? esc(resultLabel(c.result)) : "—"}</td><td>${esc(c.notes || "")}</td><td>${c.imageId ? `<a href="${esc(imageUrl(c.imageId))}">${esc(imageUrl(c.imageId).split("/").pop() ?? c.imageId)}</a>` : "—"}</td></tr>`,
@@ -1009,7 +1211,7 @@ export function renderReportHtml(report: InspectionReport): string {
   const assetSource = (asset: AirportReportAsset): string =>
     `<p class="source">Source: <a href="${esc(asset.sourceUrl)}">${esc(asset.sourceName)}</a> · Retrieved ${esc(asset.retrievedAt)}${asset.licenseNote ? ` · ${esc(asset.licenseNote)}` : ""}<br>Cached in app: <code>${esc(asset.publicPath)}</code></p>`;
   const assetSection = assets
-    ? `<section><h3>Airport reference assets</h3><div class="asset-grid">${
+    ? `<section><div class="section-head"><div><p class="eyebrow">Reference assets</p><h3>Airport source material</h3></div></div><div class="asset-grid">${
         assets.terminalMap
           ? `<article class="asset-card"><h4>${esc(assets.terminalMap.label)}</h4><img class="asset-img" src="${esc(assets.terminalMap.publicPath)}" alt="${esc(assets.terminalMap.label)}">${assetSource(assets.terminalMap)}</article>`
           : ""
@@ -1026,49 +1228,96 @@ export function renderReportHtml(report: InspectionReport): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inspection report — ${esc(report.airport.code)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;max-width:800px;margin:2.5rem auto;color:#181b1e;background:#fff;padding:0 1.5rem}
+  body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;max-width:980px;margin:2.5rem auto;color:#181b1e;background:#fff;padding:0 1.5rem}
   .toolbar{display:flex;justify-content:flex-end;margin-bottom:1.25rem}
   button{font:inherit;font-weight:600;padding:.45rem .9rem;border:1px solid #c7cdd2;border-radius:6px;background:#f3f5f7;color:#181b1e;cursor:pointer}
   button:hover{background:#eef1f4}
-  header{border-bottom:2px solid #181b1e;padding-bottom:.85rem;margin-bottom:.5rem}
+  header{border:1px solid #dbdfe3;border-radius:10px;overflow:hidden;margin-bottom:1rem}
+  .hero{padding:1.3rem 1.4rem;background:linear-gradient(135deg,#f8fafb 0%,#eef1f4 100%);border-bottom:1px solid #dbdfe3}
   .brand{display:flex;gap:1rem;align-items:flex-start}
   .airport-logo{width:210px;max-width:42%;height:auto;object-fit:contain;margin-top:.15rem}
   h1{font-size:22px;margin:0 0 .3rem}
   .meta{color:#5b6166;font-size:13px;margin:.1rem 0}
-  .totals{margin:.7rem 0 0;font-weight:600}
-  section{border-top:1px solid #dbdfe3;padding:1.1rem 0;break-inside:avoid}
-  h3{font-size:15px;margin:0 0 .6rem}
+  .status-row{display:flex;flex-wrap:wrap;gap:.45rem}
+  .pill{display:inline-flex;align-items:center;justify-content:center;padding:.28rem .6rem;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+  .pill-blue{background:#e0e9f3;color:#2f5b85;border:1px solid #bcd0e4}
+  .pill-green{background:#e4efe8;color:#356b4c;border:1px solid #bcd6c4}
+  .pill-amber{background:#f5ecd7;color:#866018;border:1px solid #e2cfa0}
+  .pill-gray{background:#e9ecef;color:#4f5358;border:1px solid #cdd2d7}
+  .summary-copy{margin:.85rem 0 0;max-width:52rem;color:#3f4448}
+  .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#dbdfe3}
+  .summary-card{background:#fbfcfd;padding:1rem}
+  .summary-card strong{display:block;margin-top:.2rem;font:600 22px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .summary-card span{display:block;margin-top:.4rem;color:#6b7176;font-size:11px}
+  .workspace{display:grid;gap:1rem;grid-template-columns:minmax(0,1.7fr) minmax(290px,.95fr);align-items:start;margin-bottom:1rem}
+  .objective{position:sticky;top:1rem;border:1px solid #dbdfe3;border-radius:10px;overflow:hidden}
+  .objective-head{padding:1rem;background:#fbfcfd;border-bottom:1px solid #dbdfe3}
+  .eyebrow{font:700 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:#6b7176}
+  .objective h2{font-size:16px;margin:.5rem 0 0}
+  .objective p{margin:.6rem 0 0;color:#5b6166;font-size:12px}
+  .step-list{margin:0;padding:1rem;list-style:none;background:#fbfcfd}
+  .step-list li{display:flex;justify-content:space-between;gap:.75rem;padding:.45rem .75rem;border:1px solid #dbdfe3;border-radius:8px;background:#f7f9fa}
+  .step-list li+li{margin-top:.45rem}
+  .step-value{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;color:#5b6166}
+  .section-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.75rem}
+  section{border:1px solid #dbdfe3;border-radius:10px;padding:1rem;background:#fff;break-inside:avoid}
+  h3{font-size:15px;margin:0}
+  .section-copy{margin:.4rem 0 0;color:#6b7176;font-size:12px}
   .desig{color:#6b7176;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7176;border-bottom:1px solid #c7cdd2;padding:.35rem .5rem}
   td{padding:.4rem .5rem;border-bottom:1px solid #eef1f4;vertical-align:top}
   tr:last-child td{border-bottom:none}
   .none{color:#6b7176;margin:.25rem 0}
+  .runway-card{margin-top:1rem}
+  .runway-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.75rem}
+  .runway-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#dbdfe3;border-radius:8px;overflow:hidden;margin-bottom:.9rem}
+  .runway-metrics div{padding:.75rem;background:#fbfcfd}
+  .metric-label{display:block;font:700 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#6b7176}
+  .runway-metrics strong{display:block;margin-top:.35rem;font:600 18px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .clear-runways{margin-top:1rem;border:1px solid #dbdfe3;border-radius:10px;background:#fbfcfd}
+  .clear-runways summary{display:flex;justify-content:space-between;gap:1rem;padding:1rem;cursor:pointer;font-weight:600}
+  .clear-runways summary span{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;color:#5b6166}
+  .clear-grid{display:grid;gap:.75rem;padding:0 1rem 1rem}
+  .clear-card{border:1px solid #e4eaee;border-radius:8px;padding:.85rem;background:#f7f9fa}
+  .clear-card h4{margin:0 0 .35rem;font-size:13px}
+  .clear-card p{margin:0;color:#6b7176;font-size:12px}
   .asset-grid{display:grid;gap:.85rem}
   .asset-card{border:1px solid #dbdfe3;border-radius:6px;padding:.85rem;break-inside:avoid}
   .asset-card h4{font-size:13px;margin:0 0 .45rem}
   .asset-img{display:block;width:100%;max-height:420px;object-fit:contain;border:1px solid #eef1f4;background:#f8fafb}
   .source{color:#6b7176;font-size:11px;margin:.5rem 0 0}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
-  @media print{body{margin:0;max-width:none;padding:0}.toolbar{display:none}}
+  @media (max-width:900px){.workspace,.summary-grid,.runway-metrics{grid-template-columns:1fr}.objective{position:static}.brand{flex-direction:column}.airport-logo{max-width:240px;width:100%}}
+  @media print{body{margin:0;max-width:none;padding:0}.toolbar{display:none}.workspace{grid-template-columns:1fr}.objective{position:static}}
 </style>
 </head><body>
 <div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
 <header>
-  <div class="brand">
-    ${assets?.logo ? `<img class="airport-logo" src="${esc(assets.logo.publicPath)}" alt="${esc(report.airport.name)} logo">` : ""}
-    <div>
-      <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
-      <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
-      <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
-      ${signoff}
-      <p class="totals">${report.totals.issues} issue(s) · ${report.totals.ticketsOpen} ticket(s) open · ${report.totals.ticketsCompleted} completed</p>
+  <div class="hero">
+    <div class="brand">
+      ${assets?.logo ? `<img class="airport-logo" src="${esc(assets.logo.publicPath)}" alt="${esc(report.airport.name)} logo">` : ""}
+      <div>
+        <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
+        <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
+        <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
+        ${signoff}
+        <p class="summary-copy">${esc(summaryText)}</p>
+      </div>
     </div>
   </div>
+  <div class="summary-grid">
+    <div class="summary-card"><div class="eyebrow">Checklist</div><strong>${report.checklist.length === 0 ? "N/A" : `${checklistComplete}/${report.checklist.length}`}</strong><span>${report.checklist.length === 0 ? "No self-check items on this pass" : allChecklistComplete ? "Ready for sign-off" : `${checklistRemaining} remaining`}</span></div>
+    <div class="summary-card"><div class="eyebrow">Runways scanned</div><strong>${report.runways.length}</strong><span>${findingRunways.length > 0 ? `${findingRunways.length} produced findings` : "No findings recorded"}</span></div>
+    <div class="summary-card"><div class="eyebrow">Awaiting review</div><strong>${reviewQueue}</strong><span>${reviewQueue > 0 ? `Across ${attentionRunways} runway${attentionRunways === 1 ? "" : "s"}` : "No unresolved candidates"}</span></div>
+    <div class="summary-card"><div class="eyebrow">Tickets open</div><strong>${report.totals.ticketsOpen}</strong><span>${report.totals.ticketsCompleted > 0 ? `${report.totals.ticketsCompleted} completed` : "No maintenance queue yet"}</span></div>
+  </div>
 </header>
-${checklistSection}
-${assetSection}
-${sections}
+<div class="workspace">
+  <div>${checklistSection}${assetSection}</div>
+  <aside class="objective"><div class="objective-head"><p class="eyebrow">Inspection objective</p><h2>${esc(objective.title)}</h2><p>${esc(objective.detail)}</p></div><ul class="step-list"><li><span>Checklist</span><span class="step-value">${report.checklist.length === 0 ? "Not required" : allChecklistComplete ? "Complete" : `${checklistRemaining} remaining`}</span></li><li><span>Sign-off</span><span class="step-value">${report.inspection.signedAt ? "Recorded" : allChecklistComplete ? "Ready now" : "Blocked"}</span></li><li><span>Findings queue</span><span class="step-value">${reviewQueue > 0 ? `${reviewQueue} to review` : activeTickets > 0 ? `${activeTickets} active` : "Clear"}</span></li></ul></aside>
+</div>
+<section><div class="section-head"><div><p class="eyebrow">Runway findings</p><h3>Findings by runway</h3><p class="section-copy">Runways with findings stay expanded in review order. Fully clear runways are tucked below so the working queue stays visible without losing audit coverage.</p></div><div class="status-row"><span class="pill pill-${reviewQueue > 0 ? "amber" : "green"}">${reviewQueue > 0 ? `${reviewQueue} to review` : "Review queue clear"}</span><span class="pill pill-${activeTickets > 0 ? "blue" : "green"}">${activeTickets > 0 ? `${activeTickets} active` : "No active tickets"}</span></div></div>${sections || `<p class="none">No runway findings recorded.</p>`}${clearRunwaySection}</section>
 </body></html>`;
 }
 

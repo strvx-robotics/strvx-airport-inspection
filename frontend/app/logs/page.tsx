@@ -1,22 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ScrollText, Download } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ScrollText, Download, Rocket } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
-import { useOverview } from "@/lib/store";
+import LaunchInspectionModal from "@/components/LaunchInspectionModal";
+import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
 import type { Inspection } from "@/lib/types";
 import { fmtInTz } from "@/lib/format";
-import { INSPECTION_STATUS, INSPECTION_TYPE, INSPECTION_WINDOW } from "@/lib/ui";
+import { INSPECTION_STATUS, INSPECTION_TYPE, INSPECTION_WINDOW, SPECIAL_TRIGGER } from "@/lib/ui";
 import { cn } from "@/lib/cn";
-import { CARD, BAR, EYEBROW, H2, INPUT, MUTED } from "@/lib/vstyle";
+import { BTN_PRIMARY, CARD, BAR, EYEBROW, H2, INPUT, MUTED } from "@/lib/vstyle";
 
 type Counts = { images: number; issues: number };
 
 /** Inspection log - one row per daily pass, with that day's results + report. */
 export default function LogsPage() {
-  const { overview, loading } = useOverview();
+  const { overview, loading, refresh } = useOverview();
+  const { role } = useStore();
+  const router = useRouter();
+  const [launching, setLaunching] = useState(false);
   const [counts, setCounts] = useState<Record<string, Counts>>({});
+  const canLaunch = role === "inspector" || role === "admin";
 
   const inspections = useMemo(() => overview?.inspections ?? [], [overview?.inspections]);
   const tz = overview?.airport.timezone;
@@ -115,10 +121,14 @@ export default function LogsPage() {
         valueGetter: ({ data }) => {
           if (!data) return "";
           const type = data.type ?? "daily";
-          return INSPECTION_TYPE[type]?.label ?? "Daily";
+          const label = INSPECTION_TYPE[type]?.label ?? "Daily";
+          if (type === "special" && data.trigger) {
+            return `${label} · ${SPECIAL_TRIGGER[data.trigger].label}`;
+          }
+          return label;
         },
         cellClass: "text-[12px] text-[#3f4448]",
-        minWidth: 150,
+        minWidth: 180,
       },
       {
         colId: "window",
@@ -179,11 +189,32 @@ export default function LogsPage() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-6">
-      <header>
-        <p className={EYEBROW}>Valanor · Inspection log</p>
-        <h1 className={cn("mt-2 flex items-center gap-2", H2)}>
-          <ScrollText size={17} strokeWidth={2} className="text-[#5b6166]" /> Inspection log
-        </h1>
+      {launching && (
+        <LaunchInspectionModal
+          onClose={() => setLaunching(false)}
+          onLaunched={(inspection) => {
+            setLaunching(false);
+            void refresh();
+            router.push(`/inspection/${inspection.id}`);
+          }}
+        />
+      )}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className={EYEBROW}>Valanor · Inspection log</p>
+          <h1 className={cn("mt-2 flex items-center gap-2", H2)}>
+            <ScrollText size={17} strokeWidth={2} className="text-[#5b6166]" /> Inspection log
+          </h1>
+        </div>
+        {canLaunch && (
+          <button
+            type="button"
+            onClick={() => setLaunching(true)}
+            className={cn("h-9 px-3.5 text-[12px]", BTN_PRIMARY)}
+          >
+            <Rocket size={14} strokeWidth={2} /> Launch inspection
+          </button>
+        )}
       </header>
 
       <section className={cn("mt-6 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md", CARD)}>

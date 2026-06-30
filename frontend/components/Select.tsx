@@ -51,19 +51,25 @@ export default function Select<T extends string>({
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
     const onDoc = (e: MouseEvent) => {
       if (btnRef.current?.contains(e.target as Node)) return;
       if (menuRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
+    const onScroll = (e: Event) => {
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (btnRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onResize = () => setOpen(false);
     document.addEventListener("mousedown", onDoc);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
     return () => {
       document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 
@@ -133,7 +139,7 @@ export default function Select<T extends string>({
             role="listbox"
             aria-label={ariaLabel}
             style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width }}
-            className="z-[60] max-h-60 overflow-auto rounded-md border border-[#d3d7da] bg-white p-1 shadow-[0_10px_28px_rgba(11,13,14,0.14)]"
+            className="z-[120] max-h-60 overflow-auto rounded-md border border-[#d3d7da] bg-white p-1 shadow-[0_10px_28px_rgba(11,13,14,0.14)]"
           >
             {options.map((o, i) => {
               const isSel = o.value === value;

@@ -2,6 +2,10 @@
 // into real map coordinates (centerline, zone rectangles, station projection).
 // Pure; depends only on geo.ts. Heading falls back to the runway designation
 // ("08 – 26" → 080°) when threshold_heading_deg isn't stored.
+//
+// Map policy: these helpers are for operational/station math only. Do NOT use
+// them to draw polygons, pins, or overlays on the satellite map UI — see
+// frontend/docs.md § Map policy.
 
 import type { IssueCandidate, LngLat, Runway, Zone } from "./types";
 import { bearingBetween, destinationPoint, distanceM, toRad } from "./geo";

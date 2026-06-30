@@ -13,6 +13,7 @@
 //   npm run db:bootstrap
 
 import { getPool, one, run, tx } from "../lib/db";
+import { SEED_ZONE_ANCHORS, zoneSeedPolygon } from "../lib/zoneSeedPolygons";
 
 const now = (): string => new Date().toISOString();
 
@@ -27,9 +28,11 @@ async function main(): Promise<void> {
   await tx(async () => {
     const ts = now();
 
+    // Center matches the US airport directory's AGS coordinate exactly so the
+    // Admin → General form isn't spuriously "dirty" against the directory pick.
     await run(
-      `INSERT INTO airports (id, name, code, location, timezone, org_id, created_at)
-       VALUES ('ags', 'Augusta Regional', 'AGS', 'Augusta, GA', 'America/New_York', NULL, ?)`,
+      `INSERT INTO airports (id, name, code, location, timezone, center_lat, center_lng, org_id, created_at)
+       VALUES ('ags', 'Augusta Regional', 'AGS', 'Augusta, GA', 'America/New_York', 33.3699, -81.9645, NULL, ?)`,
       [ts],
     );
 
@@ -62,18 +65,17 @@ async function main(): Promise<void> {
       { lat: 33.3689, lng: -81.9583 },
     ]);
 
-    const insZone = (id: string, runwayId: string, name: string, start: number, end: number) =>
-      run(
-        `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, notes, created_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-        [id, runwayId, name, start, end, ts],
+    const insZone = (id: string, runwayId: string, name: string, start: number, end: number) => {
+      const anchor = SEED_ZONE_ANCHORS[id];
+      return run(
+        `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, polygon_json, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+        [id, runwayId, name, start, end, zoneSeedPolygon(anchor.lat, anchor.lng), ts],
       );
-    await insZone("z_r1_a", "r1", "Zone A · threshold", 0, 800);
-    await insZone("z_r1_b", "r1", "Zone B · midfield", 800, 1600);
-    await insZone("z_r2_a", "r2", "Zone A · threshold", 0, 600);
-    await insZone("z_r2_b", "r2", "Zone B · midfield", 600, 1200);
-    await insZone("z_r3_a", "r3", "Zone A · threshold", 0, 500);
-    await insZone("z_r3_b", "r3", "Zone B · midfield", 500, 1000);
+    };
+    await insZone("z_r1", "r1", "Runway 1 zone", 0, 2439);
+    await insZone("z_r2", "r2", "Runway 2 zone", 0, 1829);
+    await insZone("z_r3", "r3", "Runway 3 zone", 0, 1524);
 
     await run(
       `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, created_by, created_at)
@@ -82,7 +84,7 @@ async function main(): Promise<void> {
     );
   });
 
-  console.log("✓ Augusta Regional config created: airport, 3 runways, 6 zones, 6 AM schedule");
+  console.log("✓ Augusta Regional config created: airport, 3 runways, 3 zones, 6 AM schedule");
   console.log("  No inspections / images / issues / tickets — those are real and start empty.");
   await getPool().end();
 }

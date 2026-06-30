@@ -3,14 +3,12 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { ChevronLeft, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
 import Badge from "@/components/Badge";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import RunwayImage from "@/components/RunwayImage";
 import { useRunwayDetail } from "@/lib/store";
-import * as api from "@/lib/api";
-import type { IssueCandidate, Zone } from "@/lib/types";
+import type { IssueCandidate } from "@/lib/types";
 import { CATEGORY, DECISION, confidenceBand, pct } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, BTN, H2, MUTED, LINK } from "@/lib/vstyle";
@@ -89,20 +87,9 @@ const columns: DataTableColumn<IssueCandidate>[] = [
 export default function RunwayDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { runway, issues, tickets, loading } = useRunwayDetail(id);
-  const [zones, setZones] = useState<Zone[]>([]);
-
-  useEffect(() => {
-    let live = true;
-    api.listZones(id).then((z) => live && setZones(z)).catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [id]);
+  const { runway, issues, loading } = useRunwayDetail(id);
 
   if (!runway) return loading ? <Loading /> : <NotFound />;
-
-  const completedTickets = tickets.filter((t) => t.status === "repaired" || t.status === "closed").length;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
@@ -116,21 +103,16 @@ export default function RunwayDetail() {
         </h1>
       </header>
 
-      {/* Runway map — real issue-GPS pins + zone overlays over satellite imagery. */}
+      {/* Satellite reference only — no drawn overlays. See frontend/docs.md § Map policy. */}
       <section className={cn("mt-6 overflow-hidden rounded-md", CARD)}>
         <div className={cn("flex items-center justify-between px-4 py-3", BAR)}>
           <h3 className="flex items-center gap-2 text-[13px] font-semibold text-[#181b1e]">
-            <MapIcon size={14} strokeWidth={2} /> Runway map
+            <MapIcon size={14} strokeWidth={2} /> Runway reference
           </h3>
-          <p className={cn("flex items-center gap-3 text-[12px]", MUTED)}>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-[#181b1e]" /> issue
-            </span>
-            <span>{issues.length} located · {completedTickets} complete</span>
-          </p>
+          <p className={cn("text-[12px]", MUTED)}>{issues.length} issue{issues.length === 1 ? "" : "s"}</p>
         </div>
         <div className="p-3">
-          <RunwayMap runway={runway} issues={issues} tickets={tickets} zones={zones} />
+          <RunwayMap runway={runway} />
         </div>
       </section>
 
