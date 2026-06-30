@@ -785,10 +785,10 @@ flowchart TB
 
 | Module | Regulatory basis | Retention | Shipped today | In inspection PDF | Planned |
 | --- | --- | --- | --- | --- | --- |
-| **1. Self-Inspection Suite** | 14 CFR §139.327 | 12 calendar months | Partial | Yes | Expand |
+| **1. Self-Inspection Suite** | 14 CFR §139.327 | 12 calendar months | **Built** — daily, special (event-triggered), and periodic surveillance all supported | Yes | Auto-cadence runs |
 | Daily runway / taxiway / apron checks | §139.327(a) | 12 mo | **Built** — scheduled daily pass, movement-area checklist, inspector sign-off, PDF/CSV/HTML export | Checklist, attestation, runway findings | Per-airport checklist templates |
 | Special inspection reports | §139.327(b) — unusual conditions | 12 mo | **Built** — `special` type with a structured trigger taxonomy (weather, aircraft incident, construction, complaint, wildlife, other) + condition notes; Launch-inspection modal on the Logs page; legacy `unusual`/`accident` retained | Type + trigger + reason on cover and inspection record | Auto-launch hooks from weather/incident feeds |
-| Periodic surveillance | §139.327(c) — weekly/monthly/quarterly | 12 mo | **Partial** — `periodic` type launchable ad-hoc with a surveillance description | Type + description on report | Recurring weekly/monthly/quarterly cadence + fuel-farm / friction-test templates |
+| Periodic surveillance | §139.327(c) — weekly/monthly/quarterly | 12 mo | **Built** — `periodic` type launchable ad-hoc; admin can define weekly/monthly/quarterly surveillance schedules with a description and quick-pick templates (fuel farm, friction, lighting, signage, pavement, wildlife); daily-only slot uniqueness so periodic checks can share a time | Type + description on report | Auto-generate the next periodic inspection record when a cadence comes due |
 | **2. Corrective Action & Work Orders** | §139.327(d) reporting system | 12 mo (with inspection) | Partial | Yes | Expand |
 | Discrepancy logs | Prompt correction of unsafe conditions | 12 mo | **Built** — AI findings → issue candidates → approve/reject with actor audit trail | Per-runway discrepancy table with severity, status, evidence | Standalone discrepancy register export |
 | Work order integration | Airport maintenance system | 12 mo | **Partial** — in-app ticket lifecycle; external CMMS handoff planned | Corrective Action Log with work order ID, status, notes | Aeros Simple / email / CMMS API |
@@ -840,3 +840,32 @@ A Part 139 pilot airport can demonstrate:
 4. Inspector identity recorded on sign-off and status history (audit trail).
 5. *(P2)* Training compliance visible per inspector; NOTAM suggested when condition affects operations.
 6. *(P3)* SMS hazard register with 36-month retention for qualifying airports.
+
+### 17.7 Continuation Notes — Resume Here Next Session
+
+**Done so far (Module 1 — Self-Inspection Suite: complete)**
+
+- **Special inspections** — `special` inspection type + trigger taxonomy (weather, aircraft_incident, construction, complaint, wildlife, other) on `inspections.trigger`. Launch via the "Launch inspection" modal on `/logs` (`components/LaunchInspectionModal.tsx`). Trigger shown on the PDF cover + record, logs table, and inspection detail. Legacy `unusual`/`accident` retained.
+- **Periodic surveillance** — `inspection_schedules` gained `frequency` (daily/weekly/monthly/quarterly), `inspection_type` (daily/periodic), and `label`. Admin **Schedule** section split into "Daily passes" vs "Periodic surveillance" with cadence badges + quick-pick templates (`lib/surveillanceTemplates.ts`). Daily-only partial unique index so periodic checks can share a time slot.
+
+**Next up (pick one):**
+
+1. **Module 3 — Personnel Training Records (recommended; self-contained, 24-mo retention).**
+   - New `training_records` table: `id, user_id, airport_id, kind` (initial/recurrent), `topic` (airfield familiarization, NOTAM, emergency plan, etc.), `completed_at`, `expires_at` (completed_at + 12 mo), `note`, `created_by`, `created_at`.
+   - Backend: `repo/training.py` (CRUD + `expiring_soon`), routes in `routers/writes.py` + a read in `routers/reads.py`.
+   - Frontend: new admin **Training** section (or a tab under Users) — per-user training table, add-record form, an expiry/compliance dashboard (overdue = red, due ≤60d = amber). Surface "training current" on the Users table.
+   - Retention: keep ≥24 months; no auto-purge yet (flag only).
+2. **Module 2 — Closed-loop discrepancy register** — standalone export of discovery→repair→close across inspections (reuses `ticket_status_history`).
+3. **Module 4 — Airport Condition Report + NOTAM assist** — generate suggested NOTAM language from open discrepancies (RCAM for snow/ice).
+4. **Module 5 — SMS** — hazard/risk/mitigation logs (36-mo retention).
+5. **Module 1 polish** — auto-generate the next periodic inspection record when a cadence comes due (needs a scheduler/cron; none exists yet — schedules are config only).
+
+**End-to-end pattern to follow (used for both features above):**
+`backend/app/constants.py` (enums) → `models.py` → `repo/*.py` → `routers/writes.py`+`reads.py` → schema in **`frontend/lib/db.ts`** (CREATE + `ADDITIVE_MIGRATIONS`) and `backend/tests/schema.sql` → frontend `lib/types.ts`, `lib/repo.ts`, `lib/ui.ts`, `lib/api.ts` → UI → `lib/reportPdf.ts` if it belongs on the report → `npx tsc --noEmit` → `npm run db:setup` (applies migration).
+
+**Gotchas / reminders:**
+- After any schema change, run `npm run db:setup` from `frontend/` (idempotent; requires approval — it writes to the live DB).
+- `frontend/app/admin/page.tsx` is large and often open in the editor; `tsc` can show transient errors mid-edit. Re-run before acting.
+- Backend dedup/uniqueness is intentionally daily-only (`idx_schedules_daily_slot` partial index); keep periodic rows exempt.
+- Verification artifacts may linger in the dev DB (a sample special inspection + two periodic schedules) — harmless, deletable from the UI.
+- Models extend the camelCase `_Camel` base, so new snake_case columns serialize automatically; remember to add the field to the `to_*` mapper and the matching `*Row` interface in `frontend/lib/repo.ts`.
