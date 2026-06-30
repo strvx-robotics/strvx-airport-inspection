@@ -28,7 +28,9 @@ import {
   pct,
 } from "@/lib/ui";
 import { CHECKLIST_RESULTS, type ChecklistResult } from "@/lib/types";
+import { evaluateCompleteness } from "@/lib/compliance";
 import { cn } from "@/lib/cn";
+import { CheckCircle2, CircleDashed } from "lucide-react";
 import {
   CARD,
   BAR,
@@ -156,6 +158,18 @@ export default function InspectionPage() {
   const completed = checklist.filter((item) => item.result).length;
   const allComplete = checklist.length > 0 && completed === checklist.length;
   const remainingChecklist = Math.max(0, checklist.length - completed);
+  // Is the report a complete, final compliance record (checklist answered +
+  // attestation signed + completion time)? Drives the export-readiness indicator.
+  const completeness = evaluateCompleteness({
+    checklistTotal: checklist.length,
+    checklistAnswered: completed,
+    signedAt: insp.signedAt,
+    attestation: insp.attestation,
+    completedAt: insp.completedAt,
+  });
+  const exportBlockedTitle = completeness.isFinal
+    ? "Final compliance record export is available."
+    : `Export blocked: ${completeness.missing.join(", ")}. Complete the checklist and sign the inspector attestation first.`;
   const runwaySummaries = runways
     .map(summarizeRunway)
     .sort(
@@ -306,20 +320,68 @@ export default function InspectionPage() {
           <ChevronLeft size={15} strokeWidth={2} /> Inspection log
         </Link>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <a href={api.reportUrl(id, "csv")} className={cn("h-8 px-3 text-[12px]", BTN)}>
-            Export CSV
-          </a>
-          <a href={api.reportUrl(id, "pdf")} className={cn("h-8 px-3 text-[12px]", BTN)}>
-            <Download size={14} strokeWidth={2} /> Download PDF
-          </a>
-          <a
-            href={api.reportUrl(id, "html")}
-            target="_blank"
-            rel="noreferrer"
-            className={cn("h-8 px-3 text-[12px]", BTN)}
+          <span
+            title={
+              completeness.isFinal
+                ? "All checklist items answered and the inspector attestation is signed. The PDF is a final compliance record."
+                : `Not yet a final record: ${completeness.missing.join(", ")}. Export is blocked until this inspection is signed.`
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] font-medium",
+              completeness.isFinal
+                ? "border-[#bfe0cb] bg-[#eef7f1] text-[#2c6b46]"
+                : "border-[#ecdcb9] bg-[#fbf6ec] text-[#8a6516]",
+            )}
           >
-            Open HTML report <ArrowUpRight size={14} strokeWidth={2} />
-          </a>
+            {completeness.isFinal ? (
+              <CheckCircle2 size={13} strokeWidth={2.2} />
+            ) : (
+              <CircleDashed size={13} strokeWidth={2.2} />
+            )}
+            {completeness.isFinal ? "Final record — ready to download" : "Draft — not final yet"}
+          </span>
+          {completeness.isFinal ? (
+            <>
+              <a href={api.reportUrl(id, "csv")} className={cn("h-8 px-3 text-[12px]", BTN)}>
+                Export CSV
+              </a>
+              <a href={api.reportUrl(id, "pdf")} className={cn("h-8 px-3 text-[12px]", BTN)}>
+                <Download size={14} strokeWidth={2} /> Download PDF
+              </a>
+              <a
+                href={api.reportUrl(id, "html")}
+                target="_blank"
+                rel="noreferrer"
+                className={cn("h-8 px-3 text-[12px]", BTN)}
+              >
+                Open HTML report <ArrowUpRight size={14} strokeWidth={2} />
+              </a>
+            </>
+          ) : (
+            <>
+              <span
+                aria-disabled="true"
+                title={exportBlockedTitle}
+                className={cn("h-8 cursor-not-allowed px-3 text-[12px] opacity-50", BTN)}
+              >
+                Export CSV
+              </span>
+              <span
+                aria-disabled="true"
+                title={exportBlockedTitle}
+                className={cn("h-8 cursor-not-allowed px-3 text-[12px] opacity-50", BTN)}
+              >
+                <Download size={14} strokeWidth={2} /> Download PDF
+              </span>
+              <span
+                aria-disabled="true"
+                title={exportBlockedTitle}
+                className={cn("h-8 cursor-not-allowed px-3 text-[12px] opacity-50", BTN)}
+              >
+                Open HTML report <ArrowUpRight size={14} strokeWidth={2} />
+              </span>
+            </>
+          )}
         </div>
       </div>
 

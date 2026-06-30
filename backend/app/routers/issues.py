@@ -59,3 +59,14 @@ async def edit(id: str, request: Request) -> dict:
     patch = {k: body.get(k) for k in ("category", "severity", "draft", "notes")}
     issue = await repo.edit_issue(id, patch, actor_from(request, body))
     return {"issue": dump(issue), "diff": await repo.get_issue_draft_diff(id)}
+
+
+@router.post("/issues/{id}/record")
+async def compliance_record(id: str, request: Request) -> dict:
+    """Set the Part 139 "conditions found" / "corrective action taken" overrides
+    for a discrepancy. Allowed at any status (these are finalized after approval)."""
+    body = await _json(request)
+    issue = await repo.set_compliance_record(
+        id, body.get("conditionsFound"), body.get("correctiveAction"), actor_from(request, body)
+    )
+    return {"issue": dump(issue)}

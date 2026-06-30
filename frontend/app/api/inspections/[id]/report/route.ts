@@ -3,6 +3,7 @@
 import { getInspectionReport, renderReportCsv, renderReportHtml } from "@/lib/repo";
 import { renderReportPdf } from "@/lib/reportPdf";
 import { json, notFound, route, type RouteContext } from "@/lib/http";
+import { evaluateCompleteness } from "@/lib/compliance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,22 @@ export const GET = route<{ id: string }>(async (req, { params }: RouteContext<{ 
   if (!report) return notFound(`Inspection not found: ${id}`);
 
   const format = new URL(req.url).searchParams.get("format") ?? "json";
+  const finality = evaluateCompleteness({
+    checklistTotal: report.checklist.length,
+    checklistAnswered: report.checklist.filter((item) => item.result).length,
+    signedAt: report.inspection.signedAt,
+    attestation: report.inspection.attestation,
+    completedAt: report.inspection.completedAt,
+  });
+  if (format !== "json" && !finality.isFinal) {
+    return json(
+      {
+        error: `Export blocked: this inspection is not a final compliance record (${finality.missing.join(", ")}).`,
+        missing: finality.missing,
+      },
+      { status: 409 },
+    );
+  }
   if (format === "html") {
     return new Response(renderReportHtml(report), {
       headers: { "content-type": "text/html; charset=utf-8" },

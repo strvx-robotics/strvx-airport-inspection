@@ -49,6 +49,7 @@ export default function DataTable<T extends object>({
   label,
   height = 360,
   fill = false,
+  autoHeight = false,
   rowHeight = 58,
   rowHref,
   onRowClick,
@@ -61,6 +62,9 @@ export default function DataTable<T extends object>({
   label: string;
   height?: number | string;
   fill?: boolean;
+  // Size the grid to its rows (no internal scroll) instead of filling a fixed
+  // height. The page scrolls if the rows ever exceed the viewport.
+  autoHeight?: boolean;
   rowHeight?: number;
   rowHref?: (row: T) => string;
   onRowClick?: (row: T) => void;
@@ -99,7 +103,7 @@ export default function DataTable<T extends object>({
       role="region"
       aria-label={label}
       className={cn("valanor-data-grid min-h-0 overflow-hidden", fill && "flex-1", className)}
-      style={{ height: fill ? "100%" : height }}
+      style={{ height: autoHeight ? "auto" : fill ? "100%" : height }}
     >
       <AgGridReact<T>
         aria-label={label}
@@ -107,6 +111,7 @@ export default function DataTable<T extends object>({
         rowData={rows}
         columnDefs={columns}
         defaultColDef={defaultColDef}
+        domLayout={autoHeight ? "autoHeight" : "normal"}
         autoSizeStrategy={{ type: "fitGridWidth", defaultMinWidth: 64 }}
         getRowId={getRowId ? (params: GetRowIdParams<T>) => getRowId(params.data) : undefined}
         onRowClicked={rowHref || onRowClick ? handleRowClicked : undefined}

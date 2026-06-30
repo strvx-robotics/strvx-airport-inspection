@@ -171,8 +171,10 @@ export default function LogsPage() {
         colId: "report",
         headerName: "",
         sortable: false,
-        cellRenderer: ({ data }: { data?: Inspection }) =>
-          data ? (
+        cellRenderer: ({ data }: { data?: Inspection }) => {
+          if (!data) return null;
+          const ready = data.status === "completed" && Boolean(data.signedAt && data.attestation && data.completedAt);
+          return ready ? (
             <a
               href={api.reportUrl(data.id, "pdf")}
               onClick={(e) => e.stopPropagation()}
@@ -180,7 +182,15 @@ export default function LogsPage() {
             >
               PDF <Download size={13} strokeWidth={2} aria-hidden />
             </a>
-          ) : null,
+          ) : (
+            <span
+              title="PDF export unlocks after checklist completion and signed inspector attestation."
+              className="inline-flex cursor-not-allowed items-center gap-1 font-mono text-[11px] text-[#9aa1a6]"
+            >
+              PDF locked <Download size={13} strokeWidth={2} aria-hidden />
+            </span>
+          );
+        },
         minWidth: 110,
       },
     ],

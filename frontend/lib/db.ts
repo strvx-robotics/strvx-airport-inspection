@@ -339,6 +339,8 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
   rejection_note      TEXT,
   draft_edit_distance INTEGER,
   ticket_id           TEXT,
+  conditions_found    TEXT,
+  corrective_action   TEXT,
   created_by          TEXT,
   created_at          TEXT NOT NULL
 );
@@ -453,6 +455,10 @@ ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_at TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signature_name TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS attestation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE images ADD COLUMN IF NOT EXISTS created_by TEXT;
+-- Part 139 compliance record: inspector-editable "conditions found" /
+-- "corrective action taken" per discrepancy. NULL = render the derived default.
+ALTER TABLE issue_candidates ADD COLUMN IF NOT EXISTS conditions_found TEXT;
+ALTER TABLE issue_candidates ADD COLUMN IF NOT EXISTS corrective_action TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE inspection_schedules ADD COLUMN IF NOT EXISTS frequency TEXT NOT NULL DEFAULT 'daily';
 ALTER TABLE inspection_schedules ADD COLUMN IF NOT EXISTS inspection_type TEXT NOT NULL DEFAULT 'daily';

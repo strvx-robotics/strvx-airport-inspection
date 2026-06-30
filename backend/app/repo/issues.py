@@ -53,6 +53,8 @@ def _to_issue(r) -> IssueCandidate:
         rejection_note=r["rejection_note"],
         draft_edit_distance=r["draft_edit_distance"],
         ticket_id=r["ticket_id"],
+        conditions_found=r["conditions_found"],
+        corrective_action=r["corrective_action"],
         created_by=r["created_by"],
         created_at=r["created_at"],
     )
@@ -192,6 +194,40 @@ async def edit_issue(id: str, patch: dict, actor: Actor | None) -> IssueCandidat
             to_category=category if category_changed else None,
             note=(f"Recategorized {issue.category} → {category}" if category_changed else "Edited candidate"),
             actor=actor,
+        )
+    result = await get_issue(id)
+    assert result is not None
+    return result
+
+
+async def set_compliance_record(
+    id: str, conditions_found: str | None, corrective_action: str | None, actor: Actor | None
+) -> IssueCandidate:
+    """Set the Part 139 compliance fields ("conditions found" / "corrective action
+    taken") for a discrepancy. Unlike edit_issue this is allowed at any status
+    (the inspector finalizes these after a finding is approved into a work order).
+    Pass None to clear an override and fall back to the report's derived default;
+    an empty/whitespace string also clears it."""
+    issue = await get_issue(id)
+    if issue is None:
+        raise AppError(f"Issue not found: {id}")
+
+    def _norm(v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+    conditions = _norm(conditions_found)
+    corrective = _norm(corrective_action)
+    async with db.tx():
+        await db.run(
+            "UPDATE issue_candidates SET conditions_found = $1, corrective_action = $2 WHERE id = $3",
+            conditions, corrective, id,
+        )
+        await _append_issue_history(
+            id, "compliance_record", from_status=issue.status, to_status=issue.status,
+            note="Updated conditions found / corrective action", actor=actor,
         )
     result = await get_issue(id)
     assert result is not None

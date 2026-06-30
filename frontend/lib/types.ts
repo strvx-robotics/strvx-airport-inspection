@@ -372,6 +372,9 @@ export interface IssueCandidate {
   rejectionNote?: string;
   draftEditDistance?: number; // computed on approve (jsdiff)
   ticketId?: string;
+  // Part 139 compliance record (inspector-editable; null → derived default).
+  conditionsFound?: string | null;
+  correctiveAction?: string | null;
   createdBy?: string;
   createdAt: string;
 }

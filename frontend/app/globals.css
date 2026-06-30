@@ -119,6 +119,23 @@
   .valanor-data-grid .ag-right-aligned-header .ag-header-cell-label {
     justify-content: flex-end;
   }
+  .valanor-data-grid .ag-header-cell.valanor-severity-header,
+  .valanor-data-grid .ag-cell.valanor-severity-cell {
+    justify-content: center;
+    padding-top: 3px !important;
+    text-align: center;
+  }
+  .valanor-data-grid .ag-header-cell.valanor-severity-header .ag-cell-label-container,
+  .valanor-data-grid .ag-header-cell.valanor-severity-header .ag-header-cell-comp-wrapper,
+  .valanor-data-grid .valanor-severity-header .ag-header-cell-label {
+    justify-content: center;
+    width: 100%;
+  }
+  .valanor-data-grid .valanor-severity-cell .ag-cell-value,
+  .valanor-data-grid .valanor-severity-cell .ag-cell-wrapper {
+    justify-content: center;
+    padding-top: 3px;
+  }
   .valanor-data-grid .ag-sort-order {
     display: none !important;
   }
@@ -165,6 +182,10 @@
   .valanor-data-grid .valanor-status-cell .ag-cell-value,
   .valanor-data-grid .valanor-status-cell span {
     color: inherit !important;
+  }
+  .valanor-data-grid .valanor-confidence-cell strong {
+    font-weight: 700;
+    margin-left: 6px;
   }
   .valanor-data-grid .valanor-action-cell {
     align-items: center !important;

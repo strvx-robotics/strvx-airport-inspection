@@ -74,27 +74,32 @@ type RunwayLite = {
   activeStatus?: string;
 };
 
-const SECTIONS: { id: string; label: string; icon: LucideIcon; desc: string }[] = [
+const SECTIONS = [
   { id: "general", label: "General", icon: Building2, desc: "General information for this airfield." },
   { id: "users", label: "Users & access", icon: Users, desc: "People with access and the role that governs what they can do." },
   { id: "runways", label: "Runways & zones", icon: Route, desc: "Runways under inspection and the zones defined along each." },
   { id: "schedule", label: "Schedule", icon: CalendarClock, desc: "Daily self-inspection passes and periodic surveillance cadence." },
   { id: "data", label: "Data & export", icon: Database, desc: "Export reports from scheduled inspection passes." },
-];
+] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon; desc: string }>;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
+type SidebarInfo = { title: string; desc?: string; body: React.ReactNode };
+
+function isSectionId(value: string | null): value is SectionId {
+  return typeof value === "string" && SECTIONS.some((section) => section.id === value);
+}
 
 export default function AdminPage() {
   const { role } = useStore();
   const { overview, refresh } = useOverview();
-  const [active, setActive] = useState<string>("general");
+  const [active, setActive] = useState<SectionId>("general");
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section");
-    if (section && SECTIONS.some((s) => s.id === section)) setActive(section);
+    if (isSectionId(section)) setActive(section);
   }, []);
 
-  const selectSection = (id: string) => {
+  const selectSection = (id: SectionId) => {
     setActive(id);
     const url = id === "general" ? "/admin" : `/admin?section=${id}`;
     window.history.replaceState(null, "", url);
@@ -114,7 +119,7 @@ export default function AdminPage() {
   const runways: RunwayLite[] = overview?.runways.map((r) => r.runway) ?? [];
   const reload = () => void refresh();
 
-  const section = SECTIONS.find((s) => s.id === active);
+  const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
 
   return (
     <Shell>
@@ -139,8 +144,8 @@ export default function AdminPage() {
 
         <section className={cn("h-full min-h-0 min-w-0 overflow-hidden", CARD, "flex flex-col")}>
           <div className={cn("border-b border-[#dfe4e8] px-5 py-3.5", BAR)}>
-            <p className={EYEBROW}>{section?.label ?? "Section"}</p>
-            <p className="mt-1 text-[12px] text-[#5b6166]">{section?.desc}</p>
+            <p className={EYEBROW}>{section.label}</p>
+            <p className="mt-1 text-[12px] text-[#5b6166]">{section.desc}</p>
           </div>
           <div
             className={cn(
@@ -175,7 +180,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <InfoSidebar sectionId={active as SectionId} overview={overview} airport={airport} />
+        <InfoSidebar sectionId={active} overview={overview} airport={airport} />
       </div>
     </Shell>
   );
@@ -198,12 +203,18 @@ function InfoSidebar({
   overview?: Overview;
   airport?: Airport;
 }) {
-  const info =
-    sectionId === "general" && airport ? (
-      { title: "Setup & reference", desc: "Checklist for a complete inspection program, plus field definitions.", body: <GeneralInfoPanel overview={overview} airport={airport} /> }
-    ) : (
-      SECTION_INFO[sectionId as Exclude<SectionId, "general">]
-    );
+  const info: SidebarInfo =
+    sectionId === "general"
+      ? {
+          title: "Setup & reference",
+          desc: "Checklist for a complete inspection program, plus field definitions.",
+          body: airport ? (
+            <GeneralInfoPanel overview={overview} airport={airport} />
+          ) : (
+            <p className={cn("text-[13px]", MUTED)}>Loading airport setup…</p>
+          ),
+        }
+      : SECTION_INFO[sectionId];
   return (
     <aside
       className={cn(
@@ -520,10 +531,7 @@ const SCHEDULE_WINDOW_HELP: Record<InspectionWindow, string> = {
   dusk_lit: "Runs at dusk with runway lighting for low-light capture.",
 };
 
-const SECTION_INFO: Record<
-  Exclude<SectionId, "general">,
-  { title: string; desc?: string; body: React.ReactNode }
-> = {
+const SECTION_INFO: Record<Exclude<SectionId, "general">, SidebarInfo> = {
   users: {
     title: "Access levels",
     desc: "What each role can do. New members sign in with the username and password set here.",
@@ -1547,6 +1555,9 @@ function DataSection({
 
   const selected = sorted.find((i) => i.id === selectedId);
   const inspectionStatus = selected ? INSPECTION_STATUS[selected.status] : undefined;
+  const exportReady = Boolean(
+    selected?.status === "completed" && selected.signedAt && selected.attestation && selected.completedAt,
+  );
 
   useEffect(() => {
     if (!selectedId) {
@@ -1625,7 +1636,9 @@ function DataSection({
               <div>
                 <p className={EYEBROW}>Reports</p>
                 <p className={cn("mt-1 text-[12px]", MUTED)}>
-                  Human-readable and machine-readable exports for the selected pass.
+                  {exportReady
+                    ? "Human-readable and machine-readable exports for the selected final record."
+                    : "Exports unlock after the checklist is complete and the inspector attestation is signed."}
                 </p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {EXPORT_FORMATS.map((tile) => (
@@ -1634,6 +1647,7 @@ function DataSection({
                       label={tile.label}
                       desc={tile.desc}
                       icon={tile.icon}
+                      disabled={!exportReady}
                       onClick={() => setPreview(tile.format)}
                     />
                   ))}
@@ -1651,7 +1665,7 @@ function DataSection({
         </div>
       )}
 
-      {preview && previewConfig && selected && (
+      {preview && previewConfig && selected && exportReady && (
         <ExportPreviewModal
           url={api.reportUrl(selected.id, preview)}
           format={preview}
@@ -1670,18 +1684,22 @@ function ExportTile({
   label,
   desc,
   icon: Icon,
+  disabled = false,
   onClick,
 }: {
   label: string;
   desc: string;
   icon: LucideIcon;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className="group flex w-full flex-col gap-1 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-3 text-left transition-colors hover:border-[#b8c0c6] hover:bg-[#f3f5f7]"
+      title={disabled ? "Export blocked until this inspection is a signed final compliance record." : undefined}
+      className="group flex w-full flex-col gap-1 rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-3 text-left transition-colors hover:border-[#b8c0c6] hover:bg-[#f3f5f7] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[#dbdfe3] disabled:hover:bg-[#fbfcfd]"
     >
       <span className="flex items-center gap-2">
         <Icon

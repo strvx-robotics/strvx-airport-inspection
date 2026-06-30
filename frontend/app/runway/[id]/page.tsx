@@ -4,7 +4,6 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
-import Badge from "@/components/Badge";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import RunwayImage from "@/components/RunwayImage";
 import { useRunwayDetail } from "@/lib/store";
@@ -62,24 +61,29 @@ const columns: DataTableColumn<IssueCandidate>[] = [
     headerName: "Confidence",
     field: "confidence",
     sort: "desc",
+    cellClass: ({ data }) => {
+      const tone = data ? confidenceBand(data.confidence).tone : "gray";
+      return `valanor-status-cell valanor-confidence-cell valanor-status-${tone}`;
+    },
     cellRenderer: ({ data }: { data?: IssueCandidate }) => {
       if (!data) return null;
       const band = confidenceBand(data.confidence);
       return (
-        <div className="flex items-center gap-2">
-          <Badge tone={band.tone}>{band.label}</Badge>
-          <span className={cn("font-mono text-[12px] tabular-nums", MUTED)}>{pct(data.confidence)}</span>
-        </div>
+        <span>
+          {band.label} <strong>{pct(data.confidence)}</strong>
+        </span>
       );
     },
-    minWidth: 170,
+    minWidth: 190,
   },
   {
     colId: "status",
     headerName: "Status",
     valueGetter: ({ data }) => (data ? DECISION[data.status].label : ""),
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${data ? DECISION[data.status].tone : "gray"}`,
     cellRenderer: ({ data }: { data?: IssueCandidate }) =>
-      data ? <Badge tone={DECISION[data.status].tone}>{DECISION[data.status].label}</Badge> : null,
+      data ? <span>{DECISION[data.status].label}</span> : null,
     minWidth: 160,
   },
 ];

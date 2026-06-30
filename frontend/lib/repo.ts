@@ -44,6 +44,13 @@ import {
 } from "./types";
 import { STANDARD_CHECKLIST_ITEMS } from "./checklist";
 import { getAirportReportAssets, type AirportReportAsset } from "./airportAssets";
+import {
+  ATTESTATION_STATEMENT,
+  discrepancyConditionsFound,
+  discrepancyCorrectiveAction,
+  evaluateCompleteness,
+  workOrderStatusLabel,
+} from "./compliance";
 
 // ── Shared input shapes (route handlers type their calls against these) ────────
 
@@ -201,7 +208,7 @@ interface InspectionRow { id: string; airport_id: string; scheduled_time: string
 interface JobRow { id: string; inspection_id: string; runway_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
 interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; frequency: string; inspection_type: string; label: Str; created_by: Str; created_at: string }
 interface ImageRow { id: string; job_id: Str; runway_id: string; zone_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
-interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; created_by: Str; created_at: string; zone_name?: Str; image_url?: Str }
+interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; conditions_found: Str; corrective_action: Str; created_by: Str; created_at: string; zone_name?: Str; image_url?: Str }
 interface TicketRow { id: string; issue_id: string; runway_id: string; zone_id: Str; zone: Str; category: string; status: string; description: string; severity: string; assigned_to: Str; created_by: Str; maintenance_notes: string; created_at: string; repaired_at: Str; closed_at: Str; zone_name?: Str }
 interface UserRow { id: string; username: string; name: string; role: string; airport_id: Str; created_at: string }
 
@@ -260,6 +267,7 @@ function toIssue(r: IssueRow): IssueCandidate {
     lateralOffsetM: u(r.lateral_offset_m), sizeM: u(r.size_m), aiDraftText: r.ai_draft_text, draft: r.draft,
     inspectorNotes: r.inspector_notes, modelNotes: u(r.model_notes), rejectionReason: u(r.rejection_reason) as RejectionReason | undefined,
     rejectionNote: u(r.rejection_note), draftEditDistance: u(r.draft_edit_distance), ticketId: u(r.ticket_id),
+    conditionsFound: u(r.conditions_found) ?? null, correctiveAction: u(r.corrective_action) ?? null,
     createdBy: u(r.created_by), createdAt: r.created_at, imageUrl: r.image_url ? r.image_url : undefined,
   };
 }
@@ -1136,6 +1144,14 @@ export function renderReportHtml(report: InspectionReport): string {
   const checklistComplete = report.checklist.filter((item) => item.result).length;
   const checklistRemaining = Math.max(0, report.checklist.length - checklistComplete);
   const allChecklistComplete = report.checklist.length > 0 && checklistComplete === report.checklist.length;
+  const complete = evaluateCompleteness({
+    checklistTotal: report.checklist.length,
+    checklistAnswered: checklistComplete,
+    signedAt: report.inspection.signedAt,
+    attestation: report.inspection.attestation,
+    completedAt: report.inspection.completedAt,
+  });
+  const ticketByIssue = new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
   const runwaySummaries = report.runways
     .map(summarizeReportRunway)
     .sort(
@@ -1179,10 +1195,12 @@ export function renderReportHtml(report: InspectionReport): string {
         <div><span class="metric-label">Active tickets</span><strong>${r.openTickets}</strong></div>
         <div><span class="metric-label">Closed tickets</span><strong>${r.closedTickets}</strong></div>
       </div>
-      <table><thead><tr><th>Category</th><th>Zone</th><th>Confidence</th><th>Severity</th><th>Status</th></tr></thead><tbody>${r.issues
+      <table><thead><tr><th>Discrepancy</th><th>Location</th><th>Conf.</th><th>Severity</th><th>Finding status</th><th>Work order status</th><th>Conditions found</th><th>Corrective action taken</th></tr></thead><tbody>${r.issues
         .map(
-          (i) =>
-            `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td></tr>`,
+          (i) => {
+            const ticket = ticketByIssue.get(i.id);
+            return `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td><td>${ticket ? esc(workOrderStatusLabel(ticket.status)) : "—"}</td><td>${esc(discrepancyConditionsFound(i))}</td><td>${esc(discrepancyCorrectiveAction(i, ticket))}</td></tr>`;
+          },
         )
         .join("")}</tbody></table>`;
       return `<section class="runway-card"><div class="runway-head"><div><h3>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h3><p class="section-copy">${r.issues.length} finding${r.issues.length === 1 ? "" : "s"} logged. ${r.reviewCount > 0 ? `${r.reviewCount} still need review.` : "All findings have already been reviewed."}</p></div><span class="pill pill-${r.tone}">${esc(r.label)}</span></div>${body}</section>`;
@@ -1222,8 +1240,8 @@ export function renderReportHtml(report: InspectionReport): string {
       }</div></section>`
     : "";
   const signoff = report.inspection.signedAt
-    ? `<p class="meta">Signed off by ${esc(report.inspection.signatureName || report.inspection.signedBy || "—")} · ${esc(fmt(report.inspection.signedAt))}</p>`
-    : `<p class="meta">Not yet signed off</p>`;
+    ? `<p class="meta"><strong>Final compliance attestation:</strong> ${esc(ATTESTATION_STATEMENT)}</p><p class="meta">Signed by ${esc(report.inspection.signatureName || report.inspection.signedBy || "—")} · completed ${esc(fmt(report.inspection.completedAt || report.inspection.signedAt))} · attested ${esc(fmt(report.inspection.signedAt))}</p>`
+    : `<p class="meta"><strong>Not a final compliance record:</strong> ${esc(complete.missing.join(", "))}</p>`;
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inspection report — ${esc(report.airport.code)}</title>
 <style>
@@ -1299,7 +1317,7 @@ export function renderReportHtml(report: InspectionReport): string {
       ${assets?.logo ? `<img class="airport-logo" src="${esc(assets.logo.publicPath)}" alt="${esc(report.airport.name)} logo">` : ""}
       <div>
         <h1>${esc(report.airport.name)} · ${esc(report.airport.code)}</h1>
-        <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · status ${esc(titleCase(report.inspection.status))}</p>
+        <p class="meta">${esc(titleCase(report.inspection.type))} inspection · ${esc(fmt(report.inspection.scheduledTime))} · ${complete.isFinal ? "FINAL COMPLIANCE RECORD" : "INCOMPLETE RECORD"}</p>
         <p class="meta">Generated ${esc(fmt(report.generatedAt))}</p>
         ${signoff}
         <p class="summary-copy">${esc(summaryText)}</p>
@@ -1330,6 +1348,7 @@ export function renderReportCsv(report: InspectionReport): string {
   };
   const imageUrl = (id: string | null | undefined): string =>
     id ? (report.images.find((i) => i.id === id)?.fileUrl ?? "") : "";
+  const ticketByIssue = new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
   const rows: string[] = [];
   if (report.checklist.length) {
     rows.push("DAILY CHECKLIST");
@@ -1349,10 +1368,22 @@ export function renderReportCsv(report: InspectionReport): string {
   }
   rows.push("ISSUES");
   rows.push(
-    ["Runway", "Designation", "Category", "Zone", "Confidence", "Severity", "Status", "Description"].join(","),
+    [
+      "Runway",
+      "Designation",
+      "Category",
+      "Zone",
+      "Confidence",
+      "Severity",
+      "Finding Status",
+      "Work Order Status",
+      "Conditions Found",
+      "Corrective Action Taken",
+    ].join(","),
   );
   for (const { runway, issues } of report.runways) {
     for (const i of issues) {
+      const ticket = ticketByIssue.get(i.id);
       rows.push(
         [
           q(runway.name),
@@ -1362,7 +1393,9 @@ export function renderReportCsv(report: InspectionReport): string {
           `${(i.confidence * 100).toFixed(0)}%`,
           q(titleCase(i.severity)),
           q(titleCase(i.status)),
-          q(i.draft),
+          q(ticket ? workOrderStatusLabel(ticket.status) : ""),
+          q(discrepancyConditionsFound(i)),
+          q(discrepancyCorrectiveAction(i, ticket)),
         ].join(","),
       );
     }

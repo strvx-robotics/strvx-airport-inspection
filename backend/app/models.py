@@ -104,6 +104,8 @@ class IssueCandidate(_Camel):
     rejection_note: str | None = None
     draft_edit_distance: int | None = None
     ticket_id: str | None = None
+    conditions_found: str | None = None
+    corrective_action: str | None = None
     created_by: str | None = None
     created_at: str
 

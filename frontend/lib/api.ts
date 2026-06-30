@@ -280,6 +280,17 @@ export const editIssue = (id: string, patch: EditIssuePatch) =>
     actor: actor(),
   }).then((r) => r.issue);
 
+/** Set the Part 139 "conditions found" / "corrective action taken" overrides for a
+ *  discrepancy (null/empty clears the override and restores the derived default). */
+export const setComplianceRecord = (
+  id: string,
+  record: { conditionsFound?: string | null; correctiveAction?: string | null },
+) =>
+  post<{ issue: IssueCandidate }>(`/api/issues/${id}/record`, {
+    ...record,
+    actor: actor(),
+  }).then((r) => r.issue);
+
 export const listZones = (runwayId: string) =>
   jsonReq<{ zones: Zone[] }>(
     `/api/zones?runwayId=${encodeURIComponent(runwayId)}`,

@@ -136,10 +136,13 @@ async def sign_inspection(id: str, signature_name: str, actor: Actor | None) -> 
     incomplete = [i for i in await get_checklist(id) if not i.get("result")]
     if incomplete:
         raise AppError("Complete all checklist items before signing off")
+    # Sign-off is the moment the inspection becomes a final record, so stamp the
+    # actual completion time here (Part 139 compliance record needs it).
+    signed = now()
     await db.run(
         "UPDATE inspections SET signed_by = $1, signature_name = $2, signed_at = $3, "
-        "attestation = 1, status = 'completed' WHERE id = $4",
-        await actor_name(actor), signature_name.strip(), now(), id,
+        "completed_at = COALESCE(completed_at, $3), attestation = 1, status = 'completed' WHERE id = $4",
+        await actor_name(actor), signature_name.strip(), signed, id,
     )
     result = await get_inspection(id)
     assert result is not None

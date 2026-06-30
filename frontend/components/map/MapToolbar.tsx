@@ -236,9 +236,11 @@ export function IssueListPanel({
       icon={ListChecks}
       collapsed={!open}
       onToggle={onToggle}
-      className="pointer-events-auto absolute bottom-3 left-3 right-3 z-10 max-h-[44vh] md:bottom-auto md:left-auto md:right-3 md:top-16 md:w-[21rem] md:max-w-[calc(100vw-2rem)]"
+      fill
+      testId="map-issue-list-panel"
+      className={cn("pointer-events-auto", open ? "flex min-h-0 flex-1 flex-col" : "shrink-0")}
     >
-      <div className="space-y-0 border-b border-[#e4e8eb] px-2 py-2">
+      <div className="shrink-0 space-y-0 border-b border-[#e4e8eb] px-2 py-2">
         <div className="relative">
           <Search size={13} strokeWidth={2} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#9aa1a6]" />
           <input
@@ -259,7 +261,7 @@ export function IssueListPanel({
           <option value="recent">Sort: recent</option>
         </select>
       </div>
-      <div className="max-h-[58vh] divide-y divide-[#e4e8eb] overflow-y-auto">
+      <div className="min-h-0 flex-1 divide-y divide-[#e4e8eb] overflow-y-auto">
         {issues.length === 0 ? (
           <p className="px-3 py-3 font-mono text-[11px] leading-snug text-[#9aa1a6]">No matching issues.</p>
         ) : (
@@ -302,7 +304,7 @@ export function IssueListPanel({
           })
         )}
       </div>
-      <p className="border-t border-[#e4e8eb] px-3 py-2 font-mono text-[9px] leading-snug text-[#9aa1a6]">
+      <p className="shrink-0 border-t border-[#e4e8eb] px-3 py-2 font-mono text-[9px] leading-snug text-[#9aa1a6]">
         ↑↓ navigate · Enter full review · Esc close
       </p>
     </MapPanel>
@@ -365,8 +367,11 @@ export function IssueDetailPanel({
 
   return (
     <>
-      <div className="pointer-events-auto absolute right-3 top-[21rem] z-10 w-[21rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg md:top-[21rem]">
-        <div className="flex items-center gap-2 border-b border-[#dbdfe3] px-3 py-2">
+      <div
+        data-testid="map-issue-detail-panel"
+        className="pointer-events-auto flex max-h-[65%] min-h-0 shrink flex-col overflow-hidden rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg"
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#dbdfe3] px-3 py-2">
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-[#3f4448]">Detail</span>
           <button
             onClick={onClose}
@@ -376,14 +381,14 @@ export function IssueDetailPanel({
             <X size={14} strokeWidth={2.2} />
           </button>
         </div>
-        <div className="max-h-[46vh] overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="relative bg-[#101417]">
-            <RunwayImage bbox={issue.bbox} src={issue.imageUrl} heightClass="h-40" />
+            <RunwayImage bbox={issue.bbox} src={issue.imageUrl} heightClass="h-24" />
           </div>
           <div className="space-y-3 p-3">
             <div>
               <p className="text-[13px] font-semibold text-[#181b1e]">{CATEGORY[issue.category]}</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] tracking-wide text-[#6b7176]">
+              <p className="mt-0.5 break-words font-mono text-[10px] tracking-wide text-[#6b7176]">
                 {[runway?.name, issue.zone, issue.id.toUpperCase()].filter(Boolean).join(" · ")}
               </p>
             </div>
@@ -456,6 +461,8 @@ function Divider() {
 
 /** Bottom-right filters — severity, status, and category. */
 export function MapLegend({
+  collapsed,
+  onToggleCollapsed,
   severityFilter,
   statusFilter,
   categoryFilter,
@@ -463,6 +470,8 @@ export function MapLegend({
   onToggleStatus,
   onToggleCategory,
 }: {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   severityFilter: Set<Severity>;
   statusFilter: Set<IssueStatus>;
   categoryFilter: Set<IssueCategory>;
@@ -470,13 +479,14 @@ export function MapLegend({
   onToggleStatus: (status: IssueStatus) => void;
   onToggleCategory: (category: IssueCategory) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-
   return (
-    <div className="pointer-events-auto absolute bottom-3 right-3 z-10 w-56 overflow-hidden rounded-md border border-[#cfd5da] bg-[#f7f8f9]/96 shadow-[0_8px_24px_rgba(18,22,25,0.08)] backdrop-blur-sm">
+    <div
+      data-testid="map-key"
+      className="pointer-events-auto absolute bottom-3 right-3 z-20 w-[34rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-md border border-[#cfd5da] bg-[#f7f8f9]/96 shadow-[0_8px_24px_rgba(18,22,25,0.08)] backdrop-blur-sm"
+    >
       <button
         type="button"
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={onToggleCollapsed}
         className="flex w-full items-center gap-2 border-b border-[#e4e8eb] px-3 py-2 text-left transition-colors hover:bg-[#eef1f4]"
         aria-expanded={!collapsed}
       >
@@ -488,7 +498,7 @@ export function MapLegend({
         />
       </button>
       {!collapsed && (
-        <div className="space-y-2.5 px-3 py-3">
+        <div className="grid max-h-[40vh] grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden px-3 py-2.5 sm:grid-cols-3">
           <LegendFilterGroup
             title="Severity"
             items={SEVERITY_FILTERS.map((severity) => ({
@@ -539,22 +549,22 @@ function LegendFilterGroup({
 }) {
   return (
     <div>
-      <p className="pb-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.2em] text-[#3f4448]">{title}</p>
-      <div className="grid grid-cols-1 gap-y-1">
+      <p className="pb-1 font-mono text-[9px] font-semibold uppercase tracking-[0.2em] text-[#3f4448]">{title}</p>
+      <div className="grid grid-cols-1 gap-y-0.5">
         {items.map((item) => (
           <button
             key={item.key}
             type="button"
             onClick={item.onClick}
             className={cn(
-              "flex min-h-7 items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[#eef1f4]",
+              "flex min-h-6 items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[#eef1f4]",
               item.active ? "text-[#3f4448]" : "text-[#9aa1a6] opacity-60",
             )}
           >
             {item.dotClass && (
               <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", item.dotClass, !item.active && "grayscale")} />
             )}
-            <span className="font-mono text-[11px] tracking-wide">{item.label}</span>
+            <span className="whitespace-nowrap font-mono text-[11px] tracking-wide">{item.label}</span>
           </button>
         ))}
       </div>

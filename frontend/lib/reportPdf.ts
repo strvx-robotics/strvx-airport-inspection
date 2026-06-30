@@ -3,7 +3,30 @@ import path from "node:path";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { getAirportReportAssets, type AirportReportAsset } from "./airportAssets";
 import type { InspectionReport } from "./repo";
-import type { Image, IssueCandidate } from "./types";
+import type { Image, IssueCandidate, Ticket } from "./types";
+import {
+  ATTESTATION_STATEMENT,
+  discrepancyConditionsFound,
+  discrepancyCorrectiveAction,
+  evaluateCompleteness,
+  workOrderStatusLabel,
+} from "./compliance";
+
+/** Map every reported discrepancy to its work order (if approved into one). */
+function ticketByIssueId(report: InspectionReport): Map<string, Ticket> {
+  return new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
+}
+
+/** Whether the report is a complete, final compliance record. */
+function reportCompleteness(report: InspectionReport) {
+  return evaluateCompleteness({
+    checklistTotal: report.checklist.length,
+    checklistAnswered: report.checklist.filter((i) => i.result).length,
+    signedAt: report.inspection.signedAt,
+    attestation: report.inspection.attestation,
+    completedAt: report.inspection.completedAt,
+  });
+}
 
 const INK = "#172026";
 const MUTED = "#65717a";
@@ -354,7 +377,15 @@ function drawCover(doc: PDFKit.PDFDocument, report: InspectionReport): void {
     .fontSize(20)
     .fillColor(INK)
     .text("14 CFR Part 139 Self-Inspection Record", b.left, top + 52, { width: b.width - 145 });
-  drawPill(doc, titleCase(report.inspection.status), b.right - 122, top + 58, statusColor(report.inspection.status), 122);
+  const complete = reportCompleteness(report);
+  drawPill(
+    doc,
+    complete.isFinal ? "FINAL RECORD" : "INCOMPLETE",
+    b.right - 122,
+    top + 58,
+    complete.isFinal ? GREEN : AMBER,
+    122,
+  );
 
   setY(doc, 134);
   doc.font("Helvetica-Bold").fontSize(18).fillColor(INK).text(`${report.airport.name} · ${report.airport.code}`);
@@ -365,9 +396,10 @@ function drawCover(doc: PDFKit.PDFDocument, report: InspectionReport): void {
     .text(`${inspectionTypeText(report.inspection)} · Scheduled ${fmt(report, report.inspection.scheduledTime)}`);
   doc.text(`Generated ${fmt(report, report.generatedAt)}`);
   if (report.inspection.signedAt) {
+    doc.text(`Inspection completed ${fmt(report, report.inspection.completedAt || report.inspection.signedAt)}`);
     doc.text(`Signed off by ${report.inspection.signatureName || report.inspection.signedBy || "-"} · ${fmt(report, report.inspection.signedAt)}`);
   } else {
-    doc.text("Not yet signed off");
+    doc.text(`Not a final record yet — ${complete.missing.join(", ")}.`);
   }
   doc.font("Helvetica").fontSize(9).fillColor(INK).text(summaryText, b.left, doc.y + 6, {
     width: b.width,
@@ -419,15 +451,48 @@ function drawInspectionRecord(doc: PDFKit.PDFDocument, report: InspectionReport)
   });
   setY(doc, y + 76);
 
+  const blankChecklist = Math.max(0, report.checklist.length - passChecklist - failedChecklist - naChecklist);
   drawTwoColumnRows(doc, [
     ["Airport", `${report.airport.name} (${report.airport.code}) - ${report.airport.location}`],
     ["Inspection type", `${inspectionTypeText(report.inspection)}${report.inspection.reason ? ` - ${report.inspection.reason}` : ""}`],
     ["Scheduled / window", `${fmt(report, report.inspection.scheduledTime)} - ${titleCase(report.inspection.window)}`],
+    ["Inspection completed", report.inspection.completedAt ? fmt(report, report.inspection.completedAt) : "Not recorded — pending sign-off"],
     ["Generated", fmt(report, report.generatedAt)],
+    ["Record basis", "14 CFR §139.327(c): self-inspection record showing conditions found and corrective actions taken"],
+    ["Retention", "Retain for 12 consecutive calendar months per 14 CFR §139.301(b)(5)"],
     ["Coverage", `${pluralize(report.runways.length, "runway")} / ${pluralize(report.images.length, "inspection image")} / ${pluralize(report.totals.issues, "recorded finding")}`],
-    ["Checklist results", `${passChecklist} pass / ${failedChecklist} fail / ${naChecklist} N/A / ${Math.max(0, report.checklist.length - passChecklist - failedChecklist - naChecklist)} blank`],
-    ["Inspector attestation", signedBy && report.inspection.signedAt ? `${signedBy} - ${fmt(report, report.inspection.signedAt)}` : "Not yet signed"],
+    ["Checklist results", `${passChecklist} pass / ${failedChecklist} fail / ${naChecklist} N/A / ${blankChecklist} blank`],
   ]);
+
+  // Inspector attestation block — the signed compliance statement, or an explicit
+  // "not a final record" notice listing what's still outstanding.
+  const complete = reportCompleteness(report);
+  reserveBlock(doc, 86);
+  const ay = doc.y + 6;
+  const ah = 80;
+  doc.roundedRect(b.left, ay, b.width, ah, 6).fillColor(complete.isFinal ? "#f1f8f3" : "#fbf6ec").fill();
+  doc.roundedRect(b.left, ay, b.width, ah, 6).strokeColor(complete.isFinal ? "#cfe6d6" : "#ecdcb9").stroke();
+  doc.rect(b.left, ay, 5, ah).fillColor(complete.isFinal ? GREEN : AMBER).fill();
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(MUTED).text("INSPECTOR ATTESTATION", b.left + 16, ay + 10);
+  if (signedBy && report.inspection.signedAt) {
+    doc.font("Helvetica").fontSize(8).fillColor(INK).text(ATTESTATION_STATEMENT, b.left + 16, ay + 24, {
+      width: b.width - 32,
+    });
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(INK).text(
+      `Signed: ${signedBy}   ·   Completed ${fmt(report, report.inspection.completedAt || report.inspection.signedAt)}   ·   Attested ${fmt(report, report.inspection.signedAt)}`,
+      b.left + 16,
+      ay + ah - 16,
+      { width: b.width - 32 },
+    );
+  } else {
+    doc.font("Helvetica").fontSize(8.5).fillColor(INK).text(
+      `This report is NOT a final compliance record. Outstanding: ${complete.missing.join(", ")}. A signed inspector attestation is required to finalize it.`,
+      b.left + 16,
+      ay + 26,
+      { width: b.width - 32 },
+    );
+  }
+  setY(doc, ay + ah + 8);
 }
 
 function drawChecklist(doc: PDFKit.PDFDocument, report: InspectionReport): void {
@@ -483,25 +548,33 @@ function issueLabel(issue: IssueCandidate): string {
   return REPORT_CATEGORY[issue.category] ?? titleCase(issue.category);
 }
 
-function drawIssuesTable(doc: PDFKit.PDFDocument, issues: IssueCandidate[], imageById: Map<string, Image>): void {
+function drawIssuesTable(
+  doc: PDFKit.PDFDocument,
+  issues: IssueCandidate[],
+  imageById: Map<string, Image>,
+  ticketByIssue: Map<string, Ticket>,
+): void {
   const b = pageBounds(doc);
-  const widths = [62, 100, 72, 44, 54, 62, b.width - 62 - 100 - 72 - 44 - 54 - 62];
-  const labels = ["Evidence", "Discrepancy", "Location", "Conf.", "Severity", "Status", "Action / Notes"];
+  const widths = [56, 92, 66, 40, 50, 60, b.width - 56 - 92 - 66 - 40 - 50 - 60];
+  const labels = ["Evidence", "Discrepancy", "Location", "Conf.", "Severity", "Status", "Conditions found / corrective action taken"];
   const headerHeight = 22;
+  const actionTextFor = (issue: IssueCandidate): string => {
+    const ticket = ticketByIssue.get(issue.id);
+    return [
+      `Conditions found: ${discrepancyConditionsFound(issue)}`,
+      `Corrective action taken: ${discrepancyCorrectiveAction(issue, ticket)}`,
+    ].join("\n");
+  };
   const rowHeightFor = (issue: IssueCandidate): number => {
     const location = [
       issue.zone ?? "Unzoned",
       issue.stationM != null ? `${Math.round(issue.stationM)} m` : "",
       issue.lateralOffsetM != null ? `${issue.lateralOffsetM.toFixed(1)} m lateral` : "",
     ].filter(Boolean).join("\n");
-    const actionText = [
-      issue.ticketId ? `Work order: ${issue.ticketId}` : "No work order linked",
-      issue.inspectorNotes || issue.draft || issue.modelNotes || "",
-    ].filter(Boolean).join("\n");
     return Math.max(
       58,
       doc.heightOfString(location, { width: widths[2] - 14 }) + 18,
-      doc.heightOfString(actionText, { width: widths[6] - 14 }) + 18,
+      doc.heightOfString(actionTextFor(issue), { width: widths[6] - 14 }) + 18,
     );
   };
 
@@ -527,10 +600,7 @@ function drawIssuesTable(doc: PDFKit.PDFDocument, issues: IssueCandidate[], imag
       issue.stationM != null ? `${Math.round(issue.stationM)} m` : "",
       issue.lateralOffsetM != null ? `${issue.lateralOffsetM.toFixed(1)} m lateral` : "",
     ].filter(Boolean).join("\n");
-    const actionText = [
-      issue.ticketId ? `Work order: ${issue.ticketId}` : "No work order linked",
-      issue.inspectorNotes || issue.draft || issue.modelNotes || "",
-    ].filter(Boolean).join("\n");
+    const actionText = actionTextFor(issue);
     const rowHeight = rowHeightFor(issue);
     if (ensureSpace(doc, rowHeight + headerHeight + 12)) drawHeader();
     const y = doc.y;
@@ -579,6 +649,7 @@ function drawIssuesTable(doc: PDFKit.PDFDocument, issues: IssueCandidate[], imag
 
 function drawRunwaySections(doc: PDFKit.PDFDocument, report: InspectionReport): void {
   const imageById = new Map(report.images.map((image) => [image.id, image]));
+  const ticketByIssue = ticketByIssueId(report);
   const runwaySummaries = report.runways
     .map(summarizeRunway)
     .sort(
@@ -613,7 +684,7 @@ function drawRunwaySections(doc: PDFKit.PDFDocument, report: InspectionReport): 
       ["Closed tickets", String(closedTickets), "Resolved work orders"],
     ]);
 
-    drawIssuesTable(doc, issues, imageById);
+    drawIssuesTable(doc, issues, imageById, ticketByIssue);
     setY(doc, doc.y + 8);
   }
 
@@ -655,7 +726,7 @@ function drawCorrectiveActions(doc: PDFKit.PDFDocument, report: InspectionReport
     "Maintenance work orders generated from this inspection and retained with current status.",
   );
   const b = pageBounds(doc);
-  const widths = [80, 78, 78, 86, b.width - 80 - 78 - 78 - 86];
+  const widths = [74, 72, 60, 110, b.width - 74 - 72 - 60 - 110];
   const headerHeight = 20;
   const drawHeader = () => {
     const y = doc.y;
@@ -680,14 +751,19 @@ function drawCorrectiveActions(doc: PDFKit.PDFDocument, report: InspectionReport
     ]
       .filter(Boolean)
       .join("\n");
-    const rowHeight = Math.max(36, doc.heightOfString(notes, { width: widths[4] - 14 }) + 16);
+    const statusLabel = workOrderStatusLabel(ticket.status);
+    const rowHeight = Math.max(
+      36,
+      doc.heightOfString(notes, { width: widths[4] - 14 }) + 16,
+      doc.heightOfString(statusLabel, { width: widths[3] - 14 }) + 16,
+    );
     if (ensureSpace(doc, rowHeight + headerHeight + 10)) drawHeader();
     const y = doc.y;
     const values = [
       ticket.id,
       ticket.runwayLabel,
       titleCase(ticket.severity),
-      titleCase(ticket.status),
+      statusLabel,
       notes || "-",
     ];
     doc.rect(b.left, y, b.width, rowHeight).fillColor("#ffffff").fill();
@@ -754,7 +830,7 @@ function drawFooters(doc: PDFKit.PDFDocument, report: InspectionReport): void {
       width: b.width / 2,
     });
     doc.text(
-      `Page ${i + 1} of ${range.count} · Retain ≥12 months (14 CFR §139.327)`,
+      `Page ${i + 1} of ${range.count} · Retain 12 months (14 CFR §§139.301(b)(5), 139.327(c))`,
       b.left + b.width / 2,
       y,
       { width: b.width / 2, align: "right" },

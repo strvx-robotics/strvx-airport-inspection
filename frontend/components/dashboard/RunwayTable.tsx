@@ -91,6 +91,9 @@ const columns: DataTableColumn<RunwayOverview>[] = [
       nodeA.data && nodeB.data ? severityCompare(nodeA.data, nodeB.data) : 0,
     cellRenderer: ({ data }: { data?: RunwayOverview }) =>
       data ? <FlameRating bySeverity={data.bySeverity} total={data.issueCount} /> : null,
+    cellClass: "valanor-severity-cell",
+    headerClass: "valanor-severity-header",
+    cellStyle: { paddingTop: "3px" },
     flex: 1,
     minWidth: 130,
   },
@@ -113,7 +116,7 @@ const columns: DataTableColumn<RunwayOverview>[] = [
 
 export default function RunwayTable({ rows }: { rows: RunwayOverview[] }) {
   return (
-    <section className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-md", CARD)}>
+    <section className={cn("flex flex-col overflow-hidden rounded-md", CARD)}>
       <div className={cn("flex items-center justify-between px-4 py-2.5", BAR)}>
         <h3 className="text-[13px] font-semibold text-[#181b1e]">Runways</h3>
         <p className={cn("text-[12px]", MUTED)}>
@@ -124,7 +127,7 @@ export default function RunwayTable({ rows }: { rows: RunwayOverview[] }) {
         rows={rows}
         columns={columns}
         label="Runways"
-        fill
+        autoHeight
         getRowId={(r) => r.runway.id}
         rowHref={(r) => `/runway/${r.runway.id}`}
         empty={<div className="px-4 py-12 text-center text-[13px] text-[#6b7176]">No runways to show.</div>}

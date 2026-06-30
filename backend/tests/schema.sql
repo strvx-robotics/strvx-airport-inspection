@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
   rejection_note      TEXT,
   draft_edit_distance INTEGER,
   ticket_id           TEXT,
+  conditions_found    TEXT,
+  corrective_action   TEXT,
   created_by          TEXT,
   created_at          TEXT NOT NULL
 );

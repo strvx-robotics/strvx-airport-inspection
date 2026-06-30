@@ -143,6 +143,7 @@ export default function AirportMap({
   const [reviewQueueOnly, setReviewQueueOnly] = useState(false);
   const [focusedRunwayId, setFocusedRunwayId] = useState<string>("all");
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   const [keepOutOpen, setKeepOutOpen] = useState(false);
   const [keepOutStep, setKeepOutStep] = useState<KeepOutStep>("list");
@@ -816,7 +817,39 @@ export default function AirportMap({
         onRefresh={onRefresh}
         refreshing={refreshing}
       />
+      <div
+        className={cn(
+          "pointer-events-none absolute left-3 right-3 top-16 z-10 flex min-h-0 flex-col gap-2 md:left-auto md:right-3 md:w-[21rem] md:max-w-[calc(100vw-1.5rem)]",
+          legendCollapsed ? "bottom-14" : "bottom-[12.5rem]",
+        )}
+      >
+        <IssueListPanel
+          open={issueListOpen}
+          issues={filteredIssues}
+          runways={runwayById}
+          tickets={tickets}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          sortKey={sortKey}
+          onSortChange={setSortKey}
+          onToggle={() => setIssueListOpen((v) => !v)}
+          onSelect={(issue) => setSelectedIssueId(issue.id)}
+          selectedIssueId={selectedIssueId}
+        />
+        {selectedIssue && (
+          <IssueDetailPanel
+            issue={selectedIssue}
+            runway={runwayById[selectedIssue.runwayId]}
+            ticket={selectedTicket}
+            onClose={() => setSelectedIssueId(null)}
+            onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
+            onIssueUpdated={onIssueUpdated}
+          />
+        )}
+      </div>
       <MapLegend
+        collapsed={legendCollapsed}
+        onToggleCollapsed={() => setLegendCollapsed((v) => !v)}
         severityFilter={severityFilter}
         statusFilter={statusFilter}
         categoryFilter={categoryFilter}
@@ -824,29 +857,6 @@ export default function AirportMap({
         onToggleStatus={toggleStatus}
         onToggleCategory={toggleCategory}
       />
-      <IssueListPanel
-        open={issueListOpen}
-        issues={filteredIssues}
-        runways={runwayById}
-        tickets={tickets}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        sortKey={sortKey}
-        onSortChange={setSortKey}
-        onToggle={() => setIssueListOpen((v) => !v)}
-        onSelect={(issue) => setSelectedIssueId(issue.id)}
-        selectedIssueId={selectedIssueId}
-      />
-      {selectedIssue && (
-        <IssueDetailPanel
-          issue={selectedIssue}
-          runway={runwayById[selectedIssue.runwayId]}
-          ticket={selectedTicket}
-          onClose={() => setSelectedIssueId(null)}
-          onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
-          onIssueUpdated={onIssueUpdated}
-        />
-      )}
     </div>
   );
 }
