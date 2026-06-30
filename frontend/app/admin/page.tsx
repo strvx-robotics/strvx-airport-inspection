@@ -533,20 +533,12 @@ const SCHEDULE_WINDOW_HELP: Record<InspectionWindow, string> = {
 
 const SECTION_INFO: Record<Exclude<SectionId, "general">, SidebarInfo> = {
   users: {
-    title: "Access levels",
-    desc: "What each role can do. New members sign in with the username and password set here.",
+    title: "Members",
+    desc: "Create accounts, rotate access, and remove users that no longer need this airfield.",
     body: (
-      <dl className="space-y-4">
-        {(Object.keys(ROLE_ACCESS) as UserRole[]).map((r) => (
-          <div key={r} className="space-y-1.5">
-            <dt>
-              <Badge tone={ROLE_TONE[r]} compact>
-                {ROLE[r]}
-              </Badge>
-            </dt>
-            <dd className="text-[13px] leading-relaxed text-[#3f4448]">{ROLE_ACCESS[r]}</dd>
-          </div>
-        ))}
+      <dl className="space-y-3">
+        <InfoItem term="Credentials" detail="New members sign in with the username and password set here." />
+        <InfoItem term="Last admin" detail="The final admin account is protected from removal." />
       </dl>
     ),
   },
@@ -757,12 +749,10 @@ const userBaseColumns: DataTableColumn<User>[] = [
     colId: "role",
     headerName: "Role",
     field: "role",
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${data ? ROLE_TONE[data.role] : "gray"}`,
     cellRenderer: ({ data }: { data?: User }) =>
-      data ? (
-        <Badge tone={ROLE_TONE[data.role]} compact>
-          {ROLE[data.role]}
-        </Badge>
-      ) : null,
+      data ? <span title={ROLE_ACCESS[data.role]}>{ROLE[data.role]}</span> : null,
     minWidth: 110,
     maxWidth: 130,
   },
@@ -1155,7 +1145,8 @@ function AddUserForm({
           label="Role"
           value={role}
           onChange={(v) => setRole(v as UserRole)}
-          options={USER_ROLES.map((r) => ({ value: r, label: ROLE[r] }))}
+          options={USER_ROLES.map((r) => ({ value: r, label: ROLE[r], hint: ROLE_ACCESS[r] }))}
+          showHints={false}
         />
         <Input
           label="Password"
@@ -1826,16 +1817,24 @@ function Select({
   value,
   onChange,
   options,
+  showHints = true,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; hint?: string }[];
+  showHints?: boolean;
 }) {
   return (
     <div className="space-y-1">
       <label className={EYEBROW}>{label}</label>
-      <SelectMenu value={value} options={options} onChange={onChange} ariaLabel={label} />
+      <SelectMenu
+        value={value}
+        options={options}
+        onChange={onChange}
+        ariaLabel={label}
+        showHints={showHints}
+      />
     </div>
   );
 }

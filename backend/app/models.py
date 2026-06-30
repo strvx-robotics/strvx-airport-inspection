@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -253,6 +253,11 @@ class OverviewTotals(_Camel):
     images: int
 
 
+class InspectionCounts(_Camel):
+    images: int
+    issues: int
+
+
 class Overview(_Camel):
     inspection: Inspection | None = None
     airport: Airport
@@ -261,6 +266,7 @@ class Overview(_Camel):
     issue_breakdown: IssueBreakdown
     recent_tickets: list[Ticket]
     inspections: list[Inspection]
+    inspection_counts: dict[str, InspectionCounts] = Field(default_factory=dict)
 
 
 class InspectionWithJobs(_Camel):

@@ -4,7 +4,7 @@ from app import db
 from app.constants import SPECIAL_TRIGGERS
 from app.deps import Actor
 from app.errors import AppError
-from app.models import Inspection, InspectionJob
+from app.models import Inspection, InspectionCounts, InspectionJob
 from app.repo.helpers import actor_name, gid, now
 
 
@@ -40,6 +40,25 @@ async def list_inspections(airport_id: str | None = None) -> list[Inspection]:
     else:
         rows = await db.all("SELECT * FROM inspections ORDER BY scheduled_time DESC")
     return [to_inspection(r) for r in rows]
+
+
+async def list_inspection_counts(airport_id: str) -> dict[str, InspectionCounts]:
+    rows = await db.all(
+        """
+        SELECT i.id AS inspection_id,
+               COALESCE(SUM(j.image_count), 0) AS images,
+               COALESCE(SUM(j.issue_count), 0) AS issues
+        FROM inspections i
+        LEFT JOIN inspection_jobs j ON j.inspection_id = i.id
+        WHERE i.airport_id = $1
+        GROUP BY i.id
+        """,
+        airport_id,
+    )
+    return {
+        r["inspection_id"]: InspectionCounts(images=int(r["images"] or 0), issues=int(r["issues"] or 0))
+        for r in rows
+    }
 
 
 async def get_inspection(id: str) -> Inspection | None:

@@ -123,6 +123,11 @@ export interface RunwayOverview {
   status: { label: string; tone: BadgeTone };
 }
 
+export interface InspectionLogCounts {
+  images: number;
+  issues: number;
+}
+
 /** Issue counts bucketed four ways (all real IssueCandidate fields). */
 export interface IssueBreakdown {
   bySeverity: Record<Severity, number>;
@@ -149,6 +154,7 @@ export interface Overview {
   issueBreakdown: IssueBreakdown;
   recentTickets: Ticket[];
   inspections: Inspection[];
+  inspectionCounts: Record<string, InspectionLogCounts>;
 }
 
 export interface InspectionReport {
@@ -537,6 +543,24 @@ export async function listInspections(airportId?: string): Promise<Inspection[]>
     : await all<InspectionRow>("SELECT * FROM inspections ORDER BY scheduled_time DESC");
   return rows.map(toInspection);
 }
+export async function listInspectionCounts(airportId: string): Promise<Record<string, InspectionLogCounts>> {
+  const rows = await all<{ inspection_id: string; images: number; issues: number }>(
+    `SELECT i.id AS inspection_id,
+            COALESCE(SUM(j.image_count), 0) AS images,
+            COALESCE(SUM(j.issue_count), 0) AS issues
+       FROM inspections i
+       LEFT JOIN inspection_jobs j ON j.inspection_id = i.id
+      WHERE i.airport_id = ?
+      GROUP BY i.id`,
+    [airportId],
+  );
+  return Object.fromEntries(
+    rows.map((row) => [
+      row.inspection_id,
+      { images: Number(row.images) || 0, issues: Number(row.issues) || 0 },
+    ]),
+  );
+}
 export async function getInspection(id: string): Promise<Inspection | undefined> {
   const r = await one<InspectionRow>("SELECT * FROM inspections WHERE id = ?", [id]);
   return r ? toInspection(r) : undefined;
@@ -918,6 +942,7 @@ export async function getOverview(inspectionId?: string): Promise<Overview> {
   const airport = await getDefaultAirport();
   const inspection = inspectionId ? await getInspection(inspectionId) : await getLatestInspection(airport.id);
   const runways = await listRunways(airport.id);
+  const inspections = await listInspections(airport.id);
   const issues = inspection ? await listIssuesByInspection(inspection.id) : [];
   const tickets = inspection ? await listTicketsByInspection(inspection.id) : [];
   const jobs = inspection ? await listJobs(inspection.id) : [];
@@ -965,7 +990,8 @@ export async function getOverview(inspectionId?: string): Promise<Overview> {
     recentTickets: [...tickets]
       .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
       .slice(0, 5),
-    inspections: await listInspections(airport.id),
+    inspections,
+    inspectionCounts: await listInspectionCounts(airport.id),
   };
 }
 

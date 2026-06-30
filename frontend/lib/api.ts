@@ -49,6 +49,11 @@ export interface RunwayOverview {
   status: { label: string; tone: BadgeTone };
 }
 
+export interface InspectionLogCounts {
+  images: number;
+  issues: number;
+}
+
 export interface IssueBreakdown {
   bySeverity: Record<Severity, number>;
   byCategory: Record<IssueCategory, number>;
@@ -74,6 +79,7 @@ export interface Overview {
   issueBreakdown: IssueBreakdown;
   recentTickets: Ticket[];
   inspections: Inspection[];
+  inspectionCounts: Record<string, InspectionLogCounts>;
 }
 
 export interface InspectionWithJobs {

@@ -25,6 +25,7 @@ export default function Select<T extends string>({
   ariaLabel,
   placeholder = "Select…",
   className,
+  showHints = true,
 }: {
   value: T;
   options: SelectOption<T>[];
@@ -33,6 +34,7 @@ export default function Select<T extends string>({
   ariaLabel?: string;
   placeholder?: string;
   className?: string;
+  showHints?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -149,6 +151,8 @@ export default function Select<T extends string>({
                   id={`${baseId}-opt-${i}`}
                   role="option"
                   aria-selected={isSel}
+                  aria-label={o.hint ? `${o.label}: ${o.hint}` : o.label}
+                  title={o.hint}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(o.value)}
                   className={cn(
@@ -158,7 +162,9 @@ export default function Select<T extends string>({
                 >
                   <span className="truncate">
                     {o.label}
-                    {o.hint && <span className="ml-1.5 text-[11px] text-[#9aa1a6]">{o.hint}</span>}
+                    {showHints && o.hint && (
+                      <span className="ml-1.5 text-[11px] text-[#9aa1a6]">{o.hint}</span>
+                    )}
                   </span>
                   {isSel && <Check size={14} strokeWidth={2.5} aria-hidden className="shrink-0 text-[#181b1e]" />}
                 </li>

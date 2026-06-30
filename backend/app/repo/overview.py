@@ -4,7 +4,7 @@ from app.constants import (
 )
 from app.models import IssueBreakdown, Overview, OverviewTotals, RunwayOverview, RunwayStatus
 from app.repo.airports import get_default_airport
-from app.repo.inspections import get_inspection, get_latest_inspection, list_inspections, list_jobs
+from app.repo.inspections import get_inspection, get_latest_inspection, list_inspection_counts, list_inspections, list_jobs
 from app.repo.runways import get_runway, list_runways
 from app.repo.issues import ISSUE_SELECT, _to_issue, list_issues_by_inspection
 from app.repo.tickets import list_tickets_by_inspection, list_tickets_by_runway
@@ -96,6 +96,7 @@ async def get_overview(inspection_id: str | None = None) -> Overview:
 
     recent = sorted(tickets, key=lambda t: t.created_at or "", reverse=True)[:5]
 
+    inspections = await list_inspections(airport.id)
     return Overview(
         inspection=inspection,
         airport=airport,
@@ -113,5 +114,6 @@ async def get_overview(inspection_id: str | None = None) -> Overview:
         ),
         issue_breakdown=build_breakdown(issues),
         recent_tickets=recent,
-        inspections=await list_inspections(airport.id),
+        inspections=inspections,
+        inspection_counts=await list_inspection_counts(airport.id),
     )

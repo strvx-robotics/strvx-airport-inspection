@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ScrollText, Download, Rocket } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
@@ -13,21 +13,18 @@ import { INSPECTION_STATUS, INSPECTION_TYPE, INSPECTION_WINDOW, SPECIAL_TRIGGER 
 import { cn } from "@/lib/cn";
 import { BTN_PRIMARY, CARD, BAR, EYEBROW, H2, INPUT, MUTED } from "@/lib/vstyle";
 
-type Counts = { images: number; issues: number };
-
 /** Inspection log - one row per daily pass, with that day's results + report. */
 export default function LogsPage() {
   const { overview, loading, refresh } = useOverview();
   const { role } = useStore();
   const router = useRouter();
   const [launching, setLaunching] = useState(false);
-  const [counts, setCounts] = useState<Record<string, Counts>>({});
   const canLaunch = role === "inspector" || role === "admin";
 
   const inspections = useMemo(() => overview?.inspections ?? [], [overview?.inspections]);
+  const counts = overview?.inspectionCounts ?? {};
   const tz = overview?.airport.timezone;
   const currentId = overview?.inspection?.id;
-  const ids = inspections.map((i) => i.id).join(",");
   const [queryText, setQueryText] = useState("");
 
   const filtered = useMemo(() => {
@@ -51,37 +48,6 @@ export default function LogsPage() {
         .includes(q),
     );
   }, [inspections, queryText, tz]);
-
-  // N+1 is fine at demo scale; fold counts into listInspections() if this grows.
-  useEffect(() => {
-    if (!ids) return;
-    let live = true;
-    Promise.all(
-      ids.split(",").map((id) =>
-        api
-          .getInspection(id)
-          .then(
-            (d) =>
-              [
-                id,
-                d.jobs.reduce<Counts>(
-                  (a, j) => ({ images: a.images + j.imageCount, issues: a.issues + j.issueCount }),
-                  { images: 0, issues: 0 },
-                ),
-              ] as const,
-          )
-          .catch(() => [id, null] as const),
-      ),
-    ).then((pairs) => {
-      if (!live) return;
-      const map: Record<string, Counts> = {};
-      for (const [id, c] of pairs) if (c) map[id] = c;
-      setCounts(map);
-    });
-    return () => {
-      live = false;
-    };
-  }, [ids]);
 
   const columns = useMemo(
     (): DataTableColumn<Inspection>[] => [
