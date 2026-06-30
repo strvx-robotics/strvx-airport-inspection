@@ -78,7 +78,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon; desc: string }[] 
   { id: "general", label: "General", icon: Building2, desc: "General information for this airfield." },
   { id: "users", label: "Users & access", icon: Users, desc: "People with access and the role that governs what they can do." },
   { id: "runways", label: "Runways & zones", icon: Route, desc: "Runways under inspection and the zones defined along each." },
-  { id: "schedule", label: "Schedule", icon: CalendarClock, desc: "Automated inspection passes and their illumination window." },
+  { id: "schedule", label: "Schedule", icon: CalendarClock, desc: "Daily self-inspection passes and periodic surveillance cadence." },
   { id: "data", label: "Data & export", icon: Database, desc: "Export reports from scheduled inspection passes." },
 ];
 
@@ -1505,7 +1505,7 @@ const EXPORT_FORMATS: Array<{
   desc: string;
   icon: LucideIcon;
 }> = [
-  { format: "pdf", label: "PDF report", desc: "Print-ready inspection summary", icon: FileText },
+  { format: "pdf", label: "PDF report", desc: "Print-ready inspection summary", icon: Download },
   { format: "html", label: "HTML report", desc: "View in browser with checklist and findings", icon: FileText },
   { format: "csv", label: "CSV export", desc: "Issues spreadsheet for analysis", icon: FileSpreadsheet },
   { format: "json", label: "JSON export", desc: "Machine-readable pass data", icon: FileJson },
