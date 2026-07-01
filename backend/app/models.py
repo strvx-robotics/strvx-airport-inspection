@@ -121,6 +121,45 @@ class IssueCandidate(_Camel):
     created_at: str
 
 
+class SecurityAlert(_Camel):
+    id: str
+    airport_id: str
+    zone_id: str | None = None
+    flight_id: str | None = None
+    image_id: str | None = None
+    alert_type: str
+    severity: str
+    status: str
+    title: str
+    description: str = ""
+    confidence: float | None = None
+    gps: LngLat | None = None
+    subject_label: str | None = None
+    plate_text: str | None = None
+    evidence_url: str | None = None
+    source_kind: str | None = None
+    metadata: dict[str, object] | None = None
+    assigned_team_id: str | None = None
+    assigned_team_name: str | None = None
+    dispatch_note: str | None = None
+    resolution_note: str | None = None
+    created_by: str | None = None
+    created_at: str
+    updated_at: str
+    dispatched_at: str | None = None
+    resolved_at: str | None = None
+
+
+class SecurityTeam(_Camel):
+    id: str
+    airport_id: str
+    name: str
+    kind: str
+    status: str
+    contact: str | None = None
+    created_at: str
+
+
 class User(_Camel):
     id: str
     username: str

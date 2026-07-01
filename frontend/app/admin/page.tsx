@@ -520,11 +520,13 @@ const ROLE_TONE: Record<UserRole, Tone> = {
   admin: "black",
   inspector: "blue",
   maintenance: "purple",
+  security: "amber",
 };
 const ROLE_ACCESS: Record<UserRole, string> = {
   admin: "Full access — configuration, zones, schedules, and data export.",
   inspector: "Reviews detections, approves or rejects issues, runs live passes.",
   maintenance: "Work orders only — repairs and closes assigned tickets.",
+  security: "Security watch — live feed, map, and security-alert review.",
 };
 
 const SCHEDULE_WINDOW_HELP: Record<InspectionWindow, string> = {

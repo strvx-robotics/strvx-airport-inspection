@@ -7,7 +7,7 @@ import { Map as MapIcon } from "lucide-react";
 import * as api from "@/lib/api";
 import type { Overview } from "@/lib/api";
 import type { ZoneLayer } from "@/components/map/AirportMap";
-import type { IssueCandidate, Ticket } from "@/lib/types";
+import type { IssueCandidate, SecurityAlert, Ticket } from "@/lib/types";
 import { fmtInTz } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { EYEBROW, MUTED } from "@/lib/vstyle";
@@ -54,6 +54,7 @@ function MapPageContent() {
   }, [searchParams]);
   const [layers, setLayers] = useState<ZoneLayer[] | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [inspectionScope, setInspectionScope] = useState("current");
   const [refreshing, setRefreshing] = useState(false);
@@ -73,8 +74,9 @@ function MapPageContent() {
       }));
       setLayers(baseLayers);
 
-      const [ticketList, ...zoneResults] = await Promise.all([
+      const [ticketList, securityAlertList, ...zoneResults] = await Promise.all([
         api.listTickets().catch(() => [] as Ticket[]),
+        api.listSecurityAlerts(ov.airport.id).catch(() => [] as SecurityAlert[]),
         ...baseLayers.map(({ zone }) => api.getZone(zone.id, inspectionId)),
       ]);
 
@@ -84,6 +86,7 @@ function MapPageContent() {
           )
         : ticketList;
       setTickets(scopedTickets);
+      setSecurityAlerts(securityAlertList);
 
       setLayers(
         baseLayers.map((layer, index) => ({
@@ -158,6 +161,7 @@ function MapPageContent() {
           <AirportMap
             layers={layers}
             tickets={tickets}
+            securityAlerts={securityAlerts}
             inspections={overview ? inspectionOptions(overview) : []}
             airportId={overview?.airport.id ?? ""}
             airportCenter={airportCenter}

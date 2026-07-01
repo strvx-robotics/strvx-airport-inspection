@@ -5,7 +5,7 @@ from app.passwords import hash_password
 from app.repo.airports import get_default_airport
 from app.repo.helpers import gid, now
 
-USER_ROLES = {"admin", "inspector", "maintenance"}
+USER_ROLES = {"admin", "inspector", "maintenance", "security"}
 
 
 def to_user(r) -> User:
@@ -32,7 +32,7 @@ async def create_user(
     airport_id: str | None = None,
 ) -> User:
     if role not in USER_ROLES:
-        raise AppError("role must be one of: admin, inspector, maintenance")
+        raise AppError("role must be one of: admin, inspector, maintenance, security")
     username = username.strip()
     if not name.strip() or not username:
         raise AppError("name and username are required")

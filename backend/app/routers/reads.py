@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 
 from app.errors import AppError
-from app.repo import checklist, images, inspections, overview, schedules, users, zones
+from app.repo import checklist, images, inspections, overview, schedules, security_alerts, users, zones
 from app.repo.inspections import list_inspections
 from app.repo.boundaries import list_boundaries
 from app.repo.keep_out_zones import list_by_airport, list_by_zone
@@ -70,6 +70,23 @@ async def get_keep_out_zones(request: Request) -> dict:
     else:
         raise AppError("zoneId or airportId is required")
     return {"keepOutZones": [dump(z) for z in koz]}
+
+
+@router.get("/security-alerts")
+async def get_security_alerts(request: Request) -> dict:
+    airport_id = request.query_params.get("airportId")
+    status = request.query_params.get("status")
+    return {
+        "securityAlerts": [
+            dump(a) for a in await security_alerts.list_alerts(airport_id=airport_id, status=status)
+        ]
+    }
+
+
+@router.get("/security-teams")
+async def get_security_teams(request: Request) -> dict:
+    airport_id = request.query_params.get("airportId")
+    return {"securityTeams": [dump(t) for t in await security_alerts.list_teams(airport_id=airport_id)]}
 
 
 @router.get("/users")

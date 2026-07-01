@@ -26,6 +26,10 @@ import type {
   GeomConfidence,
   LngLat,
   RejectionReason,
+  SecurityAlert,
+  SecurityAlertStatus,
+  SecurityAlertType,
+  SecurityTeam,
   Zone,
   ZoneMapStatus,
   ScheduleFrequency,
@@ -115,6 +119,24 @@ export interface TicketDetail {
 export interface UploadResult {
   image: { id: string; zoneId: string; boundaryId?: string; fileUrl: string };
   candidates: IssueCandidate[];
+}
+
+export interface CreateSecurityAlertInput {
+  airportId: string;
+  zoneId?: string;
+  flightId?: string;
+  imageId?: string;
+  alertType: SecurityAlertType;
+  severity: Severity;
+  title: string;
+  description?: string;
+  confidence?: number;
+  gps?: LngLat;
+  subjectLabel?: string;
+  plateText?: string;
+  evidenceUrl?: string;
+  sourceKind?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ApproveResult {
@@ -255,6 +277,36 @@ export const getZone = (id: string, inspectionId?: string) =>
   );
 export const getIssue = (id: string) =>
   jsonReq<{ issue: IssueCandidate }>(`/api/issues/${id}`).then((r) => r.issue);
+
+export const listSecurityAlerts = (airportId?: string, status?: SecurityAlertStatus) => {
+  const q = new URLSearchParams();
+  if (airportId) q.set("airportId", airportId);
+  if (status) q.set("status", status);
+  const suffix = q.toString() ? `?${q}` : "";
+  return jsonReq<{ securityAlerts: SecurityAlert[] }>(`/api/security-alerts${suffix}`).then(
+    (r) => r.securityAlerts,
+  );
+};
+
+export const listSecurityTeams = (airportId?: string) => {
+  const suffix = airportId ? `?airportId=${encodeURIComponent(airportId)}` : "";
+  return jsonReq<{ securityTeams: SecurityTeam[] }>(`/api/security-teams${suffix}`).then(
+    (r) => r.securityTeams,
+  );
+};
+
+export const createSecurityAlert = (body: CreateSecurityAlertInput) =>
+  post<{ securityAlert: SecurityAlert }>("/api/security-alerts", { ...body, actor: actor() }).then(
+    (r) => r.securityAlert,
+  );
+
+export const updateSecurityAlert = (
+  id: string,
+  body: { status?: SecurityAlertStatus; resolutionNote?: string; assignedTeamId?: string; dispatchNote?: string },
+) =>
+  patch<{ securityAlert: SecurityAlert }>(`/api/security-alerts/${id}`, body).then(
+    (r) => r.securityAlert,
+  );
 
 export const approveIssue = (id: string) =>
   post<ApproveResult>(`/api/issues/${id}/approve`, { actor: actor() });

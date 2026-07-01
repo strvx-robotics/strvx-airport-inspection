@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Boundary, IssueCandidate, IssueCategory, IssueStatus, KeepOutZone, LngLat, Severity, Ticket, Zone } from "@/lib/types";
+import type { Boundary, IssueCandidate, IssueCategory, IssueStatus, KeepOutZone, LngLat, SecurityAlert, Severity, Ticket, Zone } from "@/lib/types";
 import { isMappable, issuePosition, zoneAnchor } from "@/lib/zoneGeom";
 import { stationsFromPolygon } from "@/lib/keepOutGeom";
 import * as api from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { rel } from "@/lib/format";
 import { useStore } from "@/lib/store";
+import Badge from "@/components/Badge";
 import { basemapStyle } from "./mapStyle";
 import { IssueDetailPanel, MapLegend, MapToolbar } from "./MapToolbar";
 import { KeepOutZonesModal, type KeepOutStep } from "./KeepOutZonesModal";
@@ -29,8 +31,10 @@ import {
   updateKeepOutZoneLayers,
 } from "./keepOutMapLayers";
 import { ensureIssueLayers, ISSUE_CIRCLE_LAYER, issueMarkers, updateIssueLayers } from "./issueMapLayers";
+import { ensureSecurityAlertLayers, SECURITY_ALERT_LAYER, updateSecurityAlertLayers } from "./securityAlertMapLayers";
 import { searchIssues, sortIssues, ticketForIssue, type IssueSortKey } from "./mapUtils";
-import { BTN, BTN_DANGER } from "@/lib/vstyle";
+import { SECURITY_ALERT_STATUS, SECURITY_ALERT_TYPE, SEVERITY } from "@/lib/ui";
+import { BAR, BTN, BTN_DANGER, MUTED } from "@/lib/vstyle";
 
 export interface ZoneLayer {
   zone: Zone;
@@ -70,6 +74,133 @@ function paddedBounds(bounds: maplibregl.LngLatBounds) {
   );
 }
 
+function SecurityMapPanel({
+  alerts,
+  selectedId,
+  onSelect,
+  onRefresh,
+  refreshing,
+}: {
+  alerts: SecurityAlert[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onRefresh: () => void;
+  refreshing?: boolean;
+}) {
+  const open = alerts.filter((a) => a.status === "new" || a.status === "reviewing" || a.status === "escalated");
+  const sorted = [...open].sort(
+    (a, b) =>
+      Number(b.status === "escalated") - Number(a.status === "escalated") ||
+      b.createdAt.localeCompare(a.createdAt),
+  );
+  return (
+    <div className="pointer-events-auto absolute left-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-72 flex-col overflow-hidden rounded-md border border-[#dbdfe3] bg-[#fbfcfd] shadow-lg">
+      <div className={cn("flex items-center justify-between gap-2 px-3 py-2.5", BAR)}>
+        <div>
+          <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-[#9aa1a6]">
+            Masters watch
+          </p>
+          <p className="text-[13px] font-semibold text-[#181b1e]">Security map</p>
+        </div>
+        <button onClick={onRefresh} disabled={refreshing} className={cn("h-7 px-2 text-[11px]", BTN)}>
+          {refreshing ? "Syncing" : "Refresh"}
+        </button>
+      </div>
+      <div className="border-b border-[#dbdfe3] px-3 py-2">
+        <p className={cn("text-[12px] leading-snug", MUTED)}>
+          Drone trail plus vehicle/person alert points. Inspection findings are hidden in this role.
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 divide-y divide-[#e4e8eb] overflow-y-auto">
+        {sorted.length === 0 ? (
+          <p className="px-3 py-4 text-[12px] text-[#9aa1a6]">No active security alerts.</p>
+        ) : (
+          sorted.map((alert) => (
+            <button
+              key={alert.id}
+              onClick={() => onSelect(alert.id)}
+              className={cn(
+                "flex w-full items-start gap-2 px-3 py-3 text-left transition-colors hover:bg-[#eef1f4]",
+                selectedId === alert.id && "bg-[#eef1f4]",
+              )}
+            >
+              <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#181b1e]" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-semibold text-[#181b1e]">{alert.title}</span>
+                <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
+                  {SECURITY_ALERT_TYPE[alert.alertType]} · {alert.plateText || alert.subjectLabel || "visual"}
+                </span>
+                <span className="mt-1.5 flex flex-wrap gap-1">
+                  <Badge compact tone={SECURITY_ALERT_STATUS[alert.status].tone}>
+                    {SECURITY_ALERT_STATUS[alert.status].label}
+                  </Badge>
+                  <Badge compact tone={SEVERITY[alert.severity].tone}>{SEVERITY[alert.severity].label}</Badge>
+                </span>
+              </span>
+              <span className="shrink-0 font-mono text-[10px] text-[#9aa1a6]">{rel(alert.createdAt)}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecurityAlertCard({ alert, onClose }: { alert: SecurityAlert; onClose: () => void }) {
+  return (
+    <div className="pointer-events-auto absolute right-3 top-3 z-20 w-[22rem] overflow-hidden rounded-md border border-[#dbdfe3] bg-[#fbfcfd] shadow-xl">
+      <div className={cn("flex items-center justify-between gap-2 px-3 py-2.5", BAR)}>
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-semibold text-[#181b1e]">{alert.title}</p>
+          <p className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
+            {SECURITY_ALERT_TYPE[alert.alertType]} · {rel(alert.createdAt)}
+          </p>
+        </div>
+        <button onClick={onClose} className={cn("h-7 px-2 text-[11px]", BTN)}>
+          Close
+        </button>
+      </div>
+      <div className="p-3">
+        {alert.evidenceUrl ? (
+          <img
+            src={alert.evidenceUrl}
+            alt={alert.title}
+            className="h-40 w-full rounded-md border border-[#dbdfe3] bg-[#eef1f4] object-cover"
+          />
+        ) : (
+          <div className="flex h-40 items-center justify-center rounded-md border border-[#dbdfe3] bg-[#eef1f4] font-mono text-[11px] uppercase tracking-wide text-[#9aa1a6]">
+            No image
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Badge tone={SECURITY_ALERT_STATUS[alert.status].tone}>{SECURITY_ALERT_STATUS[alert.status].label}</Badge>
+          <Badge tone={SEVERITY[alert.severity].tone}>{SEVERITY[alert.severity].label}</Badge>
+          {alert.confidence != null && <Badge tone="gray">{Math.round(alert.confidence * 100)}% AI</Badge>}
+        </div>
+        <p className="mt-3 text-[12px] leading-relaxed text-[#3f4448]">{alert.description}</p>
+        <dl className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+          <Info label="Subject" value={alert.subjectLabel ?? "—"} />
+          <Info label="Plate" value={alert.plateText ?? "—"} />
+          <Info label="Source" value={alert.sourceKind ?? "—"} />
+          <Info
+            label="GPS"
+            value={alert.gps ? `${alert.gps.lat.toFixed(4)}, ${alert.gps.lng.toFixed(4)}` : "—"}
+          />
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[#e4e8eb] bg-[#f3f5f7] px-2 py-1.5">
+      <dt className="font-mono text-[9px] uppercase tracking-wide text-[#6b7176]">{label}</dt>
+      <dd className="mt-0.5 truncate font-mono text-[11px] text-[#181b1e]">{value}</dd>
+    </div>
+  );
+}
+
 function boundaryPopupPoint(map: maplibregl.Map, boundary: Boundary): { x: number; y: number } {
   const poly = boundary.polygon;
   if (poly && poly.length >= 3) {
@@ -93,6 +224,7 @@ function minZoomForBounds(map: maplibregl.Map, bounds: maplibregl.LngLatBounds) 
 export default function AirportMap({
   layers,
   tickets,
+  securityAlerts = [],
   inspections,
   airportId,
   airportCenter,
@@ -107,6 +239,7 @@ export default function AirportMap({
 }: {
   layers: ZoneLayer[];
   tickets: Ticket[];
+  securityAlerts?: SecurityAlert[];
   inspections: { id: string; label: string }[];
   airportId: string;
   airportCenter?: LngLat;
@@ -123,6 +256,7 @@ export default function AirportMap({
   const { role } = useStore();
   const canEditKeepOut = role === "inspector" || role === "admin";
   const canEditZones = role === "admin";
+  const isSecurityMode = role === "security";
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const boundsRef = useRef<maplibregl.LngLatBounds | null>(null);
@@ -140,6 +274,7 @@ export default function AirportMap({
   const [focusedZoneId, setFocusedZoneId] = useState<string>("all");
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [selectedIssuePoint, setSelectedIssuePoint] = useState<{ x: number; y: number } | null>(null);
+  const [selectedSecurityAlertId, setSelectedSecurityAlertId] = useState<string | null>(null);
 
   const [keepOutOpen, setKeepOutOpen] = useState(false);
   const [keepOutStep, setKeepOutStep] = useState<KeepOutStep>("list");
@@ -169,8 +304,12 @@ export default function AirportMap({
   const plotMode = keepOutOpen && keepOutStep === "plot";
   const zonePlotMode = zoneDrawOpen && zoneDrawStep === "plot";
 
-  const allIssues = layers.flatMap(({ issues }) => issues);
-  const zoneById = Object.fromEntries(layers.map((layer) => [layer.zone.id, layer.zone] as const));
+  const allIssues = useMemo(() => layers.flatMap(({ issues }) => issues), [layers]);
+  const zones = useMemo(() => layers.map((l) => l.zone), [layers]);
+  const zoneById = useMemo(
+    () => Object.fromEntries(layers.map((layer) => [layer.zone.id, layer.zone] as const)),
+    [layers],
+  );
 
   const filteredIssues = useMemo(() => {
     const filtered = allIssues.filter(
@@ -190,6 +329,9 @@ export default function AirportMap({
   const selectedIssueZone = selectedIssue ? zoneById[selectedIssue.zoneId] : undefined;
   const selectedIssueMapPosition = selectedIssue && selectedIssueZone
     ? issuePosition(selectedIssueZone, selectedIssue)
+    : undefined;
+  const selectedSecurityAlert = selectedSecurityAlertId
+    ? securityAlerts.find((alert) => alert.id === selectedSecurityAlertId)
     : undefined;
 
   const toggleSeverity = (severity: Severity) => {
@@ -254,7 +396,7 @@ export default function AirportMap({
     if (anchor) map.easeTo({ center: pos(anchor), zoom: 15, duration: 450 });
   };
 
-  const mappable = layers.filter((l) => isMappable(l.zone));
+  const mappable = useMemo(() => layers.filter((l) => isMappable(l.zone)), [layers]);
   const mapSig = [
     airportCenter ? `${airportCenter.lat},${airportCenter.lng}` : "",
     ...mappable.map((l) => {
@@ -262,8 +404,6 @@ export default function AirportMap({
       return anchor ? `${l.zone.id}:${anchor.lat},${anchor.lng}` : l.zone.id;
     }),
   ].join("|");
-  const zones = layers.map((l) => l.zone);
-
   const loadKeepOutZones = useCallback(() => {
     if (!airportId) return;
     api.listKeepOutZones({ airportId }).then(setKeepOutZones).catch(() => setKeepOutZones([]));
@@ -566,9 +706,16 @@ export default function AirportMap({
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
     ensureIssueLayers(map);
-    updateIssueLayers(map, issueMarkers(filteredIssues, zoneById), selectedIssueId);
+    updateIssueLayers(map, isSecurityMode ? [] : issueMarkers(filteredIssues, zoneById), selectedIssueId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredIssues, selectedIssueId, mapLoaded]);
+  }, [filteredIssues, selectedIssueId, mapLoaded, isSecurityMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    ensureSecurityAlertLayers(map);
+    updateSecurityAlertLayers(map, securityAlerts, selectedSecurityAlertId);
+  }, [securityAlerts, selectedSecurityAlertId, mapLoaded]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -629,6 +776,29 @@ export default function AirportMap({
       map.off("mouseleave", ISSUE_CIRCLE_LAYER, onLeave);
     };
   }, [mapLoaded, plotMode, zonePlotMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    const onClick = (e: maplibregl.MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) setSelectedSecurityAlertId(id);
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+    map.on("click", SECURITY_ALERT_LAYER, onClick);
+    map.on("mouseenter", SECURITY_ALERT_LAYER, onEnter);
+    map.on("mouseleave", SECURITY_ALERT_LAYER, onLeave);
+    return () => {
+      map.off("click", SECURITY_ALERT_LAYER, onClick);
+      map.off("mouseenter", SECURITY_ALERT_LAYER, onEnter);
+      map.off("mouseleave", SECURITY_ALERT_LAYER, onLeave);
+    };
+  }, [mapLoaded]);
 
   useEffect(() => {
     if (!containerRef.current || (mappable.length === 0 && !airportCenter)) return;
@@ -882,41 +1052,53 @@ export default function AirportMap({
           )}
         </div>
       )}
-      <MapToolbar
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((v) => !v)}
-        issueCount={filteredIssues.length}
-        totalIssueCount={allIssues.length}
-        reviewQueueOnly={reviewQueueOnly}
-        onToggleReviewQueue={toggleReviewQueue}
-        inspectionScope={inspectionScope}
-        onInspectionScopeChange={onInspectionScopeChange}
-        inspections={inspections}
-        currentInspectionId={currentInspectionId}
-        onOpenKeepOut={() => setKeepOutOpen(true)}
-        keepOutActiveCount={activeKeepOutCount}
-        canDrawZone={canEditZones && !zoneDrawOpen && !focusedHasZone}
-        onDrawZone={() => startZoneDraw(focusedZoneId !== "all" ? focusedZoneId : undefined)}
-        onRefresh={onRefresh}
-        refreshing={refreshing}
-        issues={filteredIssues}
-        zonesById={zoneById}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        sortKey={sortKey}
-        onSortChange={setSortKey}
-        onSelectIssue={(issue) => setSelectedIssueId(issue.id)}
-        selectedIssueId={selectedIssueId}
-      />
-      <MapLegend
-        severityFilter={severityFilter}
-        statusFilter={statusFilter}
-        categoryFilter={categoryFilter}
-        onToggleSeverity={toggleSeverity}
-        onToggleStatus={toggleStatus}
-        onToggleCategory={toggleCategory}
-      />
-      {selectedIssue && selectedIssuePoint && (
+      {isSecurityMode ? (
+        <SecurityMapPanel
+          alerts={securityAlerts}
+          selectedId={selectedSecurityAlertId}
+          onSelect={setSelectedSecurityAlertId}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      ) : (
+        <>
+          <MapToolbar
+            collapsed={collapsed}
+            onToggleCollapsed={() => setCollapsed((v) => !v)}
+            issueCount={filteredIssues.length}
+            totalIssueCount={allIssues.length}
+            reviewQueueOnly={reviewQueueOnly}
+            onToggleReviewQueue={toggleReviewQueue}
+            inspectionScope={inspectionScope}
+            onInspectionScopeChange={onInspectionScopeChange}
+            inspections={inspections}
+            currentInspectionId={currentInspectionId}
+            onOpenKeepOut={() => setKeepOutOpen(true)}
+            keepOutActiveCount={activeKeepOutCount}
+            canDrawZone={canEditZones && !zoneDrawOpen && !focusedHasZone}
+            onDrawZone={() => startZoneDraw(focusedZoneId !== "all" ? focusedZoneId : undefined)}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
+            issues={filteredIssues}
+            zonesById={zoneById}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            sortKey={sortKey}
+            onSortChange={setSortKey}
+            onSelectIssue={(issue) => setSelectedIssueId(issue.id)}
+            selectedIssueId={selectedIssueId}
+          />
+          <MapLegend
+            severityFilter={severityFilter}
+            statusFilter={statusFilter}
+            categoryFilter={categoryFilter}
+            onToggleSeverity={toggleSeverity}
+            onToggleStatus={toggleStatus}
+            onToggleCategory={toggleCategory}
+          />
+        </>
+      )}
+      {!isSecurityMode && selectedIssue && selectedIssuePoint && (
         <IssuePreviewCard
           issue={selectedIssue}
           ticket={selectedTicket}
@@ -926,7 +1108,7 @@ export default function AirportMap({
           onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
         />
       )}
-      {selectedIssue && (
+      {!isSecurityMode && selectedIssue && (
         <IssueDetailPanel
           issue={selectedIssue}
           zone={zoneById[selectedIssue.zoneId]}
@@ -935,6 +1117,9 @@ export default function AirportMap({
           onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
           onIssueUpdated={onIssueUpdated}
         />
+      )}
+      {isSecurityMode && selectedSecurityAlert && (
+        <SecurityAlertCard alert={selectedSecurityAlert} onClose={() => setSelectedSecurityAlertId(null)} />
       )}
     </div>
   );

@@ -22,6 +22,16 @@ export type IssueStatus = "pending" | "approved" | "rejected" | "manual_review";
 /** Phase-0 alias kept for the existing UI / ui.ts maps. */
 export type IssueDecision = IssueStatus;
 
+export type SecurityAlertType =
+  | "perimeter_intrusion"
+  | "unauthorized_vehicle"
+  | "suspicious_person"
+  | "license_plate"
+  | "ramp_watch"
+  | "threat";
+
+export type SecurityAlertStatus = "new" | "reviewing" | "escalated" | "dismissed" | "resolved";
+
 /** Ticket lifecycle (PRD §8.4, trimmed to the 6 states the demo drives). */
 export type TicketStatus =
   | "draft"
@@ -63,7 +73,7 @@ export type RejectionReason =
   | "other";
 
 /** Demo roles (advisory RBAC, role switcher in the header). */
-export type UserRole = "admin" | "inspector" | "maintenance";
+export type UserRole = "admin" | "inspector" | "maintenance" | "security";
 
 /** How an image/candidate location was derived (design §4 [GAP 3]). */
 export type GeomConfidence = "gps" | "pose" | "manual";
@@ -133,7 +143,7 @@ export const REJECTION_REASONS: RejectionReason[] = [
   "already_known",
   "other",
 ];
-export const USER_ROLES: UserRole[] = ["admin", "inspector", "maintenance"];
+export const USER_ROLES: UserRole[] = ["admin", "inspector", "maintenance", "security"];
 export const ZONE_MAP_STATUSES: ZoneMapStatus[] = [
   "draft",
   "active",
@@ -382,6 +392,45 @@ export interface IssueCandidate {
   conditionsFound?: string | null;
   correctiveAction?: string | null;
   createdBy?: string;
+  createdAt: string;
+}
+
+export interface SecurityAlert {
+  id: string;
+  airportId: string;
+  zoneId?: string;
+  flightId?: string;
+  imageId?: string;
+  alertType: SecurityAlertType;
+  severity: Severity;
+  status: SecurityAlertStatus;
+  title: string;
+  description: string;
+  confidence?: number;
+  gps?: LngLat;
+  subjectLabel?: string;
+  plateText?: string;
+  evidenceUrl?: string;
+  sourceKind?: string;
+  metadata?: Record<string, unknown>;
+  assignedTeamId?: string;
+  assignedTeamName?: string;
+  dispatchNote?: string;
+  resolutionNote?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  dispatchedAt?: string;
+  resolvedAt?: string;
+}
+
+export interface SecurityTeam {
+  id: string;
+  airportId: string;
+  name: string;
+  kind: string;
+  status: string;
+  contact?: string;
   createdAt: string;
 }
 

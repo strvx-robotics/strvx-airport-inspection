@@ -40,7 +40,7 @@ const STATUS: Record<DroneStatus, { label: string; tone: Tone }> = {
 export default function LivePage() {
   const { role } = useStore();
   const { overview } = useOverview();
-  const allowed = role === "inspector" || role === "admin";
+  const allowed = role === "inspector" || role === "admin" || role === "security";
   const airportLabel = overview ? `${overview.airport.name} · ${overview.airport.code}` : "";
   const zones = overview?.zones.map((r) => r.zone) ?? [];
 
@@ -101,7 +101,7 @@ export default function LivePage() {
           <Radio size={17} strokeWidth={2} /> Drone feed
         </h1>
         <div className={cn("mt-4 rounded-md px-4 py-3 text-[13px] text-[#5b6166]", CARD)}>
-          Switch to the Inspector or Admin role to view the live drone feed.
+          Switch to the Inspector, Security, or Admin role to view the live drone feed.
         </div>
       </div>
     );

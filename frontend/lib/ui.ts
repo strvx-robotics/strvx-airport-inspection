@@ -10,6 +10,8 @@ import type {
   InspectionWindow,
   RejectionReason,
   ScheduleFrequency,
+  SecurityAlertStatus,
+  SecurityAlertType,
   Severity,
   SpecialTrigger,
   Ticket,
@@ -43,6 +45,24 @@ export const ROLE: Record<UserRole, string> = {
   admin: "Admin",
   inspector: "Inspector",
   maintenance: "Maintenance",
+  security: "Security",
+};
+
+export const SECURITY_ALERT_TYPE: Record<SecurityAlertType, string> = {
+  perimeter_intrusion: "Perimeter intrusion",
+  unauthorized_vehicle: "Unauthorized vehicle",
+  suspicious_person: "Suspicious person",
+  license_plate: "License plate watch",
+  ramp_watch: "Ramp watch",
+  threat: "Threat indicator",
+};
+
+export const SECURITY_ALERT_STATUS: Record<SecurityAlertStatus, { label: string; tone: Tone }> = {
+  new: { label: "New", tone: "amber" },
+  reviewing: { label: "Reviewing", tone: "blue" },
+  escalated: { label: "Escalated", tone: "red" },
+  dismissed: { label: "Dismissed", tone: "gray" },
+  resolved: { label: "Resolved", tone: "green" },
 };
 
 /** Inspection-window labels for the admin schedule form. */

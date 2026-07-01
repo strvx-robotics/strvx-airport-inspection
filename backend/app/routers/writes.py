@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request
 from app.constants import INSPECTION_TYPES as _INSPECTION_TYPES
 from app.deps import actor_from
 from app.errors import AppError
-from app.repo import boundaries, checklist, drone_captures, schedules, users, zones
+from app.repo import boundaries, checklist, drone_captures, schedules, security_alerts, users, zones
 from app.repo import keep_out_zones
 from app.repo.inspections import run_inspection_now, sign_inspection
 from app.repo.overview import get_overview
@@ -161,6 +161,20 @@ async def patch_keep_out_zone(id: str, request: Request) -> dict:
 async def delete_keep_out_zone(id: str) -> dict:
     await keep_out_zones.delete_zone(id)
     return {"ok": True}
+
+
+@router.post("/security-alerts", status_code=201)
+async def post_security_alert(request: Request) -> dict:
+    body = await _json(request)
+    alert = await security_alerts.create_alert(body, actor_from(request, body))
+    return {"securityAlert": dump(alert)}
+
+
+@router.patch("/security-alerts/{id}")
+async def patch_security_alert(id: str, request: Request) -> dict:
+    body = await _json(request)
+    alert = await security_alerts.update_alert(id, body)
+    return {"securityAlert": dump(alert)}
 
 
 @router.post("/drone-captures", status_code=201)

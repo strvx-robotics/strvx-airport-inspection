@@ -42,9 +42,9 @@ Important env:
 - `airports.py` - list/create/update airports.
 - `drones.py` - drone reads.
 - `issues.py` - issue detail, approve, reject, manual review, edit.
-- `reads.py` - overview, inspections, zones, boundaries, users, schedules.
+- `reads.py` - overview, inspections, zones, boundaries, security alerts, users, schedules.
 - `tickets.py` - ticket list/detail, repair, close.
-- `writes.py` - zone/boundary/schedule creates, `run-now`, and drone capture ingestion.
+- `writes.py` - zone/boundary/schedule/security creates, `run-now`, and drone capture ingestion.
 
 ## Drone Capture Contract
 
@@ -67,10 +67,31 @@ metadata, creates linked `issue_candidates`, updates the inspection job counts,
 and returns `{flight?, image, candidates}`. Issue records carry GPS when present,
 so the map can plot directly from drone GPS.
 
+## Security Alerts
+
+`security_alerts` is the backend domain for Masters-style perimeter/ramp security
+monitoring. It is separate from runway `issue_candidates` so security events do
+not get forced into FOD/pavement/marking/lighting categories.
+
+Public surface:
+
+- `GET /security-alerts?airportId=ags&status=new`
+- `GET /security-teams?airportId=ags`
+- `POST /security-alerts`
+- `PATCH /security-alerts/{id}`
+
+Alert types are `perimeter_intrusion`, `unauthorized_vehicle`,
+`suspicious_person`, `license_plate`, `ramp_watch`, and `threat`. Statuses are
+`new`, `reviewing`, `escalated`, `dismissed`, and `resolved`.
+
+Security teams live in `security_teams` and can be dispatched by PATCHing an
+alert with `assignedTeamId` and `dispatchNote`. The alert stores the assigned
+team, dispatch note, and `dispatchedAt` timestamp for audit/demo continuity.
+
 ## Extraction Boundary
 
-Most reads, writes, issues, tickets, airports, drones, users, schedules, zones,
-boundaries, and drone capture persistence are handled here. These routes still
+Most reads, writes, issues, tickets, security alerts, airports, drones, users,
+schedules, zones, boundaries, and drone capture persistence are handled here. These routes still
 live in the frontend server for now:
 
 - binary upload/storage and detection orchestration before `/drone-captures`

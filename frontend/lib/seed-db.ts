@@ -43,6 +43,17 @@ export async function seedDatabase(): Promise<void> {
     await insUser("u_admin", "admin", "A. Chen · Admin", "admin");
     await insUser("u_inspector", "jrivera", "J. Rivera · Inspector", "inspector");
     await insUser("u_maint", "maintenance", "Field Maintenance", "maintenance");
+    await insUser("u_security", "security", "Security Desk", "security");
+
+    const insSecurityTeam = (id: string, name: string, kind: string, status: string, contact: string) =>
+      run(
+        `INSERT INTO security_teams (id, airport_id, name, kind, status, contact, created_at)
+         VALUES (?, 'ags', ?, ?, ?, ?, ?)`,
+        [id, name, kind, status, contact, TS],
+      );
+    await insSecurityTeam("team_police", "Airport Police", "police", "available", "Ops channel 2");
+    await insSecurityTeam("team_ops_rover", "Operations Rover", "operations", "available", "Ops 1");
+    await insSecurityTeam("team_arff", "ARFF Drone Operator", "arff", "available", "ARFF desk");
 
     // Threshold anchors are demo coordinates near Augusta Regional (AGS) so the
     // map renders; swap for surveyed thresholds when available. Heading is derived
@@ -73,6 +84,54 @@ export async function seedDatabase(): Promise<void> {
     await seedBoundary("z_r1", "r1", "Zone 1 boundary", 0, 2439);
     await seedBoundary("z_r2", "r2", "Zone 2 boundary", 0, 1829);
     await seedBoundary("z_r3", "r3", "Zone 3 boundary", 0, 1524);
+
+    const insSecurityAlert = (
+      id: string,
+      zoneId: string,
+      alertType: string,
+      severity: string,
+      status: string,
+      title: string,
+      description: string,
+      confidence: number,
+      lat: number,
+      lng: number,
+      subjectLabel: string,
+      plateText: string | null,
+      evidenceUrl: string,
+      metadata: Record<string, unknown>,
+    ) =>
+      run(
+        `INSERT INTO security_alerts
+           (id, airport_id, zone_id, alert_type, severity, status, title, description, confidence,
+            gps_lat, gps_lng, subject_label, plate_text, evidence_url, source_kind, metadata_json, created_by, created_at, updated_at)
+         VALUES (?, 'ags', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'demo_seed', ?, 'Security Desk', ?, ?)`,
+        [
+          id, zoneId, alertType, severity, status, title, description, confidence, lat, lng,
+          subjectLabel, plateText, evidenceUrl, JSON.stringify(metadata), TS, TS,
+        ],
+      );
+    await insSecurityAlert(
+      "sec_gate4", "r1", "perimeter_intrusion", "high", "new",
+      "Perimeter motion near Gate 4",
+      "Drone detected a person inside the north service-road boundary during Masters traffic.",
+      0.91, 33.3711, -81.9642, "person", null, "/seed/security-gate-4.svg",
+      { mastersSector: "north service road", recommendedAction: "Dispatch security patrol" },
+    );
+    await insSecurityAlert(
+      "sec_vehicle", "r2", "unauthorized_vehicle", "critical", "escalated",
+      "Unauthorized vehicle on service road",
+      "Vehicle stopped near a restricted ramp access point; plate unreadable in this frame.",
+      0.87, 33.3689, -81.9638, "vehicle", "AGC-4821", "/seed/security-vehicle.svg",
+      { mastersSector: "east ramp", recommendedAction: "Notify airport police" },
+    );
+    await insSecurityAlert(
+      "sec_ramp", "r2", "ramp_watch", "medium", "reviewing",
+      "Ramp crowding watch",
+      "Drone view shows congestion building around temporary parking rows.",
+      0.74, 33.3702, -81.9629, "aircraft parking", null, "/seed/security-ramp.svg",
+      { mastersSector: "GA parking", recommendedAction: "Monitor flow" },
+    );
 
     await run(
       `INSERT INTO inspection_schedules (id, airport_id, time, "window", enabled, created_by, created_at)

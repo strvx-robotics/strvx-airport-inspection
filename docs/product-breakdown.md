@@ -89,9 +89,18 @@ Status summary: **19 Built, 4 Partial, 3 Planned.**
 | --- | --- | --- |
 | Airport / runway / zone setup | Admin defines the physical airfield layout and map | Built |
 | Inspection schedules | Recurring daily window (default 6:00 AM) per airport | Built |
-| Users & roles | Admin / inspector / maintenance accounts (advisory RBAC) | Built |
+| Users & roles | Admin / inspector / maintenance / security accounts (advisory RBAC) | Built |
 | Fleet registry | Drone status, battery, and assignment tracking | Built |
 | App settings | Runtime config such as the live stream URL | Built |
+
+### Security operations
+
+| Capability | What it does | Status |
+| --- | --- | --- |
+| Security dashboard | Masters-style perimeter/ramp command center for the security role | Built |
+| Security alert lifecycle | New / reviewing / escalated / dismissed / resolved alert workflow | Built |
+| Security alert persistence | Stores alert type, evidence URL, GPS, subject/plate text, metadata, and resolution note | Built |
+| Threat / LPR model integration | Real person/vehicle/plate/threat detector modules feeding security alerts | Planned |
 
 ### Capture & ingestion
 
@@ -138,7 +147,7 @@ Status summary: **19 Built, 4 Partial, 3 Planned.**
 
 | Route | Screen | Audience | Purpose |
 | --- | --- | --- | --- |
-| `/` | Dashboard / tracker | All | Inspection overview; maintenance sees its worklist |
+| `/` | Dashboard / tracker / security watch | All | Inspection overview; maintenance sees its worklist; security sees Masters watch |
 | `/inspection/[id]` | Inspection detail | Inspector | Per-runway status for one run |
 | `/runway/[id]` | Runway issues | Inspector | Issue candidate list for a runway |
 | `/issue/[id]` | Issue review | Inspector | Approve / reject / edit a candidate |

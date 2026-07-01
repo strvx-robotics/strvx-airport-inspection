@@ -398,6 +398,45 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
   created_at          TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS security_teams (
+  id         TEXT PRIMARY KEY,
+  airport_id TEXT NOT NULL REFERENCES airports(id),
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'available',
+  contact    TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS security_alerts (
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  zone_id         TEXT REFERENCES zones(id),
+  flight_id       TEXT REFERENCES flights(id),
+  image_id        TEXT REFERENCES images(id),
+  alert_type      TEXT NOT NULL,
+  severity        TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'new',
+  title           TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  confidence      DOUBLE PRECISION,
+  gps_lat         DOUBLE PRECISION,
+  gps_lng         DOUBLE PRECISION,
+  subject_label   TEXT,
+  plate_text      TEXT,
+  evidence_url    TEXT,
+  source_kind     TEXT,
+  metadata_json   TEXT,
+  assigned_team_id TEXT REFERENCES security_teams(id),
+  dispatch_note  TEXT,
+  resolution_note TEXT,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  dispatched_at   TEXT,
+  resolved_at     TEXT
+);
+
 CREATE TABLE IF NOT EXISTS tickets (
   id                TEXT PRIMARY KEY,
   issue_id          TEXT NOT NULL UNIQUE REFERENCES issue_candidates(id),
@@ -492,6 +531,9 @@ CREATE TABLE IF NOT EXISTS flights (
 
 CREATE INDEX IF NOT EXISTS idx_issues_zone        ON issue_candidates(zone_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_security_alerts_airport ON security_alerts(airport_id);
+CREATE INDEX IF NOT EXISTS idx_security_alerts_status ON security_alerts(status);
+CREATE INDEX IF NOT EXISTS idx_security_teams_airport ON security_teams(airport_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_zone       ON tickets(zone_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
@@ -586,6 +628,46 @@ CREATE TABLE IF NOT EXISTS keep_out_zones (
   created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_keep_out_zone ON keep_out_zones(zone_id);
+CREATE TABLE IF NOT EXISTS security_alerts (
+  id              TEXT PRIMARY KEY,
+  airport_id      TEXT NOT NULL REFERENCES airports(id),
+  zone_id         TEXT REFERENCES zones(id),
+  flight_id       TEXT REFERENCES flights(id),
+  image_id        TEXT REFERENCES images(id),
+  alert_type      TEXT NOT NULL,
+  severity        TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'new',
+  title           TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  confidence      DOUBLE PRECISION,
+  gps_lat         DOUBLE PRECISION,
+  gps_lng         DOUBLE PRECISION,
+  subject_label   TEXT,
+  plate_text      TEXT,
+  evidence_url    TEXT,
+  source_kind     TEXT,
+  metadata_json   TEXT,
+  resolution_note TEXT,
+  created_by      TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  resolved_at     TEXT
+);
+CREATE TABLE IF NOT EXISTS security_teams (
+  id         TEXT PRIMARY KEY,
+  airport_id TEXT NOT NULL REFERENCES airports(id),
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'available',
+  contact    TEXT,
+  created_at TEXT NOT NULL
+);
+ALTER TABLE security_alerts ADD COLUMN IF NOT EXISTS assigned_team_id TEXT REFERENCES security_teams(id);
+ALTER TABLE security_alerts ADD COLUMN IF NOT EXISTS dispatch_note TEXT;
+ALTER TABLE security_alerts ADD COLUMN IF NOT EXISTS dispatched_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_security_alerts_airport ON security_alerts(airport_id);
+CREATE INDEX IF NOT EXISTS idx_security_alerts_status ON security_alerts(status);
+CREATE INDEX IF NOT EXISTS idx_security_teams_airport ON security_teams(airport_id);
 ALTER TABLE keep_out_zones ADD COLUMN IF NOT EXISTS polygon_json TEXT;
 ALTER TABLE keep_out_zones ALTER COLUMN station_start_m DROP NOT NULL;
 ALTER TABLE keep_out_zones ALTER COLUMN station_end_m DROP NOT NULL;

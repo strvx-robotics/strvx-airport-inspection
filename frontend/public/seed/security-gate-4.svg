@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#dfe5df"/>
+  <rect y="235" width="640" height="125" fill="#aebaa4"/>
+  <path d="M0 240 C160 210 250 250 390 224 C500 205 585 218 640 202" fill="none" stroke="#687064" stroke-width="22"/>
+  <path d="M0 270 C165 240 260 280 400 254 C510 235 590 248 640 232" fill="none" stroke="#f0f2f0" stroke-width="4" stroke-dasharray="16 16"/>
+  <rect x="430" y="120" width="145" height="70" rx="4" fill="#c8cec5" stroke="#6d756a" stroke-width="3"/>
+  <text x="502" y="160" text-anchor="middle" font-family="monospace" font-size="18" fill="#181b1e">GATE 4</text>
+  <circle cx="375" cy="214" r="19" fill="#d07d2e" stroke="#181b1e" stroke-width="5"/>
+  <text x="375" y="220" text-anchor="middle" font-family="monospace" font-size="15" fill="#fff">P</text>
+  <text x="18" y="32" font-family="monospace" font-size="16" fill="#181b1e">DRONE FRAME · NORTH SERVICE ROAD</text>
+</svg>

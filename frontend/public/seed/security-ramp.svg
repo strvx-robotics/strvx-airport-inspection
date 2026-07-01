@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#d7ddd4"/>
+  <rect x="0" y="215" width="640" height="145" fill="#9ca79a"/>
+  <g fill="#eef1f4" stroke="#181b1e" stroke-width="3">
+    <path d="M150 165 l80 -30 l72 48 l-72 32 z"/>
+    <path d="M350 150 l88 -24 l70 54 l-80 28 z"/>
+    <path d="M260 238 l92 -26 l68 48 l-84 30 z"/>
+  </g>
+  <g fill="#d07d2e">
+    <circle cx="220" cy="210" r="8"/>
+    <circle cx="244" cy="218" r="8"/>
+    <circle cx="268" cy="226" r="8"/>
+    <circle cx="388" cy="224" r="8"/>
+    <circle cx="412" cy="234" r="8"/>
+  </g>
+  <rect x="30" y="50" width="240" height="34" rx="4" fill="#fbfcfd" stroke="#181b1e" stroke-width="2"/>
+  <text x="44" y="72" font-family="monospace" font-size="16" fill="#181b1e">GA PARKING WATCH</text>
+</svg>

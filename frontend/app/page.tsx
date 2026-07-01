@@ -7,6 +7,7 @@ import ZoneTable from "@/components/dashboard/ZoneTable";
 import type { Overview } from "@/lib/api";
 import { useOverview, useStore } from "@/lib/store";
 import MaintenanceTracker from "@/components/MaintenanceTracker";
+import SecurityDashboard from "@/components/SecurityDashboard";
 import { INSPECTION_STATUS, INSPECTION_WINDOW } from "@/lib/ui";
 import { fmtInTz } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -16,6 +17,7 @@ import { CARD, BAR, BTN, EYEBROW, H2, MUTED, METRIC_CELL } from "@/lib/vstyle";
 // full inspection dashboard.
 export default function Home() {
   const { role } = useStore();
+  if (role === "security") return <SecurityDashboard />;
   return role === "maintenance" ? <MaintenanceTracker /> : <Dashboard />;
 }
 

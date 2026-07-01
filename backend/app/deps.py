@@ -1,7 +1,7 @@
 from fastapi import Request
 from pydantic import BaseModel
 
-USER_ROLES = {"admin", "inspector", "maintenance"}
+USER_ROLES = {"admin", "inspector", "maintenance", "security"}
 
 
 class Actor(BaseModel):

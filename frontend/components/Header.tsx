@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gauge, Radio, Cog, Wrench, Map as MapIcon, ScrollText, User, ChevronDown, Check, type LucideIcon } from "lucide-react";
+import { Gauge, Radio, Cog, Wrench, Map as MapIcon, ScrollText, User, ChevronDown, Check, Shield, type LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ROLE } from "@/lib/ui";
 import { USER_ROLES } from "@/lib/types";
@@ -15,9 +15,10 @@ import { systemState, SYSTEM_DOT, SYSTEM_TEXT, type SystemState } from "@/lib/vs
 export default function Header() {
   const { role, setRole, online } = useStore();
   const pathname = usePathname();
-  const showLive = role === "inspector" || role === "admin";
+  const showLive = role === "inspector" || role === "admin" || role === "security";
   const showAdmin = role === "admin";
   const isMaintenance = role === "maintenance";
+  const isSecurity = role === "security";
   const state = systemState(online);
 
   return (
@@ -35,6 +36,8 @@ export default function Header() {
       <div className="absolute left-1/2 flex -translate-x-1/2 items-center divide-x divide-[#2b3035] rounded-md bg-[#121517] p-0.5 ring-1 ring-inset ring-[#2b3035]">
         {isMaintenance ? (
           <NavTab href="/" active={pathname === "/"} icon={Wrench} label="Work orders" />
+        ) : isSecurity ? (
+          <NavTab href="/" active={pathname === "/"} icon={Shield} label="Security" />
         ) : (
           <NavTab href="/" active={pathname === "/"} icon={Gauge} label="Overview" />
         )}
@@ -42,7 +45,7 @@ export default function Header() {
           <NavTab href="/live" active={pathname === "/live"} icon={Radio} label="Live" />
         )}
         <NavTab href="/map" active={pathname === "/map"} icon={MapIcon} label="Map" />
-        {!isMaintenance && (
+        {!isMaintenance && !isSecurity && (
           <NavTab href="/logs" active={pathname === "/logs"} icon={ScrollText} label="Logs" />
         )}
         {showAdmin && (

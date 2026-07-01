@@ -38,13 +38,13 @@ npm run dev
 
 ## Routes
 
-- `/` - inspection dashboard; maintenance users see the maintenance tracker.
+- `/` - role-specific dashboard: inspection overview, maintenance tracker, or security watch.
 - `/inspection/[id]` - inspection detail.
 - `/zone/[id]` - zone issue list.
 - `/issue/[id]` - candidate review, approve/reject/manual review/edit.
 - `/ticket/[id]` - maintenance work order, repair, and closeout.
 - `/upload` - manual image upload and zone tag.
-- `/live` - HLS drone feed plus live detection overlay.
+- `/live` - HLS drone feed plus live detection overlay for inspector/admin/security roles.
 - `/map` - satellite map with issue markers + review panels, no-drone zones, and boundary drawing.
 - `/admin` - airport, zone, boundary, schedule, user, and setting setup.
 - `/logs` - inspection and ticket logs.
@@ -57,8 +57,8 @@ actions.
 
 Most `/api/*` route handlers proxy to the backend through `frontend/lib/backend.ts`
 and `BACKEND_URL`. Proxied domains include inspections, zones, boundaries,
-schedules, users, drones, airports, issues, tickets, and drone capture
-persistence.
+schedules, users, drones, airports, issues, tickets, security alerts, and drone
+capture persistence.
 
 These routes still execute in the Next.js server and talk to Postgres or
 downstream services directly:
@@ -89,6 +89,24 @@ downstream services directly:
   images.
 - `lib/workOrder.ts` - derives operational work-order fields from ticket,
   issue, zone, category, and severity.
+
+## Security Role
+
+The `security` role gets a Masters-ready command center on `/`. It shows
+perimeter/ramp alert counts, a security-alert queue, command actions, and direct
+links into the live feed and map. Alerts are persisted in backend
+`security_alerts`, not mixed into runway inspection issues.
+
+On `/map`, the security role gets a security-only map mode: inspection issue
+queues and work-order controls are hidden, security alert dots are shown with a
+drone patrol trail, and selecting an alert opens evidence imagery plus subject,
+plate, source, GPS, confidence, and status details.
+
+Security alerts support `new`, `reviewing`, `escalated`, `dismissed`, and
+`resolved` statuses. The first implementation focuses on human-reviewed
+perimeter/ramp events; real threat/LPR detector modules can feed the same API.
+Security teams are loaded from backend `security_teams`; dispatching a team from
+the selected alert panel assigns it to the alert and records a dispatch note/time.
 
 ## Manual Zone Mapping
 
@@ -126,6 +144,10 @@ GPS precedence for new captures:
 1. Explicit SRT/live GPS sent by the capture workflow.
 2. EXIF GPS from still-image uploads.
 3. Manual zone/station fallback when no GPS is available.
+
+**Security alert markers** (dark-stroked severity dots): read-only pins for
+security alerts with GPS. They use the same satellite map as issue markers but
+come from `security_alerts`, not inspection findings.
 
 **No-drone zones** (red): inspectors plot them on the map; areas where the drone
 must not fly. Station ranges along the runway are derived from the plotted shape —

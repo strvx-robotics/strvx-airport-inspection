@@ -157,6 +157,19 @@ Capabilities:
 * Mark repair complete
 * Attach repair notes or images
 
+### Security Desk
+
+Responsible for monitoring Masters-style perimeter, ramp, and service-road events
+from drone imagery.
+
+Capabilities:
+
+* View the security command dashboard
+* Monitor live drone feed and airport map
+* Review security alerts
+* Escalate suspicious subjects or vehicles
+* Resolve or dismiss alerts after human review
+
 ## 7. Core Workflow
 
 ### Current State

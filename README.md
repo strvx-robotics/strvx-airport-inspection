@@ -2,9 +2,10 @@
 
 Drone-assisted runway inspection for airport operations teams. A drone or operator
 captures runway imagery, the system flags possible issues, an inspector reviews
-them, and approved findings become maintenance tickets. Rejections and ticket text
-edits are exported as learning records so the detector and ticket writer can
-improve over time.
+them, and approved findings become maintenance tickets. A separate security role
+tracks Masters-style perimeter/ramp alerts from the same drone command surface.
+Rejections and ticket text edits are exported as learning records so the detector
+and ticket writer can improve over time.
 
 The current app is a three-service Postgres system:
 
@@ -158,6 +159,9 @@ they own uploads, reports, settings, and learning exports:
 The frontend schema setup remains in `frontend/lib/db.ts`; backend tests keep a
 copy at `backend/tests/schema.sql`.
 
+Security alerts and drone capture metadata are persisted in the backend through
+`/security-alerts` and `/drone-captures`.
+
 ## Live Drone Feed
 
 Browsers cannot play raw RTMP. For local demos, MediaMTX can republish drone RTMP
@@ -190,7 +194,8 @@ Set `NEXT_PUBLIC_RELAY_URL=ws://localhost:8000` in the frontend.
 
 ## Status
 
-MVP workflow is implemented with real Postgres persistence: overview, runway and
-issue review, ticket lifecycle, admin setup, upload ingestion, reports, feedback
-export, live feed UI, and backend extraction for most CRUD/read APIs. CV uses the
-ml-service when configured and deterministic fallbacks otherwise.
+MVP workflow is implemented with real Postgres persistence: overview, zone and
+issue review, ticket lifecycle, security alert workflow, admin setup, upload
+ingestion, reports, feedback export, live feed UI, and backend extraction for
+most CRUD/read APIs. CV uses the ml-service when configured and deterministic
+fallbacks otherwise.
