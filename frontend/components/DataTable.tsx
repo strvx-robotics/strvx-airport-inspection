@@ -1,129 +1,58 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { useRouter } from "next/navigation";
-import {
-  AllCommunityModule,
-  ModuleRegistry,
-  themeQuartz,
-  type ColDef,
-  type GetRowIdParams,
-  type GridSizeChangedEvent,
-  type RowClickedEvent,
-} from "ag-grid-community";
-import { AgGridReact } from "ag-grid-react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import type { DataTableProps } from "./DataTableGrid";
 
-ModuleRegistry.registerModules([AllCommunityModule]);
+export type { DataTableColumn } from "./DataTableGrid";
 
-export type DataTableColumn<T> = ColDef<T>;
+// ag-grid-community + ag-grid-react are ~1MB and were the single largest reason
+// the table tabs (overview, /logs, /admin, /zone/[id]) each shipped ~1.6MB of
+// first-load JS while every other route shipped ~0.55MB. That whole graph sat in
+// each route's initial bundle, so the first open of any of those tabs blocked on
+// downloading it — and, in dev, on Turbopack compiling its module graph. We defer
+// it behind a lazy boundary: the tab paints its shell + a sized skeleton
+// immediately and the grid streams in. An empty table short-circuits before the
+// import fires, so a quiet console never pays for ag-grid at all.
+const Grid = lazy(() => import("./DataTableGrid")) as unknown as <T extends object>(
+  props: DataTableProps<T>,
+) => ReactNode;
 
-const gridTheme = themeQuartz.withParams({
-  accentColor: "#181b1e",
-  backgroundColor: "#fbfcfd",
-  borderColor: "#dbdfe3",
-  browserColorScheme: "light",
-  chromeBackgroundColor: "#eef1f4",
-  fontFamily: "var(--font-ibm-sans), ui-sans-serif, system-ui, sans-serif",
-  fontSize: 12,
-  foregroundColor: "#181b1e",
-  headerBackgroundColor: "#eef1f4",
-  headerTextColor: "#6b7176",
-  rowBorder: true,
-  rowHoverColor: "#eef1f4",
-  spacing: 6,
-  wrapperBorderRadius: 4,
-});
-
-function isInteractiveEvent(event?: Event | null) {
-  const target = event?.target;
-  return target instanceof HTMLElement
-    ? Boolean(target.closest("a, button, input, textarea, select, [role='button']"))
-    : false;
+export default function DataTable<T extends object>(props: DataTableProps<T>) {
+  if (props.rows.length === 0 && props.empty) return <>{props.empty}</>;
+  return (
+    <Suspense fallback={<DataTableSkeleton {...props} />}>
+      <Grid {...props} />
+    </Suspense>
+  );
 }
 
-export default function DataTable<T extends object>({
-  rows,
-  columns,
+/** Sized placeholder shown while the ag-grid chunk loads. Mirrors the grid's
+ *  outer container sizing (fill / fixed height / autoHeight) so the tab does not
+ *  shift layout when the real grid swaps in. */
+function DataTableSkeleton<T extends object>({
   label,
   height = 360,
   fill = false,
   autoHeight = false,
   rowHeight = 58,
-  rowHref,
-  onRowClick,
-  getRowId,
-  empty,
   className,
-}: {
-  rows: T[];
-  columns: DataTableColumn<T>[];
-  label: string;
-  height?: number | string;
-  fill?: boolean;
-  // Size the grid to its rows (no internal scroll) instead of filling a fixed
-  // height. The page scrolls if the rows ever exceed the viewport.
-  autoHeight?: boolean;
-  rowHeight?: number;
-  rowHref?: (row: T) => string;
-  onRowClick?: (row: T) => void;
-  getRowId?: (row: T) => string;
-  empty?: ReactNode;
-  className?: string;
-}) {
-  const router = useRouter();
-
-  const defaultColDef = useMemo<ColDef<T>>(
-    () => ({
-      filter: false,
-      resizable: true,
-      sortable: true,
-      suppressMovable: true,
-      unSortIcon: true,
-    }),
-    [],
-  );
-
-  const handleRowClicked = (event: RowClickedEvent<T>) => {
-    if (!event.data || isInteractiveEvent(event.event)) return;
-    const href = rowHref?.(event.data);
-    if (href) router.push(href);
-    else onRowClick?.(event.data);
-  };
-
-  const handleGridSizeChanged = (event: GridSizeChangedEvent<T>) => {
-    event.api.sizeColumnsToFit();
-  };
-
-  if (rows.length === 0 && empty) return <>{empty}</>;
-
+}: DataTableProps<T>) {
+  const rowH = Math.max(18, Math.min(rowHeight - 16, 36));
   return (
     <div
       role="region"
       aria-label={label}
+      aria-busy="true"
       className={cn("valanor-data-grid min-h-0 overflow-hidden", fill && "flex-1", className)}
       style={{ height: autoHeight ? "auto" : fill ? "100%" : height }}
     >
-      <AgGridReact<T>
-        aria-label={label}
-        theme={gridTheme}
-        rowData={rows}
-        columnDefs={columns}
-        defaultColDef={defaultColDef}
-        domLayout={autoHeight ? "autoHeight" : "normal"}
-        autoSizeStrategy={{ type: "fitGridWidth", defaultMinWidth: 64 }}
-        getRowId={getRowId ? (params: GetRowIdParams<T>) => getRowId(params.data) : undefined}
-        onRowClicked={rowHref || onRowClick ? handleRowClicked : undefined}
-        onGridSizeChanged={handleGridSizeChanged}
-        headerHeight={38}
-        rowHeight={rowHeight}
-        animateRows={false}
-        enableCellTextSelection
-        ensureDomOrder
-        suppressCellFocus
-        suppressHorizontalScroll
-      />
+      <div className="space-y-2 p-3">
+        <div className="h-9 animate-pulse rounded bg-[#eef1f4]" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="animate-pulse rounded bg-[#e4e8ec]" style={{ height: rowH }} />
+        ))}
+      </div>
     </div>
   );
 }
