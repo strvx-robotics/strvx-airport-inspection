@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Map as MapIcon, Radio, Shield, Search, CheckCircle2 } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Badge from "@/components/Badge";
+import { PanelDropdown } from "@/components/map/PanelDropdown";
 import * as api from "@/lib/api";
 import type { SecurityAlert, SecurityAlertStatus, SecurityTeam } from "@/lib/types";
 import { SECURITY_ALERT_STATUS, SECURITY_ALERT_TYPE, SEVERITY } from "@/lib/ui";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { BAR, BTN, BTN_PRIMARY, CARD, EYEBROW, H2, INPUT, METRIC_CELL, MUTED } from "@/lib/vstyle";
 
 type Filter = "open" | "escalated" | "resolved" | "all";
+type View = "alerts" | "teams";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "open", label: "Open" },
@@ -85,9 +87,46 @@ const columns = (selectedId: string | null): DataTableColumn<SecurityAlert>[] =>
   },
 ];
 
+const teamColumns: DataTableColumn<SecurityTeam>[] = [
+  {
+    colId: "name",
+    headerName: "Team",
+    field: "name",
+    cellClass: "text-[13px] font-semibold text-[#181b1e]",
+    flex: 1.2,
+    minWidth: 170,
+  },
+  {
+    colId: "kind",
+    headerName: "Kind",
+    field: "kind",
+    cellClass: "font-mono text-[12px] uppercase tracking-wide text-[#5b6166]",
+    minWidth: 110,
+  },
+  {
+    colId: "status",
+    headerName: "Status",
+    field: "status",
+    cellClass: ({ data }) =>
+      `valanor-status-cell valanor-status-${data?.status === "available" ? "green" : "blue"}`,
+    cellRenderer: ({ data }: { data?: SecurityTeam }) => data ? <span>{data.status}</span> : null,
+    minWidth: 120,
+    maxWidth: 140,
+  },
+  {
+    colId: "contact",
+    headerName: "Contact",
+    valueGetter: ({ data }) => data?.contact ?? "—",
+    cellClass: "font-mono text-[12px] text-[#5b6166]",
+    flex: 1,
+    minWidth: 150,
+  },
+];
+
 export default function SecurityDashboard() {
   const [alerts, setAlerts] = useState<SecurityAlert[] | null>(null);
   const [teams, setTeams] = useState<SecurityTeam[]>([]);
+  const [view, setView] = useState<View>("alerts");
   const [filter, setFilter] = useState<Filter>("open");
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -202,8 +241,23 @@ export default function SecurityDashboard() {
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_320px]">
         <section className={cn("flex min-h-0 flex-col overflow-hidden rounded-md", CARD)}>
           <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-2.5", BAR)}>
-            <div className="inline-flex items-center gap-0.5 rounded-md border border-[#c7cdd2] bg-[#f3f5f7] p-0.5">
-              {FILTERS.map((f) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-0.5 rounded-md border border-[#c7cdd2] bg-[#f3f5f7] p-0.5">
+                {(["alerts", "teams"] as View[]).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={cn(
+                      "rounded px-2.5 py-1 font-mono text-[11px] uppercase tracking-wide transition-colors",
+                      view === v ? "bg-[#181b1e] text-[#e9ecef]" : "text-[#5b6166] hover:text-[#181b1e]",
+                    )}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              {view === "alerts" && <div className="inline-flex items-center gap-0.5 rounded-md border border-[#c7cdd2] bg-[#f3f5f7] p-0.5">
+                {FILTERS.map((f) => (
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
@@ -214,9 +268,10 @@ export default function SecurityDashboard() {
                 >
                   {f.label}
                 </button>
-              ))}
+                ))}
+              </div>}
             </div>
-            <div className="relative">
+            {view === "alerts" && <div className="relative">
               <Search aria-hidden size={13} strokeWidth={2} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9aa1a6]" />
               <input
                 type="search"
@@ -226,22 +281,34 @@ export default function SecurityDashboard() {
                 placeholder="Search plate, subject, zone…"
                 className={cn("h-8 w-56 max-w-full pl-8 pr-3", INPUT)}
               />
-            </div>
+            </div>}
           </div>
-          <DataTable
-            rows={rows}
-            columns={tableColumns}
-            label="Security alerts"
-            fill
-            rowHeight={72}
-            getRowId={(a) => a.id}
-            onRowClick={(a) => setSelectedId(a.id)}
-            empty={
-              <p className="px-4 py-8 text-center text-[13px] text-[#6b7176]">
-                {alerts === null ? "Loading security alerts..." : "No security alerts match this view."}
-              </p>
-            }
-          />
+          {view === "alerts" ? (
+            <DataTable
+              rows={rows}
+              columns={tableColumns}
+              label="Security alerts"
+              fill
+              rowHeight={72}
+              getRowId={(a) => a.id}
+              rowHref={(a) => `/security-alert/${a.id}`}
+              empty={
+                <p className="px-4 py-8 text-center text-[13px] text-[#6b7176]">
+                  {alerts === null ? "Loading security alerts..." : "No security alerts match this view."}
+                </p>
+              }
+            />
+          ) : (
+            <DataTable
+              rows={teams}
+              columns={teamColumns}
+              label="Security teams"
+              fill
+              rowHeight={54}
+              getRowId={(team) => team.id}
+              empty={<p className="px-4 py-8 text-center text-[13px] text-[#6b7176]">No security teams configured.</p>}
+            />
+          )}
         </section>
 
         <aside className={cn("flex min-h-0 flex-col overflow-hidden rounded-md", CARD)}>
@@ -267,23 +334,24 @@ export default function SecurityDashboard() {
                   <Info label="Team" value={selected.assignedTeamName ?? "Unassigned"} />
                   <Info label="Source" value={selected.sourceKind ?? "—"} />
                 </dl>
-                <label className="mt-3 block">
+                <div className="mt-3">
                   <span className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">Dispatch team</span>
-                  <select
-                    value={selected.assignedTeamId ?? ""}
-                    disabled={busyId === selected.id}
-                    onChange={(e) => void dispatch(selected.id, e.target.value)}
-                    className={cn("mt-1 h-8 w-full px-2", INPUT)}
-                  >
-                    <option value="">Choose team…</option>
-                    {teams.map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name} · {team.status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className="mt-1">
+                    <PanelDropdown
+                      label="Dispatch team"
+                      value={selected.assignedTeamId ?? ""}
+                      options={[
+                        { value: "", label: "Choose team..." },
+                        ...teams.map((team) => ({ value: team.id, label: `${team.name} · ${team.status}` })),
+                      ]}
+                      onChange={(value) => void dispatch(selected.id, value)}
+                    />
+                  </div>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href={`/security-alert/${selected.id}`} className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}>
+                    Open
+                  </Link>
                   <button
                     disabled={busyId === selected.id}
                     onClick={() => void update(selected.id, "reviewing")}
@@ -294,7 +362,7 @@ export default function SecurityDashboard() {
                   <button
                     disabled={busyId === selected.id}
                     onClick={() => void update(selected.id, "escalated", "Escalated to airport security desk.")}
-                    className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}
+                    className={cn("h-8 px-3 text-[12px]", BTN)}
                   >
                     Escalate
                   </button>

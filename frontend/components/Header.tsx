@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gauge, Radio, Cog, Wrench, Map as MapIcon, ScrollText, User, ChevronDown, Check, Shield, type LucideIcon } from "lucide-react";
+import { Gauge, Radio, Cog, Wrench, Map as MapIcon, ScrollText, User, ChevronDown, Check, Shield, Users, type LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ROLE } from "@/lib/ui";
 import { USER_ROLES } from "@/lib/types";
@@ -43,6 +43,9 @@ export default function Header() {
         )}
         {showLive && (
           <NavTab href="/live" active={pathname === "/live"} icon={Radio} label="Live" />
+        )}
+        {isSecurity && (
+          <NavTab href="/teams" active={pathname === "/teams"} icon={Users} label="Teams" />
         )}
         <NavTab href="/map" active={pathname === "/map"} icon={MapIcon} label="Map" />
         {!isMaintenance && !isSecurity && (

@@ -36,6 +36,11 @@ async def test_security_alert_lifecycle(seed, client):
     assert listed.status_code == 200
     assert listed.json()["securityAlerts"][0]["id"] == alert["id"]
 
+    detail = await client.get(f"/security-alerts/{alert['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["securityAlert"]["id"] == alert["id"]
+    assert detail.json()["securityAlert"]["title"] == "Perimeter motion near Gate 4"
+
     patch = await client.patch(
         f"/security-alerts/{alert['id']}",
         json={"status": "escalated", "resolutionNote": "Notified airport police."},

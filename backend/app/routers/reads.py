@@ -83,6 +83,14 @@ async def get_security_alerts(request: Request) -> dict:
     }
 
 
+@router.get("/security-alerts/{id}")
+async def get_security_alert(id: str) -> dict:
+    alert = await security_alerts.get_alert(id)
+    if alert is None:
+        raise AppError(f"Security alert not found: {id}")
+    return {"securityAlert": dump(alert)}
+
+
 @router.get("/security-teams")
 async def get_security_teams(request: Request) -> dict:
     airport_id = request.query_params.get("airportId")

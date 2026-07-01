@@ -288,6 +288,9 @@ export const listSecurityAlerts = (airportId?: string, status?: SecurityAlertSta
   );
 };
 
+export const getSecurityAlert = (id: string) =>
+  jsonReq<{ securityAlert: SecurityAlert }>(`/api/security-alerts/${id}`).then((r) => r.securityAlert);
+
 export const listSecurityTeams = (airportId?: string) => {
   const suffix = airportId ? `?airportId=${encodeURIComponent(airportId)}` : "";
   return jsonReq<{ securityTeams: SecurityTeam[] }>(`/api/security-teams${suffix}`).then(

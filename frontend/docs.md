@@ -105,8 +105,10 @@ plate, source, GPS, confidence, and status details.
 Security alerts support `new`, `reviewing`, `escalated`, `dismissed`, and
 `resolved` statuses. The first implementation focuses on human-reviewed
 perimeter/ramp events; real threat/LPR detector modules can feed the same API.
-Security teams are loaded from backend `security_teams`; dispatching a team from
-the selected alert panel assigns it to the alert and records a dispatch note/time.
+Security alert rows open `/security-alert/[id]`, a detail page with the evidence
+frame, plate/subject, dispatch controls, and status actions. Security teams are
+loaded from backend `security_teams`; the Security dashboard has a Teams tab, and
+dispatching a team assigns it to the alert and records a dispatch note/time.
 
 ## Manual Zone Mapping
 
