@@ -30,6 +30,16 @@ class Drone(_Camel):
     created_at: str
 
 
+class Flight(_Camel):
+    id: str
+    drone_id: str
+    airport_id: str
+    source_kind: str | None = None
+    started_at: str | None = None
+    metadata: dict | None = None
+    created_at: str
+
+
 class LngLat(_Camel):
     lat: float
     lng: float
@@ -156,13 +166,18 @@ class Image(_Camel):
     job_id: str | None = None
     zone_id: str
     boundary_id: str | None = None
+    flight_id: str | None = None
     file_url: str
     gps: LngLat | None = None
     station_m: float | None = None
     lateral_offset_m: float | None = None
+    alt_m: float | None = None
+    heading_deg: float | None = None
     geom_confidence: str = "manual"
     timestamp: str
+    captured_at: str | None = None
     source_file: str | None = None
+    metadata: dict | None = None
     created_by: str | None = None
     created_at: str
 

@@ -328,6 +328,10 @@ CREATE TABLE IF NOT EXISTS images (
   lateral_offset_m DOUBLE PRECISION,
   geom_confidence  TEXT NOT NULL DEFAULT 'manual',
   timestamp        TEXT NOT NULL,
+  captured_at      TEXT,
+  alt_m            DOUBLE PRECISION,
+  heading_deg      DOUBLE PRECISION,
+  flight_id        TEXT,
   source_file      TEXT,
   metadata_json    TEXT,
   created_by       TEXT,
@@ -462,6 +466,19 @@ CREATE TABLE IF NOT EXISTS drones (
   created_at  TEXT NOT NULL
 );
 
+-- One drone sortie. A capture (see backend repo/drone_captures.py) records the
+-- frame's image + detections and, when the caller supplies a flightId, upserts
+-- the flight so many frames of one pass share a row.
+CREATE TABLE IF NOT EXISTS flights (
+  id            TEXT PRIMARY KEY,
+  drone_id      TEXT NOT NULL REFERENCES drones(id),
+  airport_id    TEXT NOT NULL REFERENCES airports(id),
+  source_kind   TEXT,
+  started_at    TEXT,
+  metadata_json TEXT,
+  created_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_zone        ON issue_candidates(zone_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);
@@ -493,6 +510,20 @@ ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_at TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signature_name TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS attestation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE images ADD COLUMN IF NOT EXISTS created_by TEXT;
+-- Drone-capture provenance: which flight a frame came from, plus pose/time.
+ALTER TABLE images ADD COLUMN IF NOT EXISTS captured_at TEXT;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS alt_m DOUBLE PRECISION;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS heading_deg DOUBLE PRECISION;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS flight_id TEXT;
+CREATE TABLE IF NOT EXISTS flights (
+  id            TEXT PRIMARY KEY,
+  drone_id      TEXT NOT NULL REFERENCES drones(id),
+  airport_id    TEXT NOT NULL REFERENCES airports(id),
+  source_kind   TEXT,
+  started_at    TEXT,
+  metadata_json TEXT,
+  created_at    TEXT NOT NULL
+);
 -- Part 139 compliance record: inspector-editable "conditions found" /
 -- "corrective action taken" per discrepancy. NULL = render the derived default.
 ALTER TABLE issue_candidates ADD COLUMN IF NOT EXISTS conditions_found TEXT;

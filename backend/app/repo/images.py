@@ -1,3 +1,5 @@
+import json
+
 from app import db
 from app.models import Image, LngLat
 
@@ -11,13 +13,18 @@ def _to_image(r) -> Image:
         job_id=r["job_id"],
         zone_id=r["zone_id"],
         boundary_id=r["boundary_id"],
+        flight_id=r["flight_id"],
         file_url=r["file_url"],
         gps=gps,
         station_m=r["station_m"],
         lateral_offset_m=r["lateral_offset_m"],
+        alt_m=r["alt_m"],
+        heading_deg=r["heading_deg"],
         geom_confidence=r["geom_confidence"],
         timestamp=r["timestamp"],
+        captured_at=r["captured_at"],
         source_file=r["source_file"],
+        metadata=json.loads(r["metadata_json"]) if r["metadata_json"] else None,
         created_by=r["created_by"],
         created_at=r["created_at"],
     )

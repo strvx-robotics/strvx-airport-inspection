@@ -166,8 +166,11 @@ async def delete_keep_out_zone(id: str) -> dict:
 @router.post("/drone-captures", status_code=201)
 async def post_drone_capture(request: Request) -> dict:
     body = await _json(request)
-    image, candidates = await drone_captures.ingest_capture(body, actor_from(request, body))
-    return {"image": dump(image), "candidates": [dump(c) for c in candidates]}
+    flight, image, candidates = await drone_captures.ingest_capture(body, actor_from(request, body))
+    out = {"image": dump(image), "candidates": [dump(c) for c in candidates]}
+    if flight is not None:
+        out["flight"] = dump(flight)
+    return out
 
 
 @router.post("/schedules", status_code=201)

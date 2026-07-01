@@ -110,6 +110,10 @@ CREATE TABLE IF NOT EXISTS images (
   lateral_offset_m DOUBLE PRECISION,
   geom_confidence  TEXT NOT NULL DEFAULT 'manual',
   timestamp        TEXT NOT NULL,
+  captured_at      TEXT,
+  alt_m            DOUBLE PRECISION,
+  heading_deg      DOUBLE PRECISION,
+  flight_id        TEXT,
   source_file      TEXT,
   metadata_json    TEXT,
   created_by       TEXT,
@@ -231,6 +235,19 @@ CREATE TABLE IF NOT EXISTS drones (
   assignment  TEXT,
   last_seen   TEXT,
   created_at  TEXT NOT NULL
+);
+
+-- One drone sortie. A capture (see repo/drone_captures.py) records the frame's
+-- image + detections and, when the caller supplies a flightId, upserts the flight
+-- so many frames of one pass share a row.
+CREATE TABLE IF NOT EXISTS flights (
+  id            TEXT PRIMARY KEY,
+  drone_id      TEXT NOT NULL REFERENCES drones(id),
+  airport_id    TEXT NOT NULL REFERENCES airports(id),
+  source_kind   TEXT,
+  started_at    TEXT,
+  metadata_json TEXT,
+  created_at    TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_zone        ON issue_candidates(zone_id);
