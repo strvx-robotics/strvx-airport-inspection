@@ -112,5 +112,5 @@ async def test_post_drone_capture_rejects_unknown_drone(seed, client):
         },
     )
 
-    assert res.status_code == 400
+    assert res.status_code == 404
     assert res.json() == {"error": "Drone not found: NOPE"}

@@ -333,12 +333,14 @@ MVP options:
 Each image should be tagged with:
 
 * Airport
-* Runway
-* Zone if known
+* Zone
+* Boundary if known
 * Timestamp
-* Flight/inspection ID
+* Flight ID and inspection ID
+* Drone ID when available
 * Source file
-* GPS metadata if available
+* GPS metadata if available, including SRT/live GPS or still-image EXIF GPS
+* Capture provenance such as altitude, heading, and source type when available
 
 ## 9.4 Computer Vision Processing
 

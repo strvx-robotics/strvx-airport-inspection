@@ -358,21 +358,35 @@ export function uploadImage(input: {
   file: File;
   zoneId: string;
   boundaryId?: string;
+  droneId?: string;
+  flightId?: string;
   gps?: LngLat;
   stationM?: number;
   lateralOffsetM?: number;
+  altM?: number;
+  headingDeg?: number;
+  capturedAt?: string;
+  sourceKind?: string;
   geomConfidence?: GeomConfidence;
+  metadata?: Record<string, unknown>;
 }): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", input.file);
   form.append("zoneId", input.zoneId);
   if (input.boundaryId) form.append("boundaryId", input.boundaryId);
+  if (input.droneId) form.append("droneId", input.droneId);
+  if (input.flightId) form.append("flightId", input.flightId);
   if (input.gps) {
     form.append("gpsLat", String(input.gps.lat));
     form.append("gpsLng", String(input.gps.lng));
   }
   if (input.stationM != null) form.append("stationM", String(input.stationM));
   if (input.lateralOffsetM != null) form.append("lateralOffsetM", String(input.lateralOffsetM));
+  if (input.altM != null) form.append("altM", String(input.altM));
+  if (input.headingDeg != null) form.append("headingDeg", String(input.headingDeg));
+  if (input.capturedAt) form.append("capturedAt", input.capturedAt);
+  if (input.sourceKind) form.append("sourceKind", input.sourceKind);
+  if (input.metadata) form.append("metadata", JSON.stringify(input.metadata));
   if (input.geomConfidence) form.append("geomConfidence", input.geomConfidence);
   return jsonReq<UploadResult>("/api/uploads", { method: "POST", body: form });
 }

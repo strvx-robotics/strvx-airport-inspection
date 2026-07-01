@@ -601,8 +601,17 @@ export default function AirportMap({
     if (!map || !mapLoaded || plotMode || zonePlotMode) return;
 
     const onClick = (e: maplibregl.MapLayerMouseEvent) => {
-      const id = e.features?.[0]?.properties?.id as string | undefined;
-      if (id) setSelectedIssueId(id);
+      const props = e.features?.[0]?.properties;
+      const id = props?.id as string | undefined;
+      const issueIds = typeof props?.issueIds === "string" ? JSON.parse(props.issueIds) as string[] : undefined;
+      if (issueIds && issueIds.length > 1) {
+        setSelectedIssueId((current) => {
+          const idx = current ? issueIds.indexOf(current) : -1;
+          return issueIds[(idx + 1) % issueIds.length];
+        });
+      } else if (id) {
+        setSelectedIssueId(id);
+      }
     };
     const onEnter = () => {
       map.getCanvas().style.cursor = "pointer";

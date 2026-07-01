@@ -5,6 +5,7 @@ from app.constants import ISSUE_CATEGORIES, SEVERITY_VALUES
 from app.deps import Actor
 from app.errors import AppError
 from app.models import Flight, Image, IssueCandidate
+from app.repo.flights import get_or_create_flight
 from app.repo.helpers import actor_name, gid, now
 from app.repo.images import _to_image
 from app.repo.issues import get_issue
@@ -66,6 +67,18 @@ def _bbox(det: dict) -> str:
     return json.dumps({k: float(bbox[k]) for k in ("x", "y", "w", "h")})
 
 
+def _metadata(body: dict) -> dict | None:
+    raw = body.get("metadata")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise AppError("metadata must be an object")
+    metadata = dict(raw)
+    if body.get("sourceKind"):
+        metadata["sourceKind"] = body["sourceKind"]
+    return metadata or None
+
+
 def _validate_detection(det: dict) -> dict:
     if not isinstance(det, dict):
         raise AppError("detections must be objects")
@@ -122,15 +135,6 @@ async def ingest_capture(
     if zone is None:
         raise AppError(f"Zone not found: {zone_id}")
 
-    # Provenance: the capturing drone (validated) and the flight it belongs to.
-    drone_id = body.get("droneId")
-    if drone_id is not None:
-        drone = await db.one("SELECT id FROM drones WHERE id = $1", drone_id)
-        if drone is None:
-            raise AppError(f"Drone not found: {drone_id}", status=400)
-    flight_id = body.get("flightId")
-    if flight_id and not drone_id:
-        raise AppError("droneId is required to record a flight")
     source_kind = body.get("sourceKind")
 
     gps = _gps(body)
@@ -141,21 +145,20 @@ async def ingest_capture(
     geom_confidence = body.get("geomConfidence") or ("gps" if gps else "manual")
     if geom_confidence not in GEOM_CONFIDENCE:
         raise AppError("geomConfidence must be gps, pose, or manual")
+    metadata = _metadata(body)
     detections = [_validate_detection(det) for det in detections_raw]
     inspection_id = await _inspection_id(body, zone.airport_id)
     captured_at = body.get("capturedAt")
     ts = captured_at or body.get("timestamp") or now()
     created_by = await actor_name(actor)
-
-    raw_metadata = body.get("metadata")
-    if raw_metadata is not None and not isinstance(raw_metadata, dict):
-        raise AppError("metadata must be an object")
-    # The image keeps a copy that also records the source kind so a frame is
-    # self-describing; the flight keeps the caller's metadata verbatim.
-    image_metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
-    if source_kind is not None:
-        image_metadata["sourceKind"] = source_kind
-    image_metadata_json = json.dumps(image_metadata) if image_metadata else None
+    flight = await get_or_create_flight(
+        airport_id=zone.airport_id,
+        flight_id=body.get("flightId"),
+        drone_id=body.get("droneId"),
+        source_kind=source_kind,
+        started_at=captured_at or ts,
+        metadata=metadata,
+    )
 
     async with db.tx():
         await db.run(
@@ -169,25 +172,16 @@ async def ingest_capture(
         )
         job_id = job["id"]
 
-        # Upsert the flight so many captured frames of one pass share a row.
-        if flight_id:
-            await db.run(
-                "INSERT INTO flights (id, drone_id, airport_id, source_kind, started_at, metadata_json, created_at) "
-                "VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING",
-                flight_id, drone_id, zone.airport_id, source_kind, ts,
-                json.dumps(raw_metadata) if raw_metadata else None, now(),
-            )
-
         image_id = gid("img")
         await db.run(
-            "INSERT INTO images (id, job_id, zone_id, boundary_id, flight_id, file_url, gps_lat, gps_lng, "
+            "INSERT INTO images (id, job_id, flight_id, zone_id, boundary_id, file_url, gps_lat, gps_lng, "
             "station_m, lateral_offset_m, alt_m, heading_deg, geom_confidence, timestamp, captured_at, "
             "source_file, metadata_json, created_by, created_at) "
             "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
-            image_id, job_id, zone_id, body.get("boundaryId"), flight_id, file_url,
+            image_id, job_id, flight.id if flight else None, zone_id, body.get("boundaryId"), file_url,
             gps["lat"] if gps else None, gps["lng"] if gps else None,
             station_m, lateral_offset_m, alt_m, heading_deg, geom_confidence, ts, captured_at,
-            body.get("sourceFile"), image_metadata_json, created_by, ts,
+            body.get("sourceFile"), json.dumps(metadata) if metadata else None, created_by, ts,
         )
 
         issue_ids: list[str] = []
@@ -228,20 +222,4 @@ async def ingest_capture(
 
     image_row = await db.one("SELECT * FROM images WHERE id = $1", image_id)
     issues = [await get_issue(issue_id) for issue_id in issue_ids]
-    flight = None
-    if flight_id:
-        flight_row = await db.one("SELECT * FROM flights WHERE id = $1", flight_id)
-        flight = _to_flight(flight_row) if flight_row else None
     return flight, _to_image(image_row), [issue for issue in issues if issue is not None]
-
-
-def _to_flight(r) -> Flight:
-    return Flight(
-        id=r["id"],
-        drone_id=r["drone_id"],
-        airport_id=r["airport_id"],
-        source_kind=r["source_kind"],
-        started_at=r["started_at"],
-        metadata=json.loads(r["metadata_json"]) if r["metadata_json"] else None,
-        created_at=r["created_at"],
-    )

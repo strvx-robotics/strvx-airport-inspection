@@ -32,11 +32,12 @@ class Drone(_Camel):
 
 class Flight(_Camel):
     id: str
-    drone_id: str
+    drone_id: str | None = None
     airport_id: str
     source_kind: str | None = None
     started_at: str | None = None
-    metadata: dict | None = None
+    completed_at: str | None = None
+    metadata: dict[str, object] | None = None
     created_at: str
 
 
@@ -164,9 +165,9 @@ class InspectionJob(_Camel):
 class Image(_Camel):
     id: str
     job_id: str | None = None
+    flight_id: str | None = None
     zone_id: str
     boundary_id: str | None = None
-    flight_id: str | None = None
     file_url: str
     gps: LngLat | None = None
     station_m: float | None = None
@@ -177,7 +178,7 @@ class Image(_Camel):
     timestamp: str
     captured_at: str | None = None
     source_file: str | None = None
-    metadata: dict | None = None
+    metadata: dict[str, object] | None = None
     created_by: str | None = None
     created_at: str
 

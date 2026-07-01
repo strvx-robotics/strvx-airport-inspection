@@ -316,9 +316,21 @@ CREATE TABLE IF NOT EXISTS inspection_jobs (
   UNIQUE (inspection_id, zone_id)
 );
 
+CREATE TABLE IF NOT EXISTS flights (
+  id            TEXT PRIMARY KEY,
+  drone_id      TEXT REFERENCES drones(id),
+  airport_id    TEXT NOT NULL REFERENCES airports(id),
+  source_kind   TEXT,
+  started_at    TEXT,
+  completed_at  TEXT,
+  metadata_json TEXT,
+  created_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (
   id               TEXT PRIMARY KEY,
   job_id           TEXT REFERENCES inspection_jobs(id),
+  flight_id        TEXT REFERENCES flights(id),
   zone_id          TEXT NOT NULL REFERENCES zones(id),
   boundary_id      TEXT REFERENCES boundaries(id),
   file_url         TEXT NOT NULL,
@@ -326,12 +338,11 @@ CREATE TABLE IF NOT EXISTS images (
   gps_lng          DOUBLE PRECISION,
   station_m        DOUBLE PRECISION,
   lateral_offset_m DOUBLE PRECISION,
+  alt_m            DOUBLE PRECISION,
+  heading_deg      DOUBLE PRECISION,
   geom_confidence  TEXT NOT NULL DEFAULT 'manual',
   timestamp        TEXT NOT NULL,
   captured_at      TEXT,
-  alt_m            DOUBLE PRECISION,
-  heading_deg      DOUBLE PRECISION,
-  flight_id        TEXT,
   source_file      TEXT,
   metadata_json    TEXT,
   created_by       TEXT,
@@ -509,6 +520,21 @@ ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_by TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signed_at TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS signature_name TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS attestation INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS flights (
+  id            TEXT PRIMARY KEY,
+  drone_id      TEXT REFERENCES drones(id),
+  airport_id    TEXT NOT NULL REFERENCES airports(id),
+  source_kind   TEXT,
+  started_at    TEXT,
+  completed_at  TEXT,
+  metadata_json TEXT,
+  created_at    TEXT NOT NULL
+);
+ALTER TABLE images ADD COLUMN IF NOT EXISTS flight_id TEXT REFERENCES flights(id);
+ALTER TABLE images ADD COLUMN IF NOT EXISTS alt_m DOUBLE PRECISION;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS heading_deg DOUBLE PRECISION;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS captured_at TEXT;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS metadata_json TEXT;
 ALTER TABLE images ADD COLUMN IF NOT EXISTS created_by TEXT;
 -- Drone-capture provenance: which flight a frame came from, plus pose/time.
 ALTER TABLE images ADD COLUMN IF NOT EXISTS captured_at TEXT;

@@ -5,6 +5,7 @@ import { issuePosition } from "@/lib/zoneGeom";
 
 const ISSUE_SOURCE = "issues";
 export const ISSUE_CIRCLE_LAYER = "issue-circle";
+export const ISSUE_COUNT_LAYER = "issue-count";
 
 // Severity palette mirrors LEGEND_SECTIONS in MapToolbar.
 const SEVERITY_COLOR: Record<Severity, string> = {
@@ -22,6 +23,14 @@ export interface IssueMarker {
   status: string;
 }
 
+export interface IssueMarkerGroup extends IssueMarker {
+  issueIds: string[];
+  count: number;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+const GROUP_EPSILON_DEG = 0.00003; // ~3m at AGS latitude: enough for coincident drone GPS points.
+
 /** Compute plottable markers for issues that have a derivable map position. */
 export function issueMarkers(
   issues: IssueCandidate[],
@@ -36,6 +45,26 @@ export function issueMarkers(
     markers.push({ id: issue.id, lng: pos.lng, lat: pos.lat, severity: issue.severity, status: issue.status });
   }
   return markers;
+}
+
+export function groupIssueMarkers(markers: IssueMarker[]): IssueMarkerGroup[] {
+  const groups: IssueMarkerGroup[] = [];
+  for (const marker of markers) {
+    const group = groups.find(
+      (g) => Math.abs(g.lat - marker.lat) <= GROUP_EPSILON_DEG && Math.abs(g.lng - marker.lng) <= GROUP_EPSILON_DEG,
+    );
+    if (!group) {
+      groups.push({ ...marker, issueIds: [marker.id], count: 1 });
+      continue;
+    }
+    group.issueIds.push(marker.id);
+    group.count = group.issueIds.length;
+    if (SEVERITY_RANK[marker.severity] > SEVERITY_RANK[group.severity]) group.severity = marker.severity;
+    if (group.status !== "pending" && (marker.status === "pending" || marker.status === "manual_review")) {
+      group.status = marker.status;
+    }
+  }
+  return groups;
 }
 
 export function ensureIssueLayers(map: maplibregl.Map) {
@@ -62,6 +91,23 @@ export function ensureIssueLayers(map: maplibregl.Map) {
       "circle-stroke-width": ["case", ["boolean", ["get", "selected"], false], 3, 1.6],
     },
   });
+  map.addLayer({
+    id: ISSUE_COUNT_LAYER,
+    type: "symbol",
+    source: ISSUE_SOURCE,
+    filter: [">", ["get", "count"], 1],
+    layout: {
+      "text-field": ["to-string", ["get", "count"]],
+      "text-size": 10,
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-allow-overlap": true,
+    },
+    paint: {
+      "text-color": "#181b1e",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1.2,
+    },
+  });
 }
 
 export function updateIssueLayers(
@@ -71,9 +117,16 @@ export function updateIssueLayers(
 ) {
   const source = map.getSource(ISSUE_SOURCE) as maplibregl.GeoJSONSource | undefined;
   if (!source) return;
-  const features: Feature<Point>[] = markers.map((m) => ({
+  const features: Feature<Point>[] = groupIssueMarkers(markers).map((m) => ({
     type: "Feature",
-    properties: { id: m.id, severity: m.severity, status: m.status, selected: m.id === selectedId },
+    properties: {
+      id: m.id,
+      issueIds: JSON.stringify(m.issueIds),
+      count: m.count,
+      severity: m.severity,
+      status: m.status,
+      selected: m.issueIds.includes(selectedId ?? ""),
+    },
     geometry: { type: "Point", coordinates: [m.lng, m.lat] },
   }));
   const data: FeatureCollection = { type: "FeatureCollection", features };

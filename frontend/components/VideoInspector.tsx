@@ -23,6 +23,8 @@ interface ResolvedZone {
   gps?: { lat: number; lng: number };
   stationM?: number;
   lateralOffsetM?: number;
+  altM?: number;
+  srtSampleTimeSec?: number;
 }
 
 // Real-time auto-capture cadence. With no CV layer yet, every tick runs the
@@ -37,6 +39,7 @@ export default function VideoInspector({ zones }: { zones: Zone[] }) {
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoName, setVideoName] = useState("");
+  const [flightId, setFlightId] = useState("");
   const [gps, setGps] = useState<GpsSample[]>([]);
   const [manualZoneId, setManualZoneId] = useState<string>(zones[0]?.id ?? "");
   const [auto, setAuto] = useState(false);
@@ -53,6 +56,7 @@ export default function VideoInspector({ zones }: { zones: Zone[] }) {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(URL.createObjectURL(file));
     setVideoName(file.name);
+    setFlightId(`flight_${crypto.randomUUID().slice(0, 8)}`);
     setSubmitted([]);
     setError(null);
   };
@@ -83,6 +87,8 @@ export default function VideoInspector({ zones }: { zones: Zone[] }) {
             gps: { lat: fix.lat, lng: fix.lng },
             stationM: loc.stationM,
             lateralOffsetM: loc.lateralOffsetM,
+            altM: fix.altM,
+            srtSampleTimeSec: fix.t,
           };
         }
       }
@@ -126,9 +132,17 @@ export default function VideoInspector({ zones }: { zones: Zone[] }) {
       const result = await api.uploadImage({
         file,
         zoneId: target.zone.id,
+        flightId,
         gps: target.gps,
         stationM: target.stationM,
         lateralOffsetM: target.lateralOffsetM,
+        altM: target.altM,
+        sourceKind: target.source === "gps" ? "video_srt" : "video_manual",
+        metadata: {
+          videoName,
+          videoTimeSec: v.currentTime,
+          ...(target.srtSampleTimeSec != null ? { srtSampleTimeSec: target.srtSampleTimeSec } : {}),
+        },
         geomConfidence: target.source === "gps" ? "gps" : "manual",
       });
       setSubmitted((prev) => [
@@ -146,7 +160,7 @@ export default function VideoInspector({ zones }: { zones: Zone[] }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, resolveZone]);
+  }, [busy, flightId, resolveZone, videoName]);
 
   // Real-time auto-capture loop (the seam for the future CV layer).
   useEffect(() => {

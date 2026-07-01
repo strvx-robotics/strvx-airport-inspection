@@ -42,31 +42,38 @@ Important env:
 - `airports.py` - list/create/update airports.
 - `drones.py` - drone reads.
 - `issues.py` - issue detail, approve, reject, manual review, edit.
-- `reads.py` - overview, inspections, runways, zones, users, schedules.
+- `reads.py` - overview, inspections, zones, boundaries, users, schedules.
 - `tickets.py` - ticket list/detail, repair, close.
-- `writes.py` - runway/zone/schedule creates and `run-now`.
+- `writes.py` - zone/boundary/schedule creates, `run-now`, and drone capture ingestion.
 
-## Runway Geometry
+## Drone Capture Contract
 
-Runways expose `runwayPolygon` and `mapStatus` in addition to the older
-threshold/heading fields. `runwayPolygon` is the admin-maintained runway work
-area and is preferred by the map UI. `mapStatus` tracks the operational lifecycle:
-`draft`, `active`, `retired`, or `needs_review`.
+`POST /drone-captures` is the backend persistence boundary for captured drone
+imagery. The frontend may still store the binary asset and run detection/drafting,
+but it sends the resulting image URL, detections, GPS, and flight metadata here.
 
-`POST /runways` accepts `runwayPolygon` as an array of `{lat, lng}` points and
-validates that at least three numeric points are provided when the field is
-present.
+Accepted payload highlights:
 
-The browser normally reaches these through `frontend/app/api/**` proxy routes, so
-the public browser API shape remains stable while the extraction continues.
+- `zoneId`, `boundaryId?`, `inspectionId?`
+- `fileUrl`, `sourceFile?`, `sourceKind?`
+- `droneId?`, `flightId?`, `capturedAt?`
+- `gps? {lat,lng}`, `stationM?`, `lateralOffsetM?`, `altM?`, `headingDeg?`
+- `geomConfidence`: `gps`, `pose`, or `manual`
+- `metadata?` for camera/SRT/live-source details
+- `detections[]`: `{category, confidence, severity?, bbox, sizeM?, aiDraftText, modelNotes?}`
+
+The route creates/reuses a `flights` row, persists an `images` row with capture
+metadata, creates linked `issue_candidates`, updates the inspection job counts,
+and returns `{flight?, image, candidates}`. Issue records carry GPS when present,
+so the map can plot directly from drone GPS.
 
 ## Extraction Boundary
 
-Most reads, writes, issues, tickets, airports, drones, users, schedules, and
-runways are handled here. These routes still live in the frontend server for now:
+Most reads, writes, issues, tickets, airports, drones, users, schedules, zones,
+boundaries, and drone capture persistence are handled here. These routes still
+live in the frontend server for now:
 
-- upload ingestion
-- live capture ingestion
+- binary upload/storage and detection orchestration before `/drone-captures`
 - settings
 - feedback JSONL export
 - inspection report rendering

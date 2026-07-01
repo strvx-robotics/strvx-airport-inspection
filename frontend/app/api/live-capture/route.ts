@@ -14,9 +14,10 @@
 import { randomUUID } from "node:crypto";
 import { draftTicket } from "@/lib/llm";
 import { putImage } from "@/lib/storage";
-import { getBoundary, getZone, ingestUpload, type UploadDetection } from "@/lib/repo";
-import { actorFrom, json, route } from "@/lib/http";
-import { ISSUE_CATEGORIES, SEVERITY_VALUES, type BBox, type IssueCategory, type Severity } from "@/lib/types";
+import { backendFetch } from "@/lib/backend";
+import { getBoundary, getZone, type UploadDetection } from "@/lib/repo";
+import { actorFrom, route } from "@/lib/http";
+import { ISSUE_CATEGORIES, SEVERITY_VALUES, type BBox, type GeomConfidence, type IssueCategory, type Severity } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,14 @@ function isJpeg(buf: Buffer): boolean {
 const clamp = (n: number, lo: number, hi: number): number =>
   Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+function formNumber(value: FormDataEntryValue | null): number | undefined {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+function formString(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 interface RawDetection {
   category?: unknown;
@@ -40,6 +49,8 @@ interface RawDetection {
   severity?: unknown;
   modelNotes?: unknown;
   sizeM?: unknown;
+  stationM?: unknown;
+  lateralOffsetM?: unknown;
 }
 
 /** Validate + coerce one worker-supplied detection, or null if unusable. */
@@ -67,6 +78,8 @@ function sanitize(d: RawDetection): Omit<UploadDetection, "aiDraftText"> | null 
     confidence,
     bbox,
     severity,
+    stationM: typeof d.stationM === "number" ? d.stationM : undefined,
+    lateralOffsetM: typeof d.lateralOffsetM === "number" ? d.lateralOffsetM : undefined,
     sizeM: typeof d.sizeM === "number" ? d.sizeM : undefined,
     modelNotes:
       typeof d.modelNotes === "string" && d.modelNotes.trim() ? d.modelNotes.trim() : "Live-feed detection.",
@@ -79,6 +92,24 @@ export const POST = route(async (req) => {
   const zoneIdRaw = form.get("zoneId");
   const boundaryIdRaw = form.get("boundaryId");
   const detectionsRaw = form.get("detections");
+  const gpsLat = formNumber(form.get("gpsLat"));
+  const gpsLng = formNumber(form.get("gpsLng"));
+  const gps = gpsLat != null && gpsLng != null ? { lat: gpsLat, lng: gpsLng } : undefined;
+  const stationM = formNumber(form.get("stationM"));
+  const lateralOffsetM = formNumber(form.get("lateralOffsetM"));
+  const altM = formNumber(form.get("altM"));
+  const headingDeg = formNumber(form.get("headingDeg"));
+  const capturedAt = formString(form.get("capturedAt"));
+  const droneId = formString(form.get("droneId"));
+  const flightId = formString(form.get("flightId"));
+  const sourceKind = formString(form.get("sourceKind")) ?? "live_capture";
+  const geomConfidenceRaw = form.get("geomConfidence");
+  const geomConfidence =
+    geomConfidenceRaw === "gps" || geomConfidenceRaw === "pose" || geomConfidenceRaw === "manual"
+      ? (geomConfidenceRaw as GeomConfidence)
+      : gps
+        ? "gps"
+        : "manual";
 
   if (typeof zoneIdRaw !== "string" || !zoneIdRaw) throw new Error("zoneId is required");
   const zone = await getZone(zoneIdRaw);
@@ -121,20 +152,43 @@ export const POST = route(async (req) => {
         severity: d.severity,
         zoneDesignation: zone.designation,
         boundaryName: boundary?.name,
+        stationM,
         sizeM: d.sizeM,
         modelNotes: d.modelNotes,
       }),
     })),
   );
 
-  const result = await ingestUpload({
-    zoneId: zoneIdRaw,
-    boundaryId,
-    fileUrl,
-    sourceFile: "live-capture",
-    detections,
-    actor: actorFrom(req),
+  const backendRes = await backendFetch("/drone-captures", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      zoneId: zoneIdRaw,
+      boundaryId,
+      droneId,
+      flightId,
+      fileUrl,
+      sourceFile: "live-capture",
+      sourceKind,
+      gps,
+      stationM,
+      lateralOffsetM,
+      altM,
+      headingDeg,
+      capturedAt,
+      geomConfidence,
+      metadata: { sourceKind },
+      detections: detections.map((d) => ({
+        ...d,
+        stationM: d.stationM ?? stationM,
+        lateralOffsetM: d.lateralOffsetM ?? lateralOffsetM,
+      })),
+      actor: actorFrom(req),
+    }),
   });
 
-  return json(result, { status: 201 });
+  return new Response(await backendRes.text(), {
+    status: backendRes.status,
+    headers: { "content-type": "application/json" },
+  });
 });

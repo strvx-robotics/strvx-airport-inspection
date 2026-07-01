@@ -40,13 +40,13 @@ npm run dev
 
 - `/` - inspection dashboard; maintenance users see the maintenance tracker.
 - `/inspection/[id]` - inspection detail.
-- `/runway/[id]` - runway issue list.
+- `/zone/[id]` - zone issue list.
 - `/issue/[id]` - candidate review, approve/reject/manual review/edit.
 - `/ticket/[id]` - maintenance work order, repair, and closeout.
 - `/upload` - manual image upload and zone tag.
 - `/live` - HLS drone feed plus live detection overlay.
-- `/map` - satellite map with issue markers + review panels, no-drone zones, and inspection zone drawing.
-- `/admin` - airport, runway, zone, schedule, user, and setting setup.
+- `/map` - satellite map with issue markers + review panels, no-drone zones, and boundary drawing.
+- `/admin` - airport, zone, boundary, schedule, user, and setting setup.
 - `/logs` - inspection and ticket logs.
 
 ## Data Flow
@@ -56,15 +56,18 @@ calls in a React context cache with optimistic updates for review and ticket
 actions.
 
 Most `/api/*` route handlers proxy to the backend through `frontend/lib/backend.ts`
-and `BACKEND_URL`. Proxied domains include inspections, runways, zones,
-schedules, users, drones, airports, issues, and tickets.
+and `BACKEND_URL`. Proxied domains include inspections, zones, boundaries,
+schedules, users, drones, airports, issues, tickets, and drone capture
+persistence.
 
 These routes still execute in the Next.js server and talk to Postgres or
 downstream services directly:
 
-- `app/api/uploads/route.ts` - validates image bytes, stores the file, calls the
-  detector, drafts ticket text, and ingests issue candidates.
-- `app/api/live-capture/route.ts` - receives live worker captures.
+- `app/api/uploads/route.ts` - validates image bytes, extracts EXIF GPS/capture
+  metadata, stores the file, calls the detector, drafts ticket text, then forwards
+  the image/detections to backend `POST /drone-captures`.
+- `app/api/live-capture/route.ts` - receives live worker captures and forwards
+  detections/GPS/flight metadata to backend `POST /drone-captures`.
 - `app/api/settings/route.ts` - app settings such as stream URL.
 - `app/api/feedback-export/route.ts` - learning JSONL export.
 - `app/api/inspections/[id]/report/route.ts` - JSON/HTML/CSV/PDF report rendering.
@@ -82,46 +85,56 @@ downstream services directly:
 - `lib/mlDetector.ts` - calls `ML_SERVICE_URL`, with deterministic fallback.
 - `lib/llm.ts` - ticket drafting via RL service, Claude, or deterministic
   template fallback.
+- `lib/imageMetadata.ts` - normalizes EXIF GPS/capture metadata from uploaded
+  images.
 - `lib/workOrder.ts` - derives operational work-order fields from ticket,
-  issue, runway, category, and severity.
+  issue, zone, category, and severity.
 
-## Manual Runway Mapping
+## Manual Zone Mapping
 
-Runways can carry an admin-maintained `runwayPolygon` plus `mapStatus`:
+Zones can carry an admin-maintained `zonePolygon` plus `mapStatus`:
 
 - `draft` - polygon stored but not validated.
 - `active` - polygon validated for operational use.
 - `retired` - kept for historical context.
 - `needs_review` - geometry may need attention.
 
-The admin runway form stores map approval status only. Inspection zone boundaries
-are drawn on the satellite map — not entered as coordinates in admin. See § Map policy.
+The admin zone form stores map approval status only. Inspection boundaries are
+drawn on the satellite map — not entered as coordinates in admin. See § Map policy.
 
 ## Map Policy
 
 **Approved map overlays only.** The `/map` view shows **satellite imagery** plus
 three approved overlays: issue markers, no-drone zones, and inspection zones.
-Runway boxes, inferred geometry, user-dropped markers, and ad-hoc GeoJSON overlays
+Zone boxes, inferred geometry, user-dropped markers, and ad-hoc GeoJSON overlays
 remain forbidden.
 
-Runway threshold anchors may be used **only** to center the camera. Stored
-`runwayPolygon` data remains a backend operational field and is **not** rendered.
+Zone threshold anchors may be used **only** to center the camera. Stored
+`zonePolygon` data remains a backend operational field and is **not** rendered.
 
 **Issue markers** (severity-colored dots): read-only pins at each issue's best
-position — real GPS when present, otherwise projected from its runway station
+position — real GPS when present, otherwise projected from its zone station
 (`issuePosition`). Click a marker to open the issue detail panel. Visible to all
 roles (inspectors review, maintenance locates the work). Markers respect the
 active severity / status / category / review-queue filters; full review still
-happens in the list and detail screens.
+happens in the list and detail screens. Exact or near-overlapping GPS points are
+grouped into one marker with a count label; repeated clicks cycle through the
+issues in that group.
+
+GPS precedence for new captures:
+
+1. Explicit SRT/live GPS sent by the capture workflow.
+2. EXIF GPS from still-image uploads.
+3. Manual zone/station fallback when no GPS is available.
 
 **No-drone zones** (red): inspectors plot them on the map; areas where the drone
 must not fly. Station ranges along the runway are derived from the plotted shape —
 never typed manually. (Persisted as `keep_out_zones` in the backend.)
 
-**Inspection zones** (blue): admins plot them on the map from the runway admin
-page or the map draw tool. Each zone is associated with a runway; boundaries are
-stored as `polygon_json` and rendered on the map. Hover a saved zone to edit
-(runway settings) or delete.
+**Boundaries** (blue): admins plot them on the map from the zone admin page or
+the map draw tool. Each boundary is associated with a zone; boundaries are stored
+as `polygon_json` and rendered on the map. Hover a saved boundary to edit or
+delete.
 
 ## Database Scripts
 

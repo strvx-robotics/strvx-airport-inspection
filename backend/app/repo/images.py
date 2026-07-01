@@ -11,9 +11,9 @@ def _to_image(r) -> Image:
     return Image(
         id=r["id"],
         job_id=r["job_id"],
+        flight_id=r["flight_id"],
         zone_id=r["zone_id"],
         boundary_id=r["boundary_id"],
-        flight_id=r["flight_id"],
         file_url=r["file_url"],
         gps=gps,
         station_m=r["station_m"],

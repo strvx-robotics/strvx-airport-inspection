@@ -329,14 +329,18 @@ export interface InspectionSchedule {
 export interface Image {
   id: string;
   jobId?: string;
+  flightId?: string;
   zoneId: string;
   boundaryId?: string;
   fileUrl: string;
   gps?: LngLat;
   stationM?: number;
   lateralOffsetM?: number;
+  altM?: number;
+  headingDeg?: number;
   geomConfidence: GeomConfidence;
   timestamp: string;
+  capturedAt?: string;
   sourceFile?: string;
   metadata?: Record<string, unknown>;
   createdAt: string;
@@ -425,6 +429,17 @@ export interface Drone {
   battery?: number; // 0–100; absent when offline / unknown
   assignment?: string; // free-text post (zone, dock, bay)
   lastSeen?: string; // ISO — last telemetry contact
+  createdAt: string;
+}
+
+export interface Flight {
+  id: string;
+  droneId?: string;
+  airportId: string;
+  sourceKind?: string;
+  startedAt?: string;
+  completedAt?: string;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 }
 

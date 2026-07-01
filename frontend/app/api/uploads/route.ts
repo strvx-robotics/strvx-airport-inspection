@@ -13,6 +13,7 @@ import { putImage } from "@/lib/storage";
 import { backendFetch } from "@/lib/backend";
 import { getBoundary, getZone, type UploadDetection } from "@/lib/repo";
 import { actorFrom, route } from "@/lib/http";
+import { extractImageMetadata, type UploadImageMetadata } from "@/lib/imageMetadata";
 import type { GeomConfidence } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -31,6 +32,19 @@ function formNumber(value: FormDataEntryValue | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function formString(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function formJsonObject(value: FormDataEntryValue | null): Record<string, unknown> | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = JSON.parse(value) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("metadata must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 /** Cheap magic-byte sniff so a spoofed Content-Type can't smuggle non-image bytes. */
 function magicBytesMatch(buf: Buffer, type: string): boolean {
   if (type === "image/jpeg") return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
@@ -45,6 +59,8 @@ export const POST = route(async (req) => {
   const file = form.get("file") ?? form.get("image");
   const zoneIdRaw = form.get("zoneId");
   const boundaryIdRaw = form.get("boundaryId");
+  const droneId = formString(form.get("droneId"));
+  const flightId = formString(form.get("flightId"));
 
   if (typeof zoneIdRaw !== "string" || !zoneIdRaw) {
     throw new Error("zoneId is required");
@@ -54,18 +70,6 @@ export const POST = route(async (req) => {
 
   const boundaryId = typeof boundaryIdRaw === "string" && boundaryIdRaw ? boundaryIdRaw : undefined;
   const boundary = boundaryId ? await getBoundary(boundaryId) : undefined;
-  const gpsLat = formNumber(form.get("gpsLat"));
-  const gpsLng = formNumber(form.get("gpsLng"));
-  const gps = gpsLat != null && gpsLng != null ? { lat: gpsLat, lng: gpsLng } : undefined;
-  const stationM = formNumber(form.get("stationM"));
-  const lateralOffsetM = formNumber(form.get("lateralOffsetM"));
-  const geomConfidenceRaw = form.get("geomConfidence");
-  const geomConfidence =
-    geomConfidenceRaw === "gps" || geomConfidenceRaw === "pose" || geomConfidenceRaw === "manual"
-      ? (geomConfidenceRaw as GeomConfidence)
-      : gps
-        ? "gps"
-        : undefined;
 
   if (!(file instanceof File)) {
     throw new Error("An image file is required");
@@ -84,6 +88,27 @@ export const POST = route(async (req) => {
   if (!magicBytesMatch(buffer, file.type)) {
     throw new Error("File content does not match its image type");
   }
+  const exifMetadata: UploadImageMetadata = await extractImageMetadata(buffer).catch(() => ({}));
+  const gpsLat = formNumber(form.get("gpsLat"));
+  const gpsLng = formNumber(form.get("gpsLng"));
+  const explicitGps = gpsLat != null && gpsLng != null ? { lat: gpsLat, lng: gpsLng } : undefined;
+  const gps = explicitGps ?? exifMetadata.gps;
+  const stationM = formNumber(form.get("stationM"));
+  const lateralOffsetM = formNumber(form.get("lateralOffsetM"));
+  const altM = formNumber(form.get("altM")) ?? exifMetadata.altM;
+  const headingDeg = formNumber(form.get("headingDeg")) ?? exifMetadata.headingDeg;
+  const capturedAt = formString(form.get("capturedAt")) ?? exifMetadata.capturedAt;
+  const sourceKind = formString(form.get("sourceKind")) ?? (exifMetadata.gps ? "image_exif" : undefined);
+  const formMetadata = formJsonObject(form.get("metadata"));
+  const geomConfidenceRaw = form.get("geomConfidence");
+  const geomConfidence =
+    geomConfidenceRaw === "gps" || geomConfidenceRaw === "pose" || geomConfidenceRaw === "manual"
+      ? (geomConfidenceRaw as GeomConfidence)
+      : (explicitGps ? "gps" : exifMetadata.geomConfidence);
+  const metadata =
+    exifMetadata.metadata || formMetadata || sourceKind
+      ? { ...(exifMetadata.metadata ?? {}), ...(formMetadata ?? {}), ...(sourceKind ? { sourceKind } : {}) }
+      : undefined;
 
   // Persist to object storage (S3) — or public/uploads in local dev. The stored
   // key uses a server-derived extension, never the client-supplied file name.
@@ -119,12 +144,19 @@ export const POST = route(async (req) => {
     body: JSON.stringify({
       zoneId: zoneIdRaw,
       boundaryId,
+      droneId,
+      flightId,
       fileUrl,
       sourceFile: file.name,
+      sourceKind,
       gps,
+      altM,
+      headingDeg,
       stationM,
       lateralOffsetM,
+      capturedAt,
       geomConfidence,
+      metadata,
       detections: drafted.map((d) => ({
         ...d,
         stationM: d.stationM ?? stationM,

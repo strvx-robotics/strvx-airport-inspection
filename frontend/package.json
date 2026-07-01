@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
     "db:setup": "node --env-file=.env.local --import tsx scripts/db-setup.ts",
     "db:bootstrap": "node --env-file=.env.local --import tsx scripts/bootstrap.ts",
     "build:us-airports": "tsx scripts/build-us-airports.ts"
@@ -20,6 +21,7 @@
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
+    "exifr": "^7.1.3",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.21.0",
     "maplibre-gl": "^5.24.0",
@@ -40,6 +42,7 @@
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.9"
   }
 }
