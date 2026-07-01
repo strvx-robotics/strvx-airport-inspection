@@ -12,7 +12,10 @@ import { rel } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, INPUT, EYEBROW, H2, MUTED, METRIC_CELL } from "@/lib/vstyle";
 
-const ACTIVE: TicketStatus[] = ["draft", "sent", "in_progress", "repaired"];
+// "Active" = every open work order. `reinspected` ("ready to close") is still
+// open — it is not closed yet — so it belongs here; leaving it out hid those
+// tickets from BOTH the Active and Closed tabs (visible only under "All").
+const ACTIVE: TicketStatus[] = ["draft", "sent", "in_progress", "repaired", "reinspected"];
 const isActive = (s: TicketStatus) => ACTIVE.includes(s);
 
 type Filter = "all" | "active" | "closed";
@@ -121,7 +124,10 @@ export default function MaintenanceTracker() {
     () => ({
       sent: all.filter((t) => t.status === "sent").length,
       in_progress: all.filter((t) => t.status === "in_progress").length,
-      repaired: all.filter((t) => t.status === "repaired").length,
+      // The reinspection/sign-off phase spans both "repaired" (awaiting
+      // reinspection) and "reinspected" (ready to close). Counting only
+      // "repaired" left reinspected tickets out of every summary bucket.
+      reinspection: all.filter((t) => t.status === "repaired" || t.status === "reinspected").length,
       closed: all.filter((t) => t.status === "closed").length,
     }),
     [all],
@@ -163,7 +169,7 @@ export default function MaintenanceTracker() {
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#dbdfe3] sm:grid-cols-4">
         <SummaryCell label="New" value={counts.sent} hint="sent to maintenance" />
         <SummaryCell label="In progress" value={counts.in_progress} hint="being worked" />
-        <SummaryCell label="Reinspection" value={counts.repaired} hint="awaiting sign-off" />
+        <SummaryCell label="Reinspection" value={counts.reinspection} hint="awaiting sign-off" />
         <SummaryCell label="Closed" value={counts.closed} hint="completed" />
       </div>
 
