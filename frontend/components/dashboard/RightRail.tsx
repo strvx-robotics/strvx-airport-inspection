@@ -1,15 +1,15 @@
 import Link from "next/link";
 import Badge from "@/components/Badge";
-import type { RunwayOverview } from "@/lib/api";
+import type { ZoneOverview } from "@/lib/api";
 import type { Inspection, Ticket } from "@/lib/types";
 import { CATEGORY, INSPECTION_STATUS, INSPECTION_WINDOW, TICKET_STATUS } from "@/lib/ui";
 import { fmtInTz, rel } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, MUTED, DOT } from "@/lib/vstyle";
 
-/** Schematic placeholder for the future runway-zoning map (pins + polygons). */
-export function ZoningMapSlot({ runways }: { runways: RunwayOverview[] }) {
-  const maxLen = Math.max(1, ...runways.map((r) => r.runway.lengthM ?? 0));
+/** Schematic placeholder for the future zone-zoning map (pins + polygons). */
+export function ZoningMapSlot({ zones }: { zones: ZoneOverview[] }) {
+  const maxLen = Math.max(1, ...zones.map((r) => r.zone.lengthM ?? 0));
   return (
     <section className={cn("overflow-hidden rounded-md", CARD)}>
       <div className={cn("flex items-center justify-between px-4 py-3", BAR)}>
@@ -17,12 +17,12 @@ export function ZoningMapSlot({ runways }: { runways: RunwayOverview[] }) {
         <Badge tone="gray">Preview</Badge>
       </div>
       <div className="space-y-2.5 bg-[#f3f5f7] px-4 py-4">
-        {runways.map((r) => {
-          const w = r.runway.lengthM ? Math.max(28, Math.round((r.runway.lengthM / maxLen) * 100)) : 60;
+        {zones.map((r) => {
+          const w = r.zone.lengthM ? Math.max(28, Math.round((r.zone.lengthM / maxLen) * 100)) : 60;
           const hot = r.pendingCount > 0;
           return (
-            <div key={r.runway.id} className="flex items-center gap-3">
-              <span className="w-14 shrink-0 font-mono text-[10px] text-[#6b7176]">{r.runway.designation}</span>
+            <div key={r.zone.id} className="flex items-center gap-3">
+              <span className="w-14 shrink-0 font-mono text-[10px] text-[#6b7176]">{r.zone.designation}</span>
               <div className="h-6 flex-1">
                 <div
                   className="relative h-full rounded-sm border border-[#dbdfe3] bg-[#eef1f4]"
@@ -83,7 +83,7 @@ export function RecentWorkOrders({ tickets }: { tickets: Ticket[] }) {
             <div className="mt-1 flex items-center gap-2">
               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[t.severity])} />
               <span className="truncate text-[11px] text-[#5b6166]">
-                {CATEGORY[t.category]} · {t.zone}
+                {CATEGORY[t.category]} · {t.boundary}
               </span>
               <span className="ml-auto shrink-0 font-mono text-[10px] text-[#9aa1a6]">
                 {rel(t.closedAt ?? t.repairedAt ?? t.createdAt)}

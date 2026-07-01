@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Upload, ImagePlus, ChevronRight, CheckCircle2 } from "lucide-react";
 import Badge from "@/components/Badge";
-import RunwayImage from "@/components/RunwayImage";
+import ZoneImage from "@/components/ZoneImage";
 import Select from "@/components/Select";
 import { useOverview, useStore } from "@/lib/store";
 import * as api from "@/lib/api";
@@ -13,17 +13,17 @@ import { CATEGORY, confidenceBand, pct } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, BTN, BTN_PRIMARY, EYEBROW, H2 } from "@/lib/vstyle";
 import type { UploadResult } from "@/lib/api";
-import type { Zone } from "@/lib/types";
+import type { Boundary, Zone } from "@/lib/types";
 
 export default function UploadPage() {
   const router = useRouter();
   const { overview } = useOverview();
   const { role, loadOverview } = useStore();
-  const runways = overview?.runways.map((r) => r.runway) ?? [];
+  const zones = overview?.zones.map((r) => r.zone) ?? [];
 
-  const [runwayId, setRunwayId] = useState("");
   const [zoneId, setZoneId] = useState("");
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [boundaryId, setBoundaryId] = useState("");
+  const [boundaries, setBoundaries] = useState<Boundary[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -32,25 +32,25 @@ export default function UploadPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const allowed = role === "inspector" || role === "admin";
-  const selectedRunway = runwayId || runways[0]?.id || "";
+  const selectedZoneId = zoneId || zones[0]?.id || "";
 
-  // Load the selected runway's zones for the (optional) zone picker.
+  // Load boundaries for the selected zone (optional boundary picker).
   useEffect(() => {
-    if (!selectedRunway) return;
+    if (!selectedZoneId) return;
     let live = true;
-    setZoneId("");
+    setBoundaryId("");
     api
-      .listZones(selectedRunway)
-      .then((z) => {
-        if (live) setZones(z);
+      .listBoundaries(selectedZoneId)
+      .then((b) => {
+        if (live) setBoundaries(b);
       })
       .catch(() => {
-        if (live) setZones([]);
+        if (live) setBoundaries([]);
       });
     return () => {
       live = false;
     };
-  }, [selectedRunway]);
+  }, [selectedZoneId]);
 
   if (!allowed) {
     return (
@@ -67,14 +67,14 @@ export default function UploadPage() {
   }
 
   const handleSubmit = async () => {
-    if (!file || !selectedRunway) return;
+    if (!file || !selectedZoneId) return;
     setBusy(true);
     setError(null);
     try {
       const res = await api.uploadImage({
         file,
-        runwayId: selectedRunway,
-        zoneId: zoneId || undefined,
+        zoneId: selectedZoneId,
+        boundaryId: boundaryId || undefined,
       });
       setResult(res);
       void loadOverview();
@@ -87,49 +87,50 @@ export default function UploadPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
-      {/* header */}
       <div className="mb-4">
         <p className={EYEBROW}>Manual capture</p>
         <h1 className={cn("mt-1 flex items-center gap-2", H2)}>
           <Upload size={17} strokeWidth={2} /> Upload imagery
         </h1>
         <p className="mt-1 text-[13px] text-[#6b7176]">
-          Drop a runway photo — the detector runs and produces issue candidates
+          Drop a zone photo — the detector runs and produces issue candidates
           for review.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-        {/* capture form */}
         <section className={cn("overflow-hidden rounded-md", CARD)}>
           <div className={cn("px-4 py-3", BAR)}>
             <h2 className="text-[13px] font-semibold text-[#181b1e]">Capture details</h2>
-            <p className="mt-1 text-[12px] text-[#6b7176]">Target runway, zone, and source image.</p>
+            <p className="mt-1 text-[12px] text-[#6b7176]">Target zone, boundary, and source image.</p>
           </div>
 
           <div className="space-y-4 p-4">
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
-                Runway
+                Zone
               </label>
               <Select
-                value={selectedRunway}
-                options={runways.map((r) => ({ value: r.id, label: `${r.name} · ${r.designation}` }))}
-                onChange={setRunwayId}
-                ariaLabel="Runway"
+                value={selectedZoneId}
+                options={zones.map((r) => ({ value: r.id, label: `${r.name} · ${r.designation}` }))}
+                onChange={setZoneId}
+                ariaLabel="Zone"
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="font-mono text-[10px] uppercase tracking-wide text-[#6b7176]">
-                Zone (optional)
+                Boundary (optional)
               </label>
               <Select
-                value={zoneId}
-                options={[{ value: "", label: "Whole runway" }, ...zones.map((z) => ({ value: z.id, label: z.name }))]}
-                onChange={setZoneId}
-                ariaLabel="Zone"
-                disabled={zones.length === 0}
+                value={boundaryId}
+                options={[
+                  { value: "", label: "Whole zone" },
+                  ...boundaries.map((b) => ({ value: b.id, label: b.name })),
+                ]}
+                onChange={setBoundaryId}
+                ariaLabel="Boundary"
+                disabled={boundaries.length === 0}
               />
             </div>
 
@@ -201,7 +202,6 @@ export default function UploadPage() {
           </div>
         </section>
 
-        {/* detections */}
         <section className={cn("overflow-hidden rounded-md", CARD)}>
           <div className={cn("px-4 py-3", BAR)}>
             <h2 className="text-[13px] font-semibold text-[#181b1e]">Detections</h2>
@@ -226,7 +226,7 @@ export default function UploadPage() {
             ) : (
               <div className="space-y-2">
                 {result.image.fileUrl && (
-                  <RunwayImage
+                  <ZoneImage
                     src={result.image.fileUrl}
                     bbox={result.candidates[0]?.bbox}
                     label={result.candidates[0] ? CATEGORY[result.candidates[0].category] : undefined}
@@ -254,10 +254,10 @@ export default function UploadPage() {
                   );
                 })}
                 <button
-                  onClick={() => router.push(`/runway/${selectedRunway}`)}
+                  onClick={() => router.push(`/zone/${selectedZoneId}`)}
                   className={cn("h-8 w-full px-3 text-[12px]", BTN)}
                 >
-                  View runway candidates
+                  View zone candidates
                   <ChevronRight size={14} strokeWidth={2} />
                 </button>
               </div>

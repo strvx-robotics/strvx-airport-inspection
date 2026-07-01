@@ -46,7 +46,7 @@ const columns: DataTableColumn<Ticket>[] = [
   {
     colId: "location",
     headerName: "Location",
-    valueGetter: ({ data }) => data?.zone || "—",
+    valueGetter: ({ data }) => data?.boundary || "—",
     cellClass: "font-mono text-[12px] text-[#5b6166] whitespace-normal leading-snug",
     flex: 0.9,
     minWidth: 130,
@@ -137,7 +137,7 @@ export default function MaintenanceTracker() {
       .filter((t) =>
         q === ""
           ? true
-          : [t.id, t.zone, CATEGORY[t.category], t.assignedTo].some((v) => v?.toLowerCase().includes(q)),
+          : [t.id, t.boundary, CATEGORY[t.category], t.assignedTo].some((v) => v?.toLowerCase().includes(q)),
       )
       .sort(
         (a, b) =>

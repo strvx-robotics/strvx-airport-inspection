@@ -19,10 +19,10 @@ export const SURVEILLANCE_TEMPLATES: SurveillanceTemplate[] = [
     detail: "Fuel storage, hydrant, and dispensing system check (§139.321).",
   },
   {
-    label: "Runway friction / rubber removal survey",
+    label: "Zone friction / rubber removal survey",
     frequency: "quarterly",
     time: "09:00",
-    detail: "Periodic runway friction testing and rubber-buildup assessment.",
+    detail: "Periodic zone friction testing and rubber-buildup assessment.",
   },
   {
     label: "Airfield lighting & NAVAID survey",

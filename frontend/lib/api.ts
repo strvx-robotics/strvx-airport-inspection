@@ -8,6 +8,7 @@
 import type {
   Airport,
   BadgeTone,
+  Boundary,
   ChecklistItem,
   ChecklistResult,
   ConfidenceBand,
@@ -22,10 +23,11 @@ import type {
   InspectionWindow,
   Image,
   KeepOutZone,
+  GeomConfidence,
   LngLat,
   RejectionReason,
-  Runway,
-  RunwayMapStatus,
+  Zone,
+  ZoneMapStatus,
   ScheduleFrequency,
   ScheduleInspectionType,
   Severity,
@@ -33,13 +35,12 @@ import type {
   Ticket,
   User,
   UserRole,
-  Zone,
 } from "./types";
 
 // ── Response shapes (mirror lib/repo.ts) ──────────────────────────────────────
 
-export interface RunwayOverview {
-  runway: Runway;
+export interface ZoneOverview {
+  zone: Zone;
   issueCount: number;
   pendingCount: number;
   ticketsOpen: number;
@@ -64,7 +65,7 @@ export interface IssueBreakdown {
 export interface Overview {
   inspection?: Inspection;
   airport: Airport;
-  runways: RunwayOverview[];
+  zones: ZoneOverview[];
   totals: {
     issues: number;
     pending: number;
@@ -84,7 +85,7 @@ export interface Overview {
 
 export interface InspectionWithJobs {
   inspection: Inspection;
-  jobs: Array<InspectionJob & { runway?: Runway }>;
+  jobs: Array<InspectionJob & { zone?: Zone }>;
   checklist: ChecklistItem[];
   images: Image[];
 }
@@ -94,13 +95,13 @@ export interface InspectionReport {
   airport: Airport;
   generatedAt: string;
   totals: { issues: number; tickets: number; ticketsOpen: number; ticketsCompleted: number };
-  runways: Array<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] }>;
+  zones: Array<{ zone: Zone; issues: IssueCandidate[]; tickets: Ticket[] }>;
   checklist: ChecklistItem[];
   images: Image[];
 }
 
-export interface RunwayWithIssues {
-  runway: Runway;
+export interface ZoneWithIssues {
+  zone: Zone;
   issues: IssueCandidate[];
   tickets: Ticket[];
 }
@@ -108,11 +109,11 @@ export interface RunwayWithIssues {
 export interface TicketDetail {
   ticket: Ticket;
   issue?: IssueCandidate;
-  runway?: Runway;
+  zone?: Zone;
 }
 
 export interface UploadResult {
-  image: { id: string; runwayId: string; zoneId?: string; fileUrl: string };
+  image: { id: string; zoneId: string; boundaryId?: string; fileUrl: string };
   candidates: IssueCandidate[];
 }
 
@@ -246,11 +247,11 @@ export const signInspection = (inspectionId: string, signatureName: string) =>
     actor: actor(),
   }).then((r) => r.inspection);
 
-// ── Runways / issues ──────────────────────────────────────────────────────────
+// ── Zones / boundaries / issues ───────────────────────────────────────────────
 
-export const getRunway = (id: string, inspectionId?: string) =>
-  jsonReq<RunwayWithIssues>(
-    `/api/runways/${id}${inspectionId ? `?inspectionId=${encodeURIComponent(inspectionId)}` : ""}`,
+export const getZone = (id: string, inspectionId?: string) =>
+  jsonReq<ZoneWithIssues>(
+    `/api/zones/${id}${inspectionId ? `?inspectionId=${encodeURIComponent(inspectionId)}` : ""}`,
   );
 export const getIssue = (id: string) =>
   jsonReq<{ issue: IssueCandidate }>(`/api/issues/${id}`).then((r) => r.issue);
@@ -297,14 +298,19 @@ export const setComplianceRecord = (
     actor: actor(),
   }).then((r) => r.issue);
 
-export const listZones = (runwayId: string) =>
+export const listZones = (airportId: string) =>
   jsonReq<{ zones: Zone[] }>(
-    `/api/zones?runwayId=${encodeURIComponent(runwayId)}`,
+    `/api/zones?airportId=${encodeURIComponent(airportId)}`,
   ).then((r) => r.zones);
 
-export const listKeepOutZones = (params: { runwayId?: string; airportId?: string; activeOnly?: boolean }) => {
+export const listBoundaries = (zoneId: string) =>
+  jsonReq<{ boundaries: Boundary[] }>(
+    `/api/boundaries?zoneId=${encodeURIComponent(zoneId)}`,
+  ).then((r) => r.boundaries);
+
+export const listKeepOutZones = (params: { zoneId?: string; airportId?: string; activeOnly?: boolean }) => {
   const qs = new URLSearchParams();
-  if (params.runwayId) qs.set("runwayId", params.runwayId);
+  if (params.zoneId) qs.set("zoneId", params.zoneId);
   if (params.airportId) qs.set("airportId", params.airportId);
   if (params.activeOnly) qs.set("activeOnly", "1");
   return jsonReq<{ keepOutZones: KeepOutZone[] }>(`/api/keep-out-zones?${qs}`).then((r) => r.keepOutZones);
@@ -312,7 +318,7 @@ export const listKeepOutZones = (params: { runwayId?: string; airportId?: string
 
 export const createKeepOutZone = (body: {
   airportId: string;
-  runwayId: string;
+  zoneId: string;
   name: string;
   polygon: LngLat[];
   reason?: string;
@@ -350,13 +356,24 @@ export const listDrones = () =>
 
 export function uploadImage(input: {
   file: File;
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
+  gps?: LngLat;
+  stationM?: number;
+  lateralOffsetM?: number;
+  geomConfidence?: GeomConfidence;
 }): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", input.file);
-  form.append("runwayId", input.runwayId);
-  if (input.zoneId) form.append("zoneId", input.zoneId);
+  form.append("zoneId", input.zoneId);
+  if (input.boundaryId) form.append("boundaryId", input.boundaryId);
+  if (input.gps) {
+    form.append("gpsLat", String(input.gps.lat));
+    form.append("gpsLng", String(input.gps.lng));
+  }
+  if (input.stationM != null) form.append("stationM", String(input.stationM));
+  if (input.lateralOffsetM != null) form.append("lateralOffsetM", String(input.lateralOffsetM));
+  if (input.geomConfidence) form.append("geomConfidence", input.geomConfidence);
   return jsonReq<UploadResult>("/api/uploads", { method: "POST", body: form });
 }
 
@@ -415,27 +432,27 @@ export const updateAirport = (
     body: JSON.stringify({ id, ...patch }),
   }).then((r) => r.airport);
 
-export const createRunway = (body: {
+export const createZone = (body: {
   airportId: string;
   name: string;
   designation: string;
   length?: string;
   lengthM?: number;
   description?: string;
-  runwayPolygon?: LngLat[];
-  mapStatus?: RunwayMapStatus;
-}) => post<{ runway: Runway }>("/api/runways", body).then((r) => r.runway);
+  zonePolygon?: LngLat[];
+  mapStatus?: ZoneMapStatus;
+}) => post<{ zone: Zone }>("/api/zones", body).then((r) => r.zone);
 
-export const createZone = (body: {
-  runwayId: string;
+export const createBoundary = (body: {
+  zoneId: string;
   name: string;
   stationStartM?: number;
   stationEndM?: number;
   notes?: string;
   polygon: LngLat[];
 }) =>
-  post<{ zone: Zone }>("/api/zones", { ...body, actor: actor() }).then(
-    (r) => r.zone,
+  post<{ boundary: Boundary }>("/api/boundaries", { ...body, actor: actor() }).then(
+    (r) => r.boundary,
   );
 
 export const createSchedule = (body: {
@@ -452,7 +469,7 @@ export const createSchedule = (body: {
     actor: actor(),
   }).then((r) => r.schedule);
 
-export const updateRunway = (
+export const updateZone = (
   id: string,
   patch_: {
     name?: string;
@@ -461,30 +478,30 @@ export const updateRunway = (
     lengthM?: number;
     description?: string;
     activeStatus?: string;
-    mapStatus?: RunwayMapStatus;
-    runwayPolygon?: LngLat[] | null;
+    mapStatus?: ZoneMapStatus;
+    zonePolygon?: LngLat[] | null;
   },
-) =>
-  patch<{ runway: Runway }>(`/api/runways/${id}`, { ...patch_, actor: actor() }).then(
-    (r) => r.runway,
-  );
-
-export const deleteRunway = (id: string) =>
-  del<{ ok: boolean }>(`/api/runways/${id}`, { actor: actor() });
-
-export const updateZone = (
-  id: string,
-  patch_: { name?: string; stationStartM?: number; stationEndM?: number; notes?: string; polygon?: LngLat[] },
 ) =>
   patch<{ zone: Zone }>(`/api/zones/${id}`, { ...patch_, actor: actor() }).then(
     (r) => r.zone,
   );
 
-export const deleteZone = (id: string, opts?: { reassignToZoneId?: string }) => {
-  const qs = opts?.reassignToZoneId
-    ? `?reassignToZoneId=${encodeURIComponent(opts.reassignToZoneId)}`
+export const deleteZone = (id: string) =>
+  del<{ ok: boolean }>(`/api/zones/${id}`, { actor: actor() });
+
+export const updateBoundary = (
+  id: string,
+  patch_: { name?: string; stationStartM?: number; stationEndM?: number; notes?: string; polygon?: LngLat[] },
+) =>
+  patch<{ boundary: Boundary }>(`/api/boundaries/${id}`, { ...patch_, actor: actor() }).then(
+    (r) => r.boundary,
+  );
+
+export const deleteBoundary = (id: string, opts?: { reassignToBoundaryId?: string }) => {
+  const qs = opts?.reassignToBoundaryId
+    ? `?reassignToBoundaryId=${encodeURIComponent(opts.reassignToBoundaryId)}`
     : "";
-  return del<{ ok: boolean }>(`/api/zones/${id}${qs}`, { actor: actor() });
+  return del<{ ok: boolean }>(`/api/boundaries/${id}${qs}`, { actor: actor() });
 };
 
 export const listSchedules = (airportId: string) =>

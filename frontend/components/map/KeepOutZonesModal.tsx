@@ -1,32 +1,33 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Ban, ChevronLeft, Trash2, X } from "lucide-react";
-import type { KeepOutZone, Runway } from "@/lib/types";
+import { Ban, Trash2, X } from "lucide-react";
+import type { KeepOutZone, Zone } from "@/lib/types";
 import { keepOutZoneLabel } from "@/lib/keepOutGeom";
 import { cn } from "@/lib/cn";
 import { BTN, BTN_DANGER, BTN_PRIMARY, CARD, INPUT, MUTED } from "@/lib/vstyle";
+import { PanelDropdown } from "./PanelDropdown";
 
 export type KeepOutStep = "list" | "details" | "plot" | "confirm";
 
 export function KeepOutZonesModal({
   open,
   step,
-  zones,
-  runways,
-  focusedRunwayId,
+  keepOutZones,
+  operationalZones,
+  focusedZoneId,
   canEdit,
   busy,
   err,
   name,
   reason,
-  runwayId,
+  zoneId,
   plotPoints,
   onClose,
   onStep,
   onName,
   onReason,
-  onRunwayId,
+  onZoneId,
   onStartCreate,
   onUndoPlot,
   onFinishPlot,
@@ -36,21 +37,21 @@ export function KeepOutZonesModal({
 }: {
   open: boolean;
   step: KeepOutStep;
-  zones: KeepOutZone[];
-  runways: Runway[];
-  focusedRunwayId: string;
+  keepOutZones: KeepOutZone[];
+  operationalZones: Zone[];
+  focusedZoneId: string;
   canEdit: boolean;
   busy: boolean;
   err: string | null;
   name: string;
   reason: string;
-  runwayId: string;
+  zoneId: string;
   plotPoints: { lat: number; lng: number }[];
   onClose: () => void;
   onStep: (step: KeepOutStep) => void;
   onName: (v: string) => void;
   onReason: (v: string) => void;
-  onRunwayId: (v: string) => void;
+  onZoneId: (v: string) => void;
   onStartCreate: () => void;
   onUndoPlot: () => void;
   onFinishPlot: () => void;
@@ -60,8 +61,8 @@ export function KeepOutZonesModal({
 }) {
   if (!open) return null;
 
-  const runwayById = Object.fromEntries(runways.map((r) => [r.id, r] as const));
-  const selectedRunway = runwayById[runwayId];
+  const zoneById = Object.fromEntries(operationalZones.map((r) => [r.id, r] as const));
+  const selectedZone = zoneById[zoneId];
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex justify-end p-3">
@@ -75,21 +76,11 @@ export function KeepOutZonesModal({
       >
         <header className="flex items-center gap-2 border-b border-[#dbdfe3] px-3 py-2.5">
           <Ban size={15} strokeWidth={2} className="text-[#b23b32]" />
-          <span className="text-[13px] font-semibold text-[#181b1e]">Keep-out zones</span>
-          {step !== "list" && (
-            <button
-              type="button"
-              onClick={() => onStep(step === "confirm" ? "plot" : step === "plot" ? "details" : "list")}
-              className="ml-1 grid h-7 w-7 place-items-center rounded-md text-[#6b7176] hover:bg-[#eef1f4]"
-              title="Back"
-            >
-              <ChevronLeft size={14} strokeWidth={2.2} />
-            </button>
-          )}
+          <span className="text-[13px] font-semibold text-[#181b1e]">No-drone areas</span>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto grid h-7 w-7 place-items-center rounded-md text-[#6b7176] hover:bg-[#eef1f4]"
+            className="ml-auto grid h-7 w-7 cursor-pointer place-items-center rounded-md text-[#6b7176] transition-[background-color,color,box-shadow] duration-200 hover:bg-[#fff1f0] hover:text-[#b23b32] hover:shadow-[0_0_0_2px_rgba(178,59,50,0.18),0_0_14px_rgba(178,59,50,0.35)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b23b32]"
             title="Close"
           >
             <X size={14} strokeWidth={2.2} />
@@ -99,8 +90,8 @@ export function KeepOutZonesModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {step === "list" && (
             <ListStep
-              zones={zones}
-              runwayById={runwayById}
+              keepOutZones={keepOutZones}
+              zoneById={zoneById}
               canEdit={canEdit}
               busy={busy}
               onStartCreate={onStartCreate}
@@ -113,21 +104,21 @@ export function KeepOutZonesModal({
             <DetailsStep
               name={name}
               reason={reason}
-              runwayId={runwayId}
-              runways={runways}
-              showRunwayPick={focusedRunwayId === "all"}
+              zoneId={zoneId}
+              operationalZones={operationalZones}
+              showZonePick={focusedZoneId === "all"}
               onName={onName}
               onReason={onReason}
-              onRunwayId={onRunwayId}
+              onZoneId={onZoneId}
               onContinue={() => onStep("plot")}
-              disabled={!name.trim() || !runwayId}
+              disabled={!name.trim() || !zoneId}
             />
           )}
 
           {step === "plot" && (
             <PlotStep
               pointCount={plotPoints.length}
-              runway={selectedRunway}
+              zone={selectedZone}
               onUndo={onUndoPlot}
               onFinish={onFinishPlot}
               canFinish={plotPoints.length >= 3}
@@ -138,7 +129,7 @@ export function KeepOutZonesModal({
             <ConfirmStep
               name={name}
               reason={reason}
-              runway={selectedRunway}
+              zone={selectedZone}
               pointCount={plotPoints.length}
               busy={busy}
               onSave={onSave}
@@ -153,16 +144,16 @@ export function KeepOutZonesModal({
 }
 
 function ListStep({
-  zones,
-  runwayById,
+  keepOutZones,
+  zoneById,
   canEdit,
   busy,
   onStartCreate,
   onToggleActive,
   onDelete,
 }: {
-  zones: KeepOutZone[];
-  runwayById: Record<string, Runway>;
+  keepOutZones: KeepOutZone[];
+  zoneById: Record<string, Zone>;
   canEdit: boolean;
   busy: boolean;
   onStartCreate: () => void;
@@ -172,13 +163,13 @@ function ListStep({
   return (
     <div className="space-y-3">
       <p className={cn("text-[12px] leading-relaxed", MUTED)}>
-        Mark areas where drones must not fly. Zones are drawn on the map — no manual coordinates.
+        Mark areas where drones must not fly. Areas are drawn on the map — no manual coordinates.
       </p>
-      {zones.length === 0 ? (
-        <p className={cn("text-[12px]", MUTED)}>No keep-out zones yet.</p>
+      {keepOutZones.length === 0 ? (
+        <p className={cn("text-[12px]", MUTED)}>No areas marked yet.</p>
       ) : (
         <ul className="space-y-2">
-          {zones.map((z) => (
+          {keepOutZones.map((z) => (
             <li
               key={z.id}
               className={cn(
@@ -188,7 +179,7 @@ function ListStep({
             >
               <p className="text-[12px] font-semibold text-[#181b1e]">{z.name}</p>
               <p className="mt-0.5 font-mono text-[10px] text-[#6b7176]">
-                {keepOutZoneLabel(z, runwayById[z.runwayId])}
+                {keepOutZoneLabel(z, zoneById[z.zoneId])}
               </p>
               {z.reason && <p className="mt-1 text-[11px] text-[#5b6166]">{z.reason}</p>}
               {canEdit && (
@@ -217,10 +208,10 @@ function ListStep({
       )}
       {canEdit ? (
         <button type="button" onClick={onStartCreate} className={cn("h-9 w-full text-[12px]", BTN_PRIMARY)}>
-          New keep-out zone
+          New no-drone area
         </button>
       ) : (
-        <p className={cn("text-[11px]", MUTED)}>Switch to Inspector to create zones.</p>
+        <p className={cn("text-[11px]", MUTED)}>Switch to Inspector to create areas.</p>
       )}
     </div>
   );
@@ -229,23 +220,23 @@ function ListStep({
 function DetailsStep({
   name,
   reason,
-  runwayId,
-  runways,
-  showRunwayPick,
+  zoneId,
+  operationalZones,
+  showZonePick,
   onName,
   onReason,
-  onRunwayId,
+  onZoneId,
   onContinue,
   disabled,
 }: {
   name: string;
   reason: string;
-  runwayId: string;
-  runways: Runway[];
-  showRunwayPick: boolean;
+  zoneId: string;
+  operationalZones: Zone[];
+  showZonePick: boolean;
   onName: (v: string) => void;
   onReason: (v: string) => void;
-  onRunwayId: (v: string) => void;
+  onZoneId: (v: string) => void;
   onContinue: () => void;
   disabled: boolean;
 }) {
@@ -261,19 +252,17 @@ function DetailsStep({
           autoFocus
         />
       </Field>
-      {showRunwayPick && (
-        <Field label="Runway">
-          <select
-            value={runwayId}
-            onChange={(e) => onRunwayId(e.target.value)}
-            className={cn(INPUT, "h-9 w-full px-2.5 text-[12px]")}
-          >
-            {runways.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.designation} · {r.name}
-              </option>
-            ))}
-          </select>
+      {showZonePick && (
+        <Field label="Zone">
+          <PanelDropdown
+            label="Zone"
+            value={zoneId}
+            options={operationalZones.map((r) => ({
+              value: r.id,
+              label: `${r.designation} · ${r.name}`,
+            }))}
+            onChange={onZoneId}
+          />
         </Field>
       )}
       <Field label="Reason (optional)">
@@ -293,13 +282,13 @@ function DetailsStep({
 
 function PlotStep({
   pointCount,
-  runway,
+  zone,
   onUndo,
   onFinish,
   canFinish,
 }: {
   pointCount: number;
-  runway?: Runway;
+  zone?: Zone;
   onUndo: () => void;
   onFinish: () => void;
   canFinish: boolean;
@@ -307,8 +296,8 @@ function PlotStep({
   return (
     <div className="space-y-3">
       <p className={cn("text-[12px] leading-relaxed", MUTED)}>
-        Step 2 — click the map to outline the keep-out area
-        {runway ? ` near ${runway.designation}` : ""}. Each click adds a corner.
+        Step 2 — click the map to outline the no-drone area
+        {zone ? ` near ${zone.designation}` : ""}. Each click adds a corner.
       </p>
       <div className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2.5">
         <p className="font-mono text-[11px] text-[#181b1e]">
@@ -331,14 +320,14 @@ function PlotStep({
 function ConfirmStep({
   name,
   reason,
-  runway,
+  zone,
   pointCount,
   busy,
   onSave,
 }: {
   name: string;
   reason?: string;
-  runway?: Runway;
+  zone?: Zone;
   pointCount: number;
   busy: boolean;
   onSave: () => void;
@@ -348,12 +337,12 @@ function ConfirmStep({
       <p className={cn("text-[12px] leading-relaxed", MUTED)}>Step 3 — confirm and save.</p>
       <dl className="space-y-2 rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-3 py-2.5 text-[12px]">
         <Row term="Label" detail={name} />
-        {runway && <Row term="Runway" detail={runway.designation} />}
+        {zone && <Row term="Zone" detail={zone.designation} />}
         <Row term="Outline" detail={`${pointCount} map points`} />
         {reason && <Row term="Reason" detail={reason} />}
       </dl>
       <button type="button" disabled={busy} onClick={onSave} className={cn("h-9 w-full text-[12px]", BTN_PRIMARY)}>
-        {busy ? "Saving…" : "Save keep-out zone"}
+        {busy ? "Saving…" : "Save no-drone area"}
       </button>
     </div>
   );
@@ -377,21 +366,3 @@ function Row({ term, detail }: { term: string; detail: string }) {
   );
 }
 
-/** Floating map trigger — not in the left toolbar. */
-export function KeepOutMapTrigger({ activeCount, onClick }: { activeCount: number; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="pointer-events-auto absolute left-3 top-14 z-10 flex items-center gap-2 rounded-md border border-[#c7cdd2] bg-[#fbfcfd]/95 px-3 py-2 shadow-md backdrop-blur-sm transition-colors hover:bg-[#eef1f4]"
-    >
-      <Ban size={15} strokeWidth={2} className="text-[#b23b32]" />
-      <span className="font-mono text-[11px] font-semibold tracking-wide text-[#181b1e]">Keep-out zones</span>
-      {activeCount > 0 && (
-        <span className="rounded-full bg-[#b23b32] px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-[#fbfcfd]">
-          {activeCount}
-        </span>
-      )}
-    </button>
-  );
-}

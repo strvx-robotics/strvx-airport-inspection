@@ -29,16 +29,16 @@ export function sortIssues(issues: IssueCandidate[], sortKey: IssueSortKey): Iss
 export function searchIssues(
   issues: IssueCandidate[],
   query: string,
-  runways: Record<string, { name?: string }>,
+  zones: Record<string, { name?: string }>,
 ): IssueCandidate[] {
   const q = query.trim().toLowerCase();
   if (!q) return issues;
   return issues.filter((issue) => {
-    const runway = runways[issue.runwayId];
+    const zone = zones[issue.zoneId];
     const haystack = [
       issue.id,
-      issue.zone,
-      runway?.name,
+      issue.boundary,
+      zone?.name,
       issue.category,
       issue.draft,
     ]

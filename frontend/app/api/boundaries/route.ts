@@ -1,16 +1,16 @@
-// /api/runways — proxied to the Python backend (GET list, POST create).
+// /api/boundaries — proxied to the Python backend (GET list, POST create).
 import { backendFetch } from "@/lib/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const qs = new URL(req.url).search;
-  const res = await backendFetch(`/runways${qs}`, { cache: "no-store" });
+  const res = await backendFetch(`/boundaries${qs}`, { cache: "no-store" });
   return new Response(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
 }
 
 export async function POST(req: Request) {
-  const res = await backendFetch(`/runways`, {
+  const res = await backendFetch(`/boundaries`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-actor-role": req.headers.get("x-strvx-role") ?? "" },
     body: await req.text(),

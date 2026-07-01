@@ -27,7 +27,7 @@ def to_inspection(r) -> Inspection:
 
 def to_job(r) -> InspectionJob:
     return InspectionJob(
-        id=r["id"], inspection_id=r["inspection_id"], runway_id=r["runway_id"],
+        id=r["id"], inspection_id=r["inspection_id"], zone_id=r["zone_id"],
         status=r["status"], started_at=r["started_at"], completed_at=r["completed_at"],
         image_count=r["image_count"], issue_count=r["issue_count"], created_at=r["created_at"],
     )
@@ -86,7 +86,7 @@ async def run_inspection_now(
     reason: str | None = None, trigger: str | None = None,
 ) -> Inspection:
     from app.repo.airports import get_airport, get_default_airport
-    from app.repo.runways import list_runways
+    from app.repo.zones import list_zones
     airport = await get_airport(airport_id) if airport_id else await get_default_airport()
     if airport is None:
         raise AppError("Airport not found")
@@ -128,12 +128,12 @@ async def run_inspection_now(
             airport.id, scheduled,
         )
         cid = canon["id"]
-        for rw in await list_runways(airport.id):
+        for z in await list_zones(airport.id):
             await db.run(
-                "INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) "
+                "INSERT INTO inspection_jobs (id, inspection_id, zone_id, status, image_count, issue_count, created_at) "
                 "VALUES ($1,$2,$3,'not_started',0,0,$4) "
-                "ON CONFLICT (inspection_id, runway_id) DO NOTHING",
-                gid("job"), cid, rw.id, created_at,
+                "ON CONFLICT (inspection_id, zone_id) DO NOTHING",
+                gid("job"), cid, z.id, created_at,
             )
     result = await get_inspection(cid)
     assert result is not None
@@ -169,12 +169,12 @@ async def sign_inspection(id: str, signature_name: str, actor: Actor | None) -> 
 
 
 async def get_inspection_with_jobs(id: str) -> dict | None:
-    from app.repo.runways import get_runway
+    from app.repo.zones import get_zone
     inspection = await get_inspection(id)
     if inspection is None:
         return None
     jobs = []
     for job in await list_jobs(id):
-        job.runway = await get_runway(job.runway_id)   # None → omitted at serialization
+        job.zone = await get_zone(job.zone_id)
         jobs.append(job)
     return {"inspection": inspection, "jobs": jobs}

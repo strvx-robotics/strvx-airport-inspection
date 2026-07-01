@@ -3,39 +3,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, FileVideo, MapPin, Satellite, Upload, Zap } from "lucide-react";
 import * as api from "@/lib/api";
-import type { Runway } from "@/lib/types";
+import type { Zone } from "@/lib/types";
 import { gpsAt, parseSrtGps, type GpsSample } from "@/lib/srt";
-import { locateOnRunways } from "@/lib/runwayGeom";
+import { locateOnZones } from "@/lib/zoneGeom";
 import { cn } from "@/lib/cn";
 import { BTN, BTN_PRIMARY, CARD, INPUT } from "@/lib/vstyle";
 
 interface Submitted {
   id: string;
   at: string; // video timestamp label
-  runwayName: string;
+  zoneName: string;
   source: "gps" | "manual";
   issues: number;
+}
+
+interface ResolvedZone {
+  zone: Zone;
+  source: "gps" | "manual";
+  gps?: { lat: number; lng: number };
+  stationM?: number;
+  lateralOffsetM?: number;
 }
 
 // Real-time auto-capture cadence. With no CV layer yet, every tick runs the
 // current frame through the existing detector (/api/uploads). When the CV
 // processing layer lands, swap this fixed interval for detection-driven capture
-// — the rest of the pipeline (screenshot → work order → runway) stays the same.
+// — the rest of the pipeline (screenshot → work order → zone) stays the same.
 const AUTO_CAPTURE_EVERY_S = 4;
 
-export default function VideoInspector({ runways }: { runways: Runway[] }) {
+export default function VideoInspector({ zones }: { zones: Zone[] }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoName, setVideoName] = useState("");
   const [gps, setGps] = useState<GpsSample[]>([]);
-  const [manualRunwayId, setManualRunwayId] = useState<string>(runways[0]?.id ?? "");
+  const [manualZoneId, setManualZoneId] = useState<string>(zones[0]?.id ?? "");
   const [auto, setAuto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState<Submitted[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [curRunway, setCurRunway] = useState<string | null>(null);
+  const [curZone, setCurZone] = useState<string | null>(null);
 
   // Revoke the object URL when the video changes/unmounts.
   useEffect(() => () => { if (videoUrl) URL.revokeObjectURL(videoUrl); }, [videoUrl]);
@@ -54,44 +62,52 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
     const samples = parseSrtGps(await file.text());
     setGps(samples);
     if (samples.length === 0) {
-      setError("No GPS found in that SRT — captures will use the selected runway.");
+      setError("No GPS found in that SRT — captures will use the selected zone.");
     } else {
       setError(null);
     }
   };
 
-  // Resolve the runway for the current playback position: GPS (if any) → geometry,
-  // else the manually selected runway.
-  const resolveRunway = useCallback(
-    (timeSec: number): { runway: Runway; source: "gps" | "manual" } | undefined => {
+  // Resolve the zone for the current playback position: GPS (if any) → geometry,
+  // else the manually selected zone.
+  const resolveZone = useCallback(
+    (timeSec: number): ResolvedZone | undefined => {
       if (gps.length > 0) {
         const fix = gpsAt(gps, timeSec);
-        const loc = fix && locateOnRunways(runways, { lat: fix.lat, lng: fix.lng });
-        const hit = loc && runways.find((r) => r.id === loc.runwayId);
-        if (hit) return { runway: hit, source: "gps" };
+        const loc = fix && locateOnZones(zones, { lat: fix.lat, lng: fix.lng });
+        const hit = loc && zones.find((r) => r.id === loc.zoneId);
+        if (hit && fix) {
+          return {
+            zone: hit,
+            source: "gps",
+            gps: { lat: fix.lat, lng: fix.lng },
+            stationM: loc.stationM,
+            lateralOffsetM: loc.lateralOffsetM,
+          };
+        }
       }
-      const manual = runways.find((r) => r.id === manualRunwayId);
-      return manual ? { runway: manual, source: "manual" } : undefined;
+      const manual = zones.find((r) => r.id === manualZoneId);
+      return manual ? { zone: manual, source: "manual" } : undefined;
     },
-    [gps, runways, manualRunwayId],
+    [gps, zones, manualZoneId],
   );
 
-  // Reflect the live GPS→runway resolution as the video plays.
+  // Reflect the live GPS→zone resolution as the video plays.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onTime = () => setCurRunway(resolveRunway(v.currentTime)?.runway.name ?? null);
+    const onTime = () => setCurZone(resolveZone(v.currentTime)?.zone.name ?? null);
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
-  }, [resolveRunway]);
+  }, [resolveZone]);
 
   const captureFrame = useCallback(async () => {
     const v = videoRef.current;
     const c = canvasRef.current;
     if (!v || !c || busy || !v.videoWidth) return;
-    const target = resolveRunway(v.currentTime);
+    const target = resolveZone(v.currentTime);
     if (!target) {
-      setError("Pick a runway first.");
+      setError("Pick a zone first.");
       return;
     }
 
@@ -107,12 +123,19 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.uploadImage({ file, runwayId: target.runway.id });
+      const result = await api.uploadImage({
+        file,
+        zoneId: target.zone.id,
+        gps: target.gps,
+        stationM: target.stationM,
+        lateralOffsetM: target.lateralOffsetM,
+        geomConfidence: target.source === "gps" ? "gps" : "manual",
+      });
       setSubmitted((prev) => [
         {
           id: result.image?.id ?? `${Date.now()}`,
           at: tLabel,
-          runwayName: target.runway.name,
+          zoneName: target.zone.name,
           source: target.source,
           issues: result.candidates?.length ?? 0,
         },
@@ -123,7 +146,7 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, resolveRunway]);
+  }, [busy, resolveZone]);
 
   // Real-time auto-capture loop (the seam for the future CV layer).
   useEffect(() => {
@@ -143,8 +166,8 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
           <p className="text-[14px] font-semibold text-[#181b1e]">Upload drone footage</p>
           <p className="mt-1 max-w-md text-[12px] text-[#6b7176]">
             Play it back and capture frames into work orders in real time. Add the DJI{" "}
-            <span className="font-mono">.SRT</span> sidecar to auto-route each capture to the runway
-            its GPS lands on; without GPS, captures use the runway you pick.
+            <span className="font-mono">.SRT</span> sidecar to auto-route each capture to the zone
+            its GPS lands on; without GPS, captures use the zone you pick.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -170,7 +193,7 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
           <canvas ref={canvasRef} className="hidden" />
           <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-sm bg-[#181b1e]/75 px-2 py-1 font-mono text-[11px] text-[#eef1f4]">
             <MapPin size={12} />
-            {curRunway ? curRunway : "no runway"}
+            {curZone ? curZone : "no zone"}
             <span className="ml-1 text-[#9aa1a6]">{gps.length > 0 ? "GPS" : "manual"}</span>
           </div>
         </div>
@@ -189,13 +212,13 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
 
           {gps.length === 0 ? (
             <label className="ml-auto flex items-center gap-2 text-[11px] text-[#6b7176]">
-              Runway
+              Zone
               <select
-                value={manualRunwayId}
-                onChange={(e) => setManualRunwayId(e.target.value)}
+                value={manualZoneId}
+                onChange={(e) => setManualZoneId(e.target.value)}
                 className={cn(INPUT, "h-8 px-2")}
               >
-                {runways.map((r) => (
+                {zones.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} · {r.designation}
                   </option>
@@ -222,14 +245,14 @@ export default function VideoInspector({ runways }: { runways: Runway[] }) {
         <div className="min-h-0 flex-1 overflow-auto">
           {submitted.length === 0 ? (
             <p className="px-3 py-4 text-[12px] text-[#9aa1a6]">
-              Captures appear here and land under their runway in the review queue.
+              Captures appear here and land under their zone in the review queue.
             </p>
           ) : (
             submitted.map((s) => (
               <div key={s.id} className="flex items-center gap-2 border-b border-[#eef1f4] px-3 py-2">
                 <Camera size={14} className="shrink-0 text-[#9aa1a6]" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] text-[#181b1e]">{s.runwayName}</p>
+                  <p className="truncate text-[12px] text-[#181b1e]">{s.zoneName}</p>
                   <p className="font-mono text-[10px] text-[#9aa1a6]">
                     {s.at} · {s.source} · {s.issues} issue{s.issues === 1 ? "" : "s"}
                   </p>

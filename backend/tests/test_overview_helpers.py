@@ -1,6 +1,6 @@
 from types import SimpleNamespace as NS
 
-from app.repo.overview import build_breakdown, runway_status_of
+from app.repo.overview import build_breakdown, zone_status_of
 from app.serialize import dump
 
 
@@ -12,13 +12,13 @@ def _tk(status="sent"):
     return NS(status=status)
 
 
-def test_runway_status_branches():
-    assert runway_status_of([], []).label == "No issues found"
-    assert runway_status_of([_iss("pending")], []).label == "Issues need review"
-    assert runway_status_of([_iss("manual_review")], []).label == "Issues need review"
-    assert runway_status_of([_iss("approved")], []).label == "Reviewed · no tickets"
-    assert runway_status_of([_iss("approved")], [_tk("closed")]).label == "Completed"
-    s = runway_status_of([_iss("approved")], [_tk("sent")])
+def test_zone_status_branches():
+    assert zone_status_of([], []).label == "No issues found"
+    assert zone_status_of([_iss("pending")], []).label == "Issues need review"
+    assert zone_status_of([_iss("manual_review")], []).label == "Issues need review"
+    assert zone_status_of([_iss("approved")], []).label == "Reviewed · no tickets"
+    assert zone_status_of([_iss("approved")], [_tk("closed")]).label == "Completed"
+    s = zone_status_of([_iss("approved")], [_tk("sent")])
     assert s.label == "Tickets open" and s.tone == "blue"
 
 

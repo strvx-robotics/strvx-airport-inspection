@@ -9,7 +9,7 @@ export function zoneSeedPolygon(lat: number, lng: number): string {
   return JSON.stringify(box);
 }
 
-/** One inspection zone per runway — lat/lng anchor at segment center. */
+/** One inspection zone per zone — lat/lng anchor at segment center. */
 export const SEED_ZONE_ANCHORS: Record<string, { lat: number; lng: number }> = {
   z_r1: { lat: 33.371, lng: -81.967 },
   z_r2: { lat: 33.3685, lng: -81.9635 },

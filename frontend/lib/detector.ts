@@ -1,4 +1,4 @@
-// Stub runway-defect detector (no real ML).
+// Stub zone-defect detector (no real ML).
 //
 // Given an uploaded/seeded image, returns 0–3 plausible detections — a category,
 // a bounding box (percent of image), a confidence, and a model-supplied severity
@@ -20,8 +20,8 @@ export interface Detection {
 export interface DetectInput {
   /** Original upload file name — used as the deterministic seed. */
   fileName?: string;
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
 }
 
 // ── Deterministic PRNG (mulberry32 seeded by a string hash) ───────────────────
@@ -81,7 +81,7 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** Run the stub detector against an image. Deterministic for a given file name. */
 export function detect(input: DetectInput): Detection[] {
-  const seedKey = `${input.fileName ?? "manual"}|${input.runwayId}|${input.zoneId ?? "-"}`;
+  const seedKey = `${input.fileName ?? "manual"}|${input.zoneId}|${input.boundaryId ?? "-"}`;
   const rand = mulberry32(hashString(seedKey));
 
   const count = Math.floor(rand() * 4); // 0–3

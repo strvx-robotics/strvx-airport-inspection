@@ -1,4 +1,4 @@
-// Postgres data layer for the runway-inspection app (node-postgres, Node runtime).
+// Postgres data layer for the zone-inspection app (node-postgres, Node runtime).
 //
 // Why Postgres (not the previous better-sqlite3): the app deploys to Vercel,
 // whose serverless filesystem is read-only and ephemeral — a SQLite file can't
@@ -177,6 +177,44 @@ export async function tx<T>(fn: () => Promise<T>): Promise<T> {
 // TEXT-ref columns, a ticket_seq sequence, and UNIQUE constraints carry the
 // integrity rules.
 
+// One-time rename of the legacy zone/inspection-zone model to the
+// zone/boundary model. Runs BEFORE SCHEMA (see scripts/db-setup.ts) so the
+// CREATE TABLE IF NOT EXISTS statements see the new names already in place.
+// Guarded on the legacy `runways` table, so it is a no-op on fresh databases
+// and on databases that have already migrated.
+export const PRE_MIGRATIONS = `
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'runways'
+  ) THEN
+    -- Free the \`zones\` name first: the old inspection-zone table → boundaries.
+    ALTER TABLE zones RENAME TO boundaries;
+    ALTER TABLE runways RENAME TO zones;
+
+    -- FK columns: free \`zone_id\` (old inspection FK → boundary_id) before
+    -- promoting runway_id → zone_id on the same tables.
+    ALTER TABLE images RENAME COLUMN zone_id TO boundary_id;
+    ALTER TABLE images RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE issue_candidates RENAME COLUMN zone_id TO boundary_id;
+    ALTER TABLE issue_candidates RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE tickets RENAME COLUMN zone_id TO boundary_id;
+    ALTER TABLE tickets RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE tickets RENAME COLUMN zone TO boundary;
+    ALTER TABLE inspection_jobs RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE keep_out_zones RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE boundaries RENAME COLUMN runway_id TO zone_id;
+    ALTER TABLE zones RENAME COLUMN runway_polygon_json TO zone_polygon_json;
+
+    -- Index names (cosmetic; column references follow the rename automatically).
+    ALTER INDEX IF EXISTS idx_issues_runway RENAME TO idx_issues_zone;
+    ALTER INDEX IF EXISTS idx_tickets_runway RENAME TO idx_tickets_zone;
+    ALTER INDEX IF EXISTS idx_keep_out_runway RENAME TO idx_keep_out_zone;
+  END IF;
+END $$;
+`;
+
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS airports (
   id          TEXT PRIMARY KEY,
@@ -190,7 +228,7 @@ CREATE TABLE IF NOT EXISTS airports (
   created_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS runways (
+CREATE TABLE IF NOT EXISTS zones (
   id                    TEXT PRIMARY KEY,
   airport_id            TEXT NOT NULL REFERENCES airports(id),
   name                  TEXT NOT NULL,
@@ -201,15 +239,15 @@ CREATE TABLE IF NOT EXISTS runways (
   threshold_heading_deg DOUBLE PRECISION,
   threshold_lat         DOUBLE PRECISION,
   threshold_lng         DOUBLE PRECISION,
-  runway_polygon_json   TEXT,
+  zone_polygon_json     TEXT,
   map_status            TEXT NOT NULL DEFAULT 'draft',
   active_status         TEXT,
   created_at            TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS zones (
+CREATE TABLE IF NOT EXISTS boundaries (
   id              TEXT PRIMARY KEY,
-  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  zone_id         TEXT NOT NULL REFERENCES zones(id),
   name            TEXT NOT NULL,
   station_start_m DOUBLE PRECISION,
   station_end_m   DOUBLE PRECISION,
@@ -221,7 +259,7 @@ CREATE TABLE IF NOT EXISTS zones (
 CREATE TABLE IF NOT EXISTS keep_out_zones (
   id              TEXT PRIMARY KEY,
   airport_id      TEXT NOT NULL REFERENCES airports(id),
-  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  zone_id         TEXT NOT NULL REFERENCES zones(id),
   name            TEXT NOT NULL,
   reason          TEXT,
   polygon_json    TEXT NOT NULL,
@@ -268,21 +306,21 @@ CREATE TABLE IF NOT EXISTS inspections (
 CREATE TABLE IF NOT EXISTS inspection_jobs (
   id            TEXT PRIMARY KEY,
   inspection_id TEXT NOT NULL REFERENCES inspections(id),
-  runway_id     TEXT NOT NULL REFERENCES runways(id),
+  zone_id       TEXT NOT NULL REFERENCES zones(id),
   status        TEXT NOT NULL,
   started_at    TEXT,
   completed_at  TEXT,
   image_count   INTEGER NOT NULL DEFAULT 0,
   issue_count   INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
-  UNIQUE (inspection_id, runway_id)
+  UNIQUE (inspection_id, zone_id)
 );
 
 CREATE TABLE IF NOT EXISTS images (
   id               TEXT PRIMARY KEY,
   job_id           TEXT REFERENCES inspection_jobs(id),
-  runway_id        TEXT NOT NULL REFERENCES runways(id),
-  zone_id          TEXT REFERENCES zones(id),
+  zone_id          TEXT NOT NULL REFERENCES zones(id),
+  boundary_id      TEXT REFERENCES boundaries(id),
   file_url         TEXT NOT NULL,
   gps_lat          DOUBLE PRECISION,
   gps_lng          DOUBLE PRECISION,
@@ -316,8 +354,8 @@ CREATE TABLE IF NOT EXISTS checklist_responses (
 CREATE TABLE IF NOT EXISTS issue_candidates (
   id                  TEXT PRIMARY KEY,
   inspection_id       TEXT REFERENCES inspections(id),
-  runway_id           TEXT NOT NULL REFERENCES runways(id),
-  zone_id             TEXT REFERENCES zones(id),
+  zone_id             TEXT NOT NULL REFERENCES zones(id),
+  boundary_id         TEXT REFERENCES boundaries(id),
   image_id            TEXT REFERENCES images(id),
   issue_type          TEXT NOT NULL,
   confidence          DOUBLE PRECISION NOT NULL,
@@ -348,9 +386,9 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
 CREATE TABLE IF NOT EXISTS tickets (
   id                TEXT PRIMARY KEY,
   issue_id          TEXT NOT NULL UNIQUE REFERENCES issue_candidates(id),
-  runway_id         TEXT NOT NULL REFERENCES runways(id),
-  zone_id           TEXT REFERENCES zones(id),
-  zone              TEXT,
+  zone_id           TEXT NOT NULL REFERENCES zones(id),
+  boundary_id       TEXT REFERENCES boundaries(id),
+  boundary          TEXT,
   category          TEXT NOT NULL,
   status            TEXT NOT NULL,
   description       TEXT NOT NULL,
@@ -424,14 +462,14 @@ CREATE TABLE IF NOT EXISTS drones (
   created_at  TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_issues_runway      ON issue_candidates(runway_id);
+CREATE INDEX IF NOT EXISTS idx_issues_zone        ON issue_candidates(zone_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_zone       ON tickets(zone_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);
-CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
+CREATE INDEX IF NOT EXISTS idx_keep_out_zone ON keep_out_zones(zone_id);
 `;
 
 export const ADDITIVE_MIGRATIONS = `
@@ -440,13 +478,13 @@ ALTER TABLE airports ADD COLUMN IF NOT EXISTS center_lng DOUBLE PRECISION;
 UPDATE airports SET center_lat = sub.lat, center_lng = sub.lng
 FROM (
   SELECT airport_id, AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng
-  FROM runways
+  FROM zones
   WHERE threshold_lat IS NOT NULL AND threshold_lng IS NOT NULL
   GROUP BY airport_id
 ) sub
 WHERE airports.id = sub.airport_id AND airports.center_lat IS NULL;
-ALTER TABLE runways ADD COLUMN IF NOT EXISTS runway_polygon_json TEXT;
-ALTER TABLE runways ADD COLUMN IF NOT EXISTS map_status TEXT NOT NULL DEFAULT 'draft';
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS zone_polygon_json TEXT;
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS map_status TEXT NOT NULL DEFAULT 'draft';
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'daily';
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS trigger TEXT;
 ALTER TABLE inspections ADD COLUMN IF NOT EXISTS reason TEXT;
@@ -480,7 +518,7 @@ CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspe
 CREATE TABLE IF NOT EXISTS keep_out_zones (
   id              TEXT PRIMARY KEY,
   airport_id      TEXT NOT NULL REFERENCES airports(id),
-  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  zone_id         TEXT NOT NULL REFERENCES zones(id),
   name            TEXT NOT NULL,
   reason          TEXT,
   polygon_json    TEXT NOT NULL,
@@ -490,15 +528,15 @@ CREATE TABLE IF NOT EXISTS keep_out_zones (
   created_by      TEXT,
   created_at      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
+CREATE INDEX IF NOT EXISTS idx_keep_out_zone ON keep_out_zones(zone_id);
 ALTER TABLE keep_out_zones ADD COLUMN IF NOT EXISTS polygon_json TEXT;
 ALTER TABLE keep_out_zones ALTER COLUMN station_start_m DROP NOT NULL;
 ALTER TABLE keep_out_zones ALTER COLUMN station_end_m DROP NOT NULL;
 
--- Allow runway/zone config deletes while keeping inspection history rows.
-ALTER TABLE images ALTER COLUMN runway_id DROP NOT NULL;
-ALTER TABLE issue_candidates ALTER COLUMN runway_id DROP NOT NULL;
-ALTER TABLE tickets ALTER COLUMN runway_id DROP NOT NULL;
+-- Allow zone/boundary config deletes while keeping inspection history rows.
+ALTER TABLE images ALTER COLUMN zone_id DROP NOT NULL;
+ALTER TABLE issue_candidates ALTER COLUMN zone_id DROP NOT NULL;
+ALTER TABLE tickets ALTER COLUMN zone_id DROP NOT NULL;
 -- Dedup only the canonical daily passes; periodic surveillance entries may share
 -- a time slot (e.g. quarterly fuel-farm and monthly friction both at 08:00).
 DELETE FROM inspection_schedules

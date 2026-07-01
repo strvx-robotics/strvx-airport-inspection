@@ -42,7 +42,7 @@ export default function LivePage() {
   const { overview } = useOverview();
   const allowed = role === "inspector" || role === "admin";
   const airportLabel = overview ? `${overview.airport.name} · ${overview.airport.code}` : "";
-  const runways = overview?.runways.map((r) => r.runway) ?? [];
+  const zones = overview?.zones.map((r) => r.zone) ?? [];
 
   const [mode, setMode] = useState<Mode>("live");
   const [savedUrl, setSavedUrl] = useState<string | null>(null);
@@ -63,9 +63,9 @@ export default function LivePage() {
   const [drones, setDrones] = useState<Drone[]>([]);
   const [idx, setIdx] = useState(0);
 
-  // Live AI-vision overlay: subscribe to the relay for the active runway.
-  const runwayId = overview?.runways?.[0]?.runway.id ?? "r1";
-  const liveDets = useLiveDetections(runwayId);
+  // Live AI-vision overlay: subscribe to the relay for the active zone.
+  const zoneId = overview?.zones?.[0]?.zone.id ?? "r1";
+  const liveDets = useLiveDetections(zoneId);
 
   useEffect(() => {
     let live = true;
@@ -191,7 +191,7 @@ export default function LivePage() {
         </>
       ) : (
         <div className="min-h-0 flex-1">
-          <VideoInspector runways={runways} />
+          <VideoInspector zones={zones} />
         </div>
       )}
     </div>

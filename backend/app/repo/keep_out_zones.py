@@ -13,7 +13,7 @@ def to_keep_out_zone(r) -> KeepOutZone:
     return KeepOutZone(
         id=r["id"],
         airport_id=r["airport_id"],
-        runway_id=r["runway_id"],
+        zone_id=r["zone_id"],
         name=r["name"],
         reason=r["reason"],
         polygon=polygon,
@@ -25,17 +25,17 @@ def to_keep_out_zone(r) -> KeepOutZone:
     )
 
 
-async def list_by_runway(runway_id: str, *, active_only: bool = False) -> list[KeepOutZone]:
+async def list_by_zone(zone_id: str, *, active_only: bool = False) -> list[KeepOutZone]:
     if active_only:
         rows = await db.all(
-            "SELECT * FROM keep_out_zones WHERE runway_id = $1 AND active = 1 "
+            "SELECT * FROM keep_out_zones WHERE zone_id = $1 AND active = 1 "
             "ORDER BY created_at DESC",
-            runway_id,
+            zone_id,
         )
     else:
         rows = await db.all(
-            "SELECT * FROM keep_out_zones WHERE runway_id = $1 ORDER BY created_at DESC",
-            runway_id,
+            "SELECT * FROM keep_out_zones WHERE zone_id = $1 ORDER BY created_at DESC",
+            zone_id,
         )
     return [to_keep_out_zone(r) for r in rows]
 
@@ -75,7 +75,7 @@ def _validate_polygon(polygon: list[dict]) -> list[dict]:
 
 async def create_zone(
     airport_id: str,
-    runway_id: str,
+    zone_id: str,
     name: str,
     polygon: list[dict],
     *,
@@ -88,20 +88,20 @@ async def create_zone(
     if station_start_m is not None and station_end_m is not None:
         if station_end_m <= station_start_m:
             raise AppError("stationEndM must be greater than stationStartM")
-    runway = await db.one("SELECT id, airport_id FROM runways WHERE id = $1", runway_id)
-    if runway is None:
-        raise AppError(f"Runway not found: {runway_id}")
-    if runway["airport_id"] != airport_id:
-        raise AppError("runwayId does not belong to airportId")
+    zone = await db.one("SELECT id, airport_id FROM zones WHERE id = $1", zone_id)
+    if zone is None:
+        raise AppError(f"Zone not found: {zone_id}")
+    if zone["airport_id"] != airport_id:
+        raise AppError("zoneId does not belong to airportId")
     id = gid("koz")
     await db.run(
         "INSERT INTO keep_out_zones "
-        "(id, airport_id, runway_id, name, reason, polygon_json, station_start_m, station_end_m, "
+        "(id, airport_id, zone_id, name, reason, polygon_json, station_start_m, station_end_m, "
         "active, created_by, created_at) "
         "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10)",
         id,
         airport_id,
-        runway_id,
+        zone_id,
         name,
         reason,
         json.dumps(polygon),

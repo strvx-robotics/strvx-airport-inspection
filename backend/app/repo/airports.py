@@ -50,40 +50,40 @@ async def create_airport(
 
 
 async def reposition_airport_geometry(airport_id: str, lat: float, lng: float) -> None:
-    """Move runway anchors to the new airport center so maps recenter correctly."""
+    """Move zone anchors to the new airport center so maps recenter correctly."""
     rows = await db.all(
-        "SELECT id FROM runways WHERE airport_id = $1 ORDER BY created_at",
+        "SELECT id FROM zones WHERE airport_id = $1 ORDER BY created_at",
         airport_id,
     )
     for i, row in enumerate(rows):
         offset = i * 0.0003
         await db.run(
-            "UPDATE runways SET threshold_lat = $1, threshold_lng = $2, "
-            "runway_polygon_json = NULL, map_status = 'draft' WHERE id = $3",
+            "UPDATE zones SET threshold_lat = $1, threshold_lng = $2, "
+            "zone_polygon_json = NULL, map_status = 'draft' WHERE id = $3",
             lat + offset, lng, row["id"],
         )
     await db.run("DELETE FROM keep_out_zones WHERE airport_id = $1", airport_id)
     await db.run(
-        "UPDATE zones SET polygon_json = NULL WHERE runway_id IN "
-        "(SELECT id FROM runways WHERE airport_id = $1)",
+        "UPDATE boundaries SET polygon_json = NULL WHERE zone_id IN "
+        "(SELECT id FROM zones WHERE airport_id = $1)",
         airport_id,
     )
 
 
-# A new center this far (deg, ~1 km) from where the runways currently sit means
-# a genuine airport switch — only then do we move/clear runway geometry. Smaller
+# A new center this far (deg, ~1 km) from where the zones currently sit means
+# a genuine airport switch — only then do we move/clear zone geometry. Smaller
 # deltas are coordinate refinements and must NOT wipe a mapped airport's data.
 _MOVE_THRESHOLD_DEG = 0.01
 
 
 async def _should_reposition(airport_id: str, lat: float, lng: float) -> bool:
     row = await db.one(
-        "SELECT AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng FROM runways "
+        "SELECT AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng FROM zones "
         "WHERE airport_id = $1 AND threshold_lat IS NOT NULL AND threshold_lng IS NOT NULL",
         airport_id,
     )
     if row is None or row["lat"] is None or row["lng"] is None:
-        return True  # runways have no anchors yet — place them at the new center
+        return True  # zones have no anchors yet — place them at the new center
     return (
         abs(row["lat"] - lat) > _MOVE_THRESHOLD_DEG
         or abs(row["lng"] - lng) > _MOVE_THRESHOLD_DEG

@@ -3,161 +3,170 @@ import json
 import pytest
 
 
-async def _seed_runway(conn):
-    await conn.execute("INSERT INTO runways (id, airport_id, name, designation, length, created_at) "
+async def _seed_zone(conn):
+    await conn.execute("INSERT INTO zones (id, airport_id, name, designation, length, created_at) "
                        "VALUES ('r1','ags','Runway 1','17 - 35','8,001 ft','t')")
 
 
 @pytest.mark.asyncio
-async def test_post_runway(seed, client):
-    res = await client.post("/runways", json={"airportId": "ags", "name": "Runway 9", "designation": "14 - 32"})
+async def test_post_zone(seed, client):
+    res = await client.post("/zones", json={"airportId": "ags", "name": "Runway 9", "designation": "14 - 32"})
     assert res.status_code == 201
-    assert res.json()["runway"]["designation"] == "14 - 32"
-    assert res.json()["runway"]["mapStatus"] == "draft"
+    assert res.json()["zone"]["designation"] == "14 - 32"
+    assert res.json()["zone"]["mapStatus"] == "draft"
 
 
 @pytest.mark.asyncio
-async def test_post_runway_with_manual_polygon(seed, client):
+async def test_post_zone_with_manual_polygon(seed, client):
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
     res = await client.post(
-        "/runways",
+        "/zones",
         json={
             "airportId": "ags",
             "name": "Runway 9",
             "designation": "14 - 32",
-            "runwayPolygon": polygon,
+            "zonePolygon": polygon,
             "mapStatus": "active",
         },
     )
     assert res.status_code == 201
-    assert res.json()["runway"]["runwayPolygon"] == polygon
-    assert res.json()["runway"]["mapStatus"] == "active"
+    assert res.json()["zone"]["zonePolygon"] == polygon
+    assert res.json()["zone"]["mapStatus"] == "active"
 
 
 @pytest.mark.asyncio
-async def test_post_runway_validates(seed, client):
-    res = await client.post("/runways", json={"airportId": "ags"})
+async def test_post_zone_validates(seed, client):
+    res = await client.post("/zones", json={"airportId": "ags"})
     assert res.status_code == 400
     assert res.json() == {"error": "airportId, name and designation are required"}
 
 
 @pytest.mark.asyncio
-async def test_patch_runway_polygon(seed, client):
-    await _seed_runway(seed)
+async def test_patch_zone_polygon(seed, client):
+    await _seed_zone(seed)
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
-    res = await client.patch("/runways/r1", json={"runwayPolygon": polygon, "mapStatus": "active"})
+    res = await client.patch("/zones/r1", json={"zonePolygon": polygon, "mapStatus": "active"})
     assert res.status_code == 200
-    assert res.json()["runway"]["runwayPolygon"] == polygon
-    assert res.json()["runway"]["mapStatus"] == "active"
-    res = await client.patch("/runways/r1", json={"runwayPolygon": None, "mapStatus": "needs_review"})
+    assert res.json()["zone"]["zonePolygon"] == polygon
+    assert res.json()["zone"]["mapStatus"] == "active"
+    res = await client.patch("/zones/r1", json={"zonePolygon": None, "mapStatus": "needs_review"})
     assert res.status_code == 200
-    assert res.json()["runway"]["runwayPolygon"] is None
-    assert res.json()["runway"]["mapStatus"] == "needs_review"
+    assert "zonePolygon" not in res.json()["zone"]
+    assert res.json()["zone"]["mapStatus"] == "needs_review"
 
 
 @pytest.mark.asyncio
-async def test_post_zone(seed, client):
-    await _seed_runway(seed)
+async def test_post_boundary(seed, client):
+    await _seed_zone(seed)
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
-    res = await client.post("/zones", json={"runwayId": "r1", "name": "Zone Q", "polygon": polygon})
+    res = await client.post("/boundaries", json={"zoneId": "r1", "name": "Zone Q", "polygon": polygon})
     assert res.status_code == 201
-    assert res.json()["zone"]["name"] == "Zone Q"
-    assert res.json()["zone"]["polygon"] == polygon
+    assert res.json()["boundary"]["name"] == "Zone Q"
+    assert res.json()["boundary"]["polygon"] == polygon
 
 
 @pytest.mark.asyncio
-async def test_post_zone_requires_polygon(seed, client):
-    await _seed_runway(seed)
-    res = await client.post("/zones", json={"runwayId": "r1", "name": "Zone Q"})
+async def test_post_boundary_requires_polygon(seed, client):
+    await _seed_zone(seed)
+    res = await client.post("/boundaries", json={"zoneId": "r1", "name": "Zone Q"})
     assert res.status_code == 400
     assert "polygon" in res.json()["error"]
 
 
 @pytest.mark.asyncio
-async def test_delete_zone_reassigns_history(seed, client):
-    await _seed_runway(seed)
+async def test_delete_boundary_reassigns_history(seed, client):
+    await _seed_zone(seed)
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
-    z1 = await client.post("/zones", json={"runwayId": "r1", "name": "Keep", "polygon": polygon})
-    assert z1.status_code == 201
-    keep_id = z1.json()["zone"]["id"]
-    # Second zone bypasses API guard — simulates legacy duplicate rows.
+    b1 = await client.post("/boundaries", json={"zoneId": "r1", "name": "Keep", "polygon": polygon})
+    assert b1.status_code == 201
+    keep_id = b1.json()["boundary"]["id"]
+    # Second boundary bypasses API guard — simulates legacy duplicate rows.
     await seed.execute(
-        "INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, polygon_json, created_at) "
-        "VALUES ('zone_extra', 'r1', 'Extra', 0, 100, $1, 't')",
+        "INSERT INTO boundaries (id, zone_id, name, station_start_m, station_end_m, polygon_json, created_at) "
+        "VALUES ('bnd_extra', 'r1', 'Extra', 0, 100, $1, 't')",
         json.dumps(polygon),
     )
     await seed.execute(
-        "INSERT INTO issue_candidates (id, inspection_id, runway_id, zone_id, issue_type, confidence, "
-        "confidence_band, severity, severity_model, status, created_at) "
-        "VALUES ('ic_extra', 'insp1', 'r1', 'zone_extra', 'fod', 0.5, 'low', 'low', 'low', 'pending', 't')"
+        "INSERT INTO inspections (id, airport_id, scheduled_time, \"window\", status, created_at) "
+        "VALUES ('insp1','ags','2026-06-22T06:00:00.000Z','daylight','needs_review','t')"
     )
-    res = await client.delete(f"/zones/zone_extra?reassignToZoneId={keep_id}")
+    await seed.execute(
+        "INSERT INTO issue_candidates (id, inspection_id, zone_id, boundary_id, issue_type, confidence, "
+        "confidence_band, severity, severity_model, status, bbox_json, ai_draft_text, draft, created_at) "
+        "VALUES ('ic_extra', 'insp1', 'r1', 'bnd_extra', 'fod', 0.5, 'low', 'low', 'low', 'pending', "
+        "'{\"x\":1,\"y\":1,\"w\":1,\"h\":1}', 'draft', 'draft', 't')"
+    )
+    res = await client.delete(f"/boundaries/bnd_extra?reassignToBoundaryId={keep_id}")
     assert res.status_code == 200
-    row = await seed.fetchrow("SELECT zone_id FROM issue_candidates WHERE id = 'ic_extra'")
-    assert row["zone_id"] == keep_id
+    row = await seed.fetchrow("SELECT boundary_id FROM issue_candidates WHERE id = 'ic_extra'")
+    assert row["boundary_id"] == keep_id
 
 
 @pytest.mark.asyncio
-async def test_post_zone_one_per_runway(seed, client):
-    await _seed_runway(seed)
+async def test_post_boundary_one_per_zone(seed, client):
+    await _seed_zone(seed)
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
-    res = await client.post("/zones", json={"runwayId": "r1", "name": "Zone A", "polygon": polygon})
+    res = await client.post("/boundaries", json={"zoneId": "r1", "name": "Zone A", "polygon": polygon})
     assert res.status_code == 201
-    res = await client.post("/zones", json={"runwayId": "r1", "name": "Zone B", "polygon": polygon})
+    res = await client.post("/boundaries", json={"zoneId": "r1", "name": "Zone B", "polygon": polygon})
     assert res.status_code == 400
     assert "already has" in res.json()["error"]
 
 
 @pytest.mark.asyncio
-async def test_delete_zone_detaches_history(seed, client):
-    await _seed_runway(seed)
+async def test_delete_boundary_detaches_history(seed, client):
+    await _seed_zone(seed)
     polygon = [
         {"lat": 33.371, "lng": -81.967},
         {"lat": 33.372, "lng": -81.965},
         {"lat": 33.370, "lng": -81.964},
     ]
-    res = await client.post("/zones", json={"runwayId": "r1", "name": "Zone A", "polygon": polygon})
-    zone_id = res.json()["zone"]["id"]
+    res = await client.post("/boundaries", json={"zoneId": "r1", "name": "Zone A", "polygon": polygon})
+    boundary_id = res.json()["boundary"]["id"]
     await seed.execute(
-        "INSERT INTO issue_candidates (id, inspection_id, runway_id, zone_id, issue_type, confidence, "
+        "INSERT INTO inspections (id, airport_id, scheduled_time, \"window\", status, created_at) "
+        "VALUES ('insp1','ags','2026-06-22T06:00:00.000Z','daylight','needs_review','t')"
+    )
+    await seed.execute(
+        "INSERT INTO issue_candidates (id, inspection_id, zone_id, boundary_id, issue_type, confidence, "
         "confidence_band, severity, severity_model, status, bbox_json, ai_draft_text, draft, created_at) "
         "VALUES ('ic_zdel', 'insp1', 'r1', $1, 'fod', 0.5, 'low', 'low', 'low', 'pending', "
         "'{\"x\":1,\"y\":1,\"w\":1,\"h\":1}', 'draft', 'draft', 't')",
-        zone_id,
+        boundary_id,
     )
-    res = await client.delete(f"/zones/{zone_id}")
+    res = await client.delete(f"/boundaries/{boundary_id}")
     assert res.status_code == 200
-    row = await seed.fetchrow("SELECT zone_id FROM issue_candidates WHERE id = 'ic_zdel'")
-    assert row["zone_id"] is None
-    assert await seed.fetchrow("SELECT 1 FROM zones WHERE id = $1", zone_id) is None
+    row = await seed.fetchrow("SELECT boundary_id FROM issue_candidates WHERE id = 'ic_zdel'")
+    assert row["boundary_id"] is None
+    assert await seed.fetchrow("SELECT 1 FROM boundaries WHERE id = $1", boundary_id) is None
 
 
 @pytest.mark.asyncio
-async def test_delete_runway_keeps_inspection_history(seed, client):
-    await _seed_runway(seed)
-    res = await client.delete("/runways/r1")
+async def test_delete_zone_keeps_inspection_history(seed, client):
+    await _seed_zone(seed)
+    res = await client.delete("/zones/r1")
     assert res.status_code == 200
-    assert await seed.fetchrow("SELECT 1 FROM runways WHERE id = 'r1'") is None
+    assert await seed.fetchrow("SELECT 1 FROM zones WHERE id = 'r1'") is None
 
 
 @pytest.mark.asyncio
@@ -200,7 +209,7 @@ async def test_patch_and_delete_schedule(seed, client):
 
 @pytest.mark.asyncio
 async def test_post_run_now(seed, client):
-    await _seed_runway(seed)
+    await _seed_zone(seed)
     res = await client.post("/inspections/run-now", json={"actor": {"role": "admin"}})
     assert res.status_code == 200
     body = res.json()

@@ -12,10 +12,10 @@ STANDARD_CHECKLIST_ITEMS = [
     {"key": "pavement_surface", "label": "Pavement surface — cracks, spalling, joints", "category": "pavement"},
     {"key": "pavement_edges", "label": "Pavement edges, shoulders & blast pads", "category": "pavement"},
     {"key": "fod", "label": "FOD / debris on the surface", "category": "fod"},
-    {"key": "markings", "label": "Runway markings legible & unobscured", "category": "marking"},
-    {"key": "lighting", "label": "Runway / edge lighting & signage operational", "category": "lighting"},
+    {"key": "markings", "label": "Zone markings legible & unobscured", "category": "marking"},
+    {"key": "lighting", "label": "Zone / edge lighting & signage operational", "category": "lighting"},
     {"key": "drainage", "label": "Drainage / standing water", "category": "pavement"},
-    {"key": "safety_areas", "label": "Runway safety areas clear", "category": "fod"},
+    {"key": "safety_areas", "label": "Zone safety areas clear", "category": "fod"},
     {"key": "obstructions", "label": "Obstructions / construction / unserviceable areas", "category": "fod"},
 ]
 VALID_ITEM_KEYS = {i["key"] for i in STANDARD_CHECKLIST_ITEMS}

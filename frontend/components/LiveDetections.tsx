@@ -5,7 +5,7 @@ import { CATEGORY } from "@/lib/ui";
 import type { IssueCategory } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-// The detection relay (ml-service WS hub). Browser subscribes per runway and the
+// The detection relay (ml-service WS hub). Browser subscribes per zone and the
 // live worker publishes each frame's detections — the real-time "what the AI sees".
 const RELAY = process.env.NEXT_PUBLIC_RELAY_URL || "ws://localhost:8000";
 
@@ -24,9 +24,9 @@ interface LogEntry {
 const catLabel = (c: string) => CATEGORY[c as IssueCategory] ?? c;
 const pctOf = (c: number) => `${Math.round(c * 100)}%`;
 
-/** Subscribe to the relay for one runway. Auto-reconnects; degrades silently when
+/** Subscribe to the relay for one zone. Auto-reconnects; degrades silently when
  *  the relay (ml-service) or worker isn't running. */
-export function useLiveDetections(runway: string) {
+export function useLiveDetections(zone: string) {
   const [connected, setConnected] = useState(false);
   const [detections, setDetections] = useState<LiveDet[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -41,7 +41,7 @@ export function useLiveDetections(runway: string) {
     const connect = () => {
       if (stop) return;
       try {
-        ws = new WebSocket(`${RELAY.replace(/\/+$/, "")}/live/ws/${runway}`);
+        ws = new WebSocket(`${RELAY.replace(/\/+$/, "")}/live/ws/${zone}`);
       } catch {
         retry = setTimeout(connect, 2500);
         return;
@@ -85,7 +85,7 @@ export function useLiveDetections(runway: string) {
         /* noop */
       }
     };
-  }, [runway]);
+  }, [zone]);
 
   return { connected, detections, log };
 }

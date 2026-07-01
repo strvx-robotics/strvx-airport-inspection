@@ -1,4 +1,4 @@
-// Typed data-access + state-machine transitions for the runway-inspection app.
+// Typed data-access + state-machine transitions for the zone-inspection app.
 //
 // Every mutation appends an immutable row to issue_status_history /
 // ticket_status_history (actor + role + timestamp + reason). aiDraftText is
@@ -35,7 +35,7 @@ import {
   type IssueStatus,
   type LngLat,
   type RejectionReason,
-  type Runway,
+  type Boundary,
   type Severity,
   type Ticket,
   type User,
@@ -74,8 +74,8 @@ export interface UploadDetection {
 }
 
 export interface UploadInput {
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
   inspectionId?: string;
   jobId?: string;
   fileUrl: string;
@@ -88,8 +88,8 @@ export interface UploadInput {
 
 export interface NewIssueCandidate {
   inspectionId: string;
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
   imageId?: string;
   category: IssueCategory;
   confidence: number;
@@ -112,8 +112,8 @@ export interface EditIssuePatch {
   notes?: string;
 }
 
-export interface RunwayOverview {
-  runway: Runway;
+export interface ZoneOverview {
+  zone: Zone;
   issueCount: number;
   pendingCount: number;
   ticketsOpen: number;
@@ -139,7 +139,7 @@ export interface IssueBreakdown {
 export interface Overview {
   inspection?: Inspection;
   airport: Airport;
-  runways: RunwayOverview[];
+  zones: ZoneOverview[];
   totals: {
     issues: number;
     pending: number;
@@ -162,7 +162,7 @@ export interface InspectionReport {
   airport: Airport;
   generatedAt: string;
   totals: { issues: number; tickets: number; ticketsOpen: number; ticketsCompleted: number };
-  runways: Array<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] }>;
+  zones: Array<{ zone: Zone; issues: IssueCandidate[]; tickets: Ticket[] }>;
   checklist: ChecklistItem[];
   images: Image[];
 }
@@ -208,14 +208,14 @@ const gps = (lat: Num, lng: Num): LngLat | undefined =>
   lat == null || lng == null ? undefined : { lat, lng };
 
 interface AirportRow { id: string; name: string; code: string; location: Str; timezone: Str; center_lat: Num; center_lng: Num; created_at: string }
-interface RunwayRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; runway_polygon_json: Str; map_status: Str; active_status: Str; created_at: string }
-interface ZoneRow { id: string; runway_id: string; name: string; station_start_m: Num; station_end_m: Num; polygon_json: Str; notes: Str; created_at: string }
+interface ZoneRow { id: string; airport_id: string; name: string; designation: string; length: Str; description: Str; length_m: Num; threshold_heading_deg: Num; threshold_lat: Num; threshold_lng: Num; zone_polygon_json: Str; map_status: Str; active_status: Str; created_at: string }
+interface BoundaryRow { id: string; zone_id: string; name: string; station_start_m: Num; station_end_m: Num; polygon_json: Str; notes: Str; created_at: string }
 interface InspectionRow { id: string; airport_id: string; scheduled_time: string; window: string; type: string; trigger: Str; reason: Str; status: string; started_at: Str; completed_at: Str; signed_by: Str; signed_at: Str; signature_name: Str; attestation: number; created_by: Str; created_at: string }
-interface JobRow { id: string; inspection_id: string; runway_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
+interface JobRow { id: string; inspection_id: string; zone_id: string; status: string; started_at: Str; completed_at: Str; image_count: number; issue_count: number; created_at: string }
 interface ScheduleRow { id: string; airport_id: string; time: string; window: string; enabled: number; frequency: string; inspection_type: string; label: Str; created_by: Str; created_at: string }
-interface ImageRow { id: string; job_id: Str; runway_id: string; zone_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
-interface IssueRow { id: string; inspection_id: Str; runway_id: string; zone_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; conditions_found: Str; corrective_action: Str; created_by: Str; created_at: string; zone_name?: Str; image_url?: Str }
-interface TicketRow { id: string; issue_id: string; runway_id: string; zone_id: Str; zone: Str; category: string; status: string; description: string; severity: string; assigned_to: Str; created_by: Str; maintenance_notes: string; created_at: string; repaired_at: Str; closed_at: Str; zone_name?: Str }
+interface ImageRow { id: string; job_id: Str; zone_id: string; boundary_id: Str; file_url: string; gps_lat: Num; gps_lng: Num; station_m: Num; lateral_offset_m: Num; geom_confidence: string; timestamp: string; source_file: Str; metadata_json: Str; created_at: string }
+interface IssueRow { id: string; inspection_id: Str; zone_id: string; boundary_id: Str; image_id: Str; issue_type: string; confidence: number; confidence_band: string; severity: string; severity_model: Str; status: string; station_m: Num; lateral_offset_m: Num; size_m: Num; bbox_json: string; gps_lat: Num; gps_lng: Num; ai_draft_text: string; draft: string; inspector_notes: string; model_notes: Str; rejection_reason: Str; rejection_note: Str; draft_edit_distance: Num; ticket_id: Str; conditions_found: Str; corrective_action: Str; created_by: Str; created_at: string; boundary_name?: Str; image_url?: Str }
+interface TicketRow { id: string; issue_id: string; zone_id: string; boundary_id: Str; boundary: Str; category: string; status: string; description: string; severity: string; assigned_to: Str; created_by: Str; maintenance_notes: string; created_at: string; repaired_at: Str; closed_at: Str; boundary_name?: Str }
 interface UserRow { id: string; username: string; name: string; role: string; airport_id: Str; created_at: string }
 
 function toAirport(r: AirportRow): Airport {
@@ -230,7 +230,7 @@ function toAirport(r: AirportRow): Airport {
     createdAt: r.created_at,
   };
 }
-function toRunway(r: RunwayRow): Runway {
+function toZone(r: ZoneRow): Zone {
   return {
     id: r.id,
     airportId: r.airport_id,
@@ -242,31 +242,31 @@ function toRunway(r: RunwayRow): Runway {
     thresholdHeadingDeg: u(r.threshold_heading_deg),
     thresholdLat: u(r.threshold_lat),
     thresholdLng: u(r.threshold_lng),
-    runwayPolygon: r.runway_polygon_json ? (JSON.parse(r.runway_polygon_json) as LngLat[]) : undefined,
-    mapStatus: (r.map_status ?? "draft") as Runway["mapStatus"],
+    zonePolygon: r.zone_polygon_json ? (JSON.parse(r.zone_polygon_json) as LngLat[]) : undefined,
+    mapStatus: (r.map_status ?? "draft") as Zone["mapStatus"],
     activeStatus: u(r.active_status),
     createdAt: r.created_at,
   };
 }
-function toZone(r: ZoneRow): Zone {
-  return { id: r.id, runwayId: r.runway_id, name: r.name, stationStartM: u(r.station_start_m), stationEndM: u(r.station_end_m), polygon: r.polygon_json ? (JSON.parse(r.polygon_json) as LngLat[]) : undefined, notes: u(r.notes), createdAt: r.created_at };
+function toBoundary(r: BoundaryRow): Boundary {
+  return { id: r.id, zoneId: r.zone_id, name: r.name, stationStartM: u(r.station_start_m), stationEndM: u(r.station_end_m), polygon: r.polygon_json ? (JSON.parse(r.polygon_json) as LngLat[]) : undefined, notes: u(r.notes), createdAt: r.created_at };
 }
 function toInspection(r: InspectionRow): Inspection {
   return { id: r.id, airportId: r.airport_id, scheduledTime: r.scheduled_time, window: r.window as InspectionWindow, type: (u(r.type) as Inspection["type"]) ?? "daily", trigger: u(r.trigger) as Inspection["trigger"], reason: u(r.reason), status: r.status as Inspection["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), signedBy: u(r.signed_by), signedAt: u(r.signed_at), signatureName: u(r.signature_name), attestation: r.attestation === 1, createdBy: u(r.created_by), createdAt: r.created_at };
 }
 function toJob(r: JobRow): InspectionJob {
-  return { id: r.id, inspectionId: r.inspection_id, runwayId: r.runway_id, status: r.status as InspectionJob["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), imageCount: r.image_count, issueCount: r.issue_count, createdAt: r.created_at };
+  return { id: r.id, inspectionId: r.inspection_id, zoneId: r.zone_id, status: r.status as InspectionJob["status"], startedAt: u(r.started_at), completedAt: u(r.completed_at), imageCount: r.image_count, issueCount: r.issue_count, createdAt: r.created_at };
 }
 function toSchedule(r: ScheduleRow): InspectionSchedule {
   return { id: r.id, airportId: r.airport_id, time: r.time, window: r.window as InspectionWindow, enabled: r.enabled === 1, frequency: (u(r.frequency) as InspectionSchedule["frequency"]) ?? "daily", inspectionType: (u(r.inspection_type) as InspectionSchedule["inspectionType"]) ?? "daily", label: u(r.label), createdBy: u(r.created_by), createdAt: r.created_at };
 }
 function toImage(r: ImageRow): Image {
-  return { id: r.id, jobId: u(r.job_id), runwayId: r.runway_id, zoneId: u(r.zone_id), fileUrl: r.file_url, gps: gps(r.gps_lat, r.gps_lng), stationM: u(r.station_m), lateralOffsetM: u(r.lateral_offset_m), geomConfidence: r.geom_confidence as GeomConfidence, timestamp: r.timestamp, sourceFile: u(r.source_file), metadata: r.metadata_json ? (JSON.parse(r.metadata_json) as Record<string, unknown>) : undefined, createdAt: r.created_at };
+  return { id: r.id, jobId: u(r.job_id), zoneId: r.zone_id, boundaryId: u(r.boundary_id), fileUrl: r.file_url, gps: gps(r.gps_lat, r.gps_lng), stationM: u(r.station_m), lateralOffsetM: u(r.lateral_offset_m), geomConfidence: r.geom_confidence as GeomConfidence, timestamp: r.timestamp, sourceFile: u(r.source_file), metadata: r.metadata_json ? (JSON.parse(r.metadata_json) as Record<string, unknown>) : undefined, createdAt: r.created_at };
 }
 function toIssue(r: IssueRow): IssueCandidate {
   return {
-    id: r.id, inspectionId: r.inspection_id ?? "", runwayId: r.runway_id, zoneId: u(r.zone_id), imageId: u(r.image_id),
-    category: r.issue_type as IssueCategory, zone: u(r.zone_name) ?? undefined, confidence: r.confidence,
+    id: r.id, inspectionId: r.inspection_id ?? "", zoneId: r.zone_id, boundaryId: u(r.boundary_id), imageId: u(r.image_id),
+    category: r.issue_type as IssueCategory, boundary: u(r.boundary_name) ?? undefined, confidence: r.confidence,
     confidenceBand: r.confidence_band as IssueCandidate["confidenceBand"], severity: r.severity as Severity,
     severityModel: u(r.severity_model) as Severity | undefined, status: r.status as IssueCandidate["status"],
     bbox: JSON.parse(r.bbox_json) as BBox, gps: gps(r.gps_lat, r.gps_lng), stationM: u(r.station_m),
@@ -278,7 +278,7 @@ function toIssue(r: IssueRow): IssueCandidate {
   };
 }
 function toTicket(r: TicketRow): Ticket {
-  return { id: r.id, issueId: r.issue_id, runwayId: r.runway_id, zoneId: u(r.zone_id), zone: r.zone ?? r.zone_name ?? "", category: r.category as IssueCategory, severity: r.severity as Severity, description: r.description, status: r.status as Ticket["status"], createdBy: r.created_by ?? "", assignedTo: r.assigned_to ?? "", maintenanceNotes: r.maintenance_notes, createdAt: r.created_at, repairedAt: u(r.repaired_at), closedAt: u(r.closed_at) };
+  return { id: r.id, issueId: r.issue_id, zoneId: r.zone_id, boundaryId: u(r.boundary_id), boundary: r.boundary ?? r.boundary_name ?? "", category: r.category as IssueCategory, severity: r.severity as Severity, description: r.description, status: r.status as Ticket["status"], createdBy: r.created_by ?? "", assignedTo: r.assigned_to ?? "", maintenanceNotes: r.maintenance_notes, createdAt: r.created_at, repairedAt: u(r.repaired_at), closedAt: u(r.closed_at) };
 }
 function toUser(r: UserRow): User {
   return { id: r.id, username: r.username, name: r.name, role: r.role as UserRole, airportId: u(r.airport_id), createdAt: r.created_at };
@@ -313,7 +313,7 @@ export function computeDraftEditDistance(aiDraft: string, finalText: string): nu
   );
 }
 
-function runwayStatusOf(
+function zoneStatusOf(
   issues: IssueCandidate[],
   tickets: Ticket[],
 ): { label: string; tone: BadgeTone } {
@@ -349,7 +349,7 @@ function buildBreakdown(issues: IssueCandidate[]): IssueBreakdown {
   return bd;
 }
 
-// ── Airports / runways / zones ────────────────────────────────────────────────
+// ── Airports / zones / boundaries ─────────────────────────────────────────────
 
 export async function listAirports(): Promise<Airport[]> {
   return (await all<AirportRow>("SELECT * FROM airports ORDER BY created_at")).map(toAirport);
@@ -389,12 +389,12 @@ export async function updateAirport(
   const centerLat = patch.centerLat;
   const centerLng = patch.centerLng;
   if (centerLat != null && centerLng != null) {
-    // Reposition runway geometry only on a genuine airport switch — a center
-    // more than ~1 km from where the runways currently sit. Smaller deltas are
+    // Reposition zone geometry only on a genuine airport switch — a center
+    // more than ~1 km from where the zones currently sit. Smaller deltas are
     // coordinate refinements and must not wipe a mapped airport's data.
     const MOVE_THRESHOLD_DEG = 0.01;
     const anchor = await one<{ lat: Num; lng: Num }>(
-      `SELECT AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng FROM runways
+      `SELECT AVG(threshold_lat) AS lat, AVG(threshold_lng) AS lng FROM zones
        WHERE airport_id = ? AND threshold_lat IS NOT NULL AND threshold_lng IS NOT NULL`,
       [id],
     );
@@ -405,17 +405,17 @@ export async function updateAirport(
       Math.abs(anchor.lng - centerLng) > MOVE_THRESHOLD_DEG;
 
     if (shouldReposition) {
-      const runways = await listRunways(id);
-      for (let i = 0; i < runways.length; i++) {
+      const zoneList = await listZones(id);
+      for (let i = 0; i < zoneList.length; i++) {
         const offset = i * 0.0003;
         await run(
-          `UPDATE runways SET threshold_lat = ?, threshold_lng = ?, runway_polygon_json = NULL, map_status = 'draft' WHERE id = ?`,
-          [centerLat + offset, centerLng, runways[i].id],
+          `UPDATE zones SET threshold_lat = ?, threshold_lng = ?, zone_polygon_json = NULL, map_status = 'draft' WHERE id = ?`,
+          [centerLat + offset, centerLng, zoneList[i].id],
         );
       }
       await run(`DELETE FROM keep_out_zones WHERE airport_id = ?`, [id]);
       await run(
-        `UPDATE zones SET polygon_json = NULL WHERE runway_id IN (SELECT id FROM runways WHERE airport_id = ?)`,
+        `UPDATE boundaries SET polygon_json = NULL WHERE zone_id IN (SELECT id FROM zones WHERE airport_id = ?)`,
         [id],
       );
     }
@@ -441,28 +441,147 @@ export async function updateAirport(
   return a;
 }
 
-export async function listRunways(airportId?: string): Promise<Runway[]> {
+export async function listZones(airportId?: string): Promise<Zone[]> {
   const rows = airportId
-    ? await all<RunwayRow>("SELECT * FROM runways WHERE airport_id = ? ORDER BY created_at", [airportId])
-    : await all<RunwayRow>("SELECT * FROM runways ORDER BY created_at");
-  return rows.map(toRunway);
+    ? await all<ZoneRow>("SELECT * FROM zones WHERE airport_id = ? ORDER BY created_at", [airportId])
+    : await all<ZoneRow>("SELECT * FROM zones ORDER BY created_at");
+  return rows.map(toZone);
 }
-export async function getRunway(id: string): Promise<Runway | undefined> {
-  const r = await one<RunwayRow>("SELECT * FROM runways WHERE id = ?", [id]);
-  return r ? toRunway(r) : undefined;
+export async function getZone(id: string): Promise<Zone | undefined> {
+  const r = await one<ZoneRow>("SELECT * FROM zones WHERE id = ?", [id]);
+  return r ? toZone(r) : undefined;
 }
-export async function createRunway(input: { airportId: string; name: string; designation: string; length?: string; lengthM?: number; description?: string }): Promise<Runway> {
-  const id = gid("rwy");
+export async function createZone(input: {
+  airportId: string;
+  name: string;
+  designation: string;
+  length?: string;
+  lengthM?: number;
+  description?: string;
+  zonePolygon?: LngLat[];
+  mapStatus?: Zone["mapStatus"];
+}): Promise<Zone> {
+  const id = gid("zon");
   await run(
-    `INSERT INTO runways (id, airport_id, name, designation, length, length_m, description, active_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-    [id, input.airportId, input.name, input.designation, input.length ?? "", input.lengthM ?? null, input.description ?? null, now()],
+    `INSERT INTO zones (id, airport_id, name, designation, length, length_m, description, zone_polygon_json, map_status, active_status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+    [
+      id, input.airportId, input.name, input.designation, input.length ?? "", input.lengthM ?? null,
+      input.description ?? null, input.zonePolygon ? JSON.stringify(input.zonePolygon) : null,
+      input.mapStatus ?? "draft", now(),
+    ],
   );
-  return (await getRunway(id))!;
+  return (await getZone(id))!;
+}
+export async function updateZone(
+  id: string,
+  patch: {
+    name?: string;
+    designation?: string;
+    length?: string;
+    lengthM?: number;
+    description?: string;
+    activeStatus?: string;
+    mapStatus?: Zone["mapStatus"];
+    zonePolygon?: LngLat[] | null;
+  },
+): Promise<Zone> {
+  const existing = await getZone(id);
+  if (!existing) throw new Error(`Zone not found: ${id}`);
+  const hasPolygon = patch.zonePolygon !== undefined;
+  const polygonJson = patch.zonePolygon ? JSON.stringify(patch.zonePolygon) : null;
+  await run(
+    `UPDATE zones SET name = COALESCE(?, name), designation = COALESCE(?, designation),
+     length = COALESCE(?, length), length_m = COALESCE(?, length_m),
+     description = COALESCE(?, description), active_status = COALESCE(?, active_status),
+     map_status = COALESCE(?, map_status),
+     zone_polygon_json = CASE WHEN ? THEN ? ELSE zone_polygon_json END WHERE id = ?`,
+    [
+      patch.name ?? null, patch.designation ?? null, patch.length ?? null, patch.lengthM ?? null,
+      patch.description ?? null, patch.activeStatus ?? null, patch.mapStatus ?? null,
+      hasPolygon, polygonJson, id,
+    ],
+  );
+  return (await getZone(id))!;
+}
+export async function deleteZone(id: string): Promise<void> {
+  const existing = await getZone(id);
+  if (!existing) throw new Error(`Zone not found: ${id}`);
+  await tx(async () => {
+    for (const b of await listBoundaries(id)) {
+      await deleteBoundary(b.id);
+    }
+    await run("DELETE FROM keep_out_zones WHERE zone_id = ?", [id]);
+    await run(
+      "UPDATE images SET job_id = NULL WHERE job_id IN (SELECT id FROM inspection_jobs WHERE zone_id = ?)",
+      [id],
+    );
+    await run("DELETE FROM inspection_jobs WHERE zone_id = ?", [id]);
+    await run("UPDATE images SET zone_id = NULL WHERE zone_id = ?", [id]);
+    await run("UPDATE issue_candidates SET zone_id = NULL WHERE zone_id = ?", [id]);
+    await run("UPDATE tickets SET zone_id = NULL WHERE zone_id = ?", [id]);
+    await run("DELETE FROM zones WHERE id = ?", [id]);
+  });
 }
 
-export async function listZones(runwayId: string): Promise<Zone[]> {
-  return (await all<ZoneRow>("SELECT * FROM zones WHERE runway_id = ? ORDER BY station_start_m", [runwayId])).map(toZone);
+export async function listBoundaries(zoneId: string): Promise<Boundary[]> {
+  return (await all<BoundaryRow>("SELECT * FROM boundaries WHERE zone_id = ? ORDER BY station_start_m", [zoneId])).map(toBoundary);
+}
+export async function getBoundary(id: string): Promise<Boundary | undefined> {
+  const r = await one<BoundaryRow>("SELECT * FROM boundaries WHERE id = ?", [id]);
+  return r ? toBoundary(r) : undefined;
+}
+export async function createBoundary(input: {
+  zoneId: string;
+  name: string;
+  stationStartM?: number;
+  stationEndM?: number;
+  notes?: string;
+  polygon: LngLat[];
+}): Promise<Boundary> {
+  const id = gid("bnd");
+  await run(
+    `INSERT INTO boundaries (id, zone_id, name, station_start_m, station_end_m, polygon_json, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, input.zoneId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, JSON.stringify(input.polygon), input.notes ?? null, now()],
+  );
+  return (await getBoundary(id))!;
+}
+export async function updateBoundary(
+  id: string,
+  patch: { name?: string; stationStartM?: number; stationEndM?: number; notes?: string; polygon?: LngLat[] },
+): Promise<Boundary> {
+  const existing = await getBoundary(id);
+  if (!existing) throw new Error(`Boundary not found: ${id}`);
+  const polyJson = patch.polygon ? JSON.stringify(patch.polygon) : null;
+  await run(
+    `UPDATE boundaries SET name = COALESCE(?, name), station_start_m = COALESCE(?, station_start_m),
+     station_end_m = COALESCE(?, station_end_m), notes = COALESCE(?, notes),
+     polygon_json = COALESCE(?, polygon_json) WHERE id = ?`,
+    [patch.name ?? null, patch.stationStartM ?? null, patch.stationEndM ?? null, patch.notes ?? null, polyJson, id],
+  );
+  return (await getBoundary(id))!;
+}
+export async function deleteBoundary(id: string, opts?: { reassignToBoundaryId?: string }): Promise<void> {
+  const boundary = await getBoundary(id);
+  if (!boundary) throw new Error(`Boundary not found: ${id}`);
+  const reassignTo = opts?.reassignToBoundaryId;
+  if (reassignTo) {
+    const target = await getBoundary(reassignTo);
+    if (!target) throw new Error(`Reassign target boundary not found: ${reassignTo}`);
+    if (target.zoneId !== boundary.zoneId) throw new Error("Reassign target must be on the same zone.");
+    if (reassignTo === id) throw new Error("Cannot reassign to the boundary being deleted.");
+    await run("UPDATE images SET boundary_id = ? WHERE boundary_id = ?", [reassignTo, id]);
+    await run("UPDATE issue_candidates SET boundary_id = ? WHERE boundary_id = ?", [reassignTo, id]);
+    await run("UPDATE tickets SET boundary_id = ?, boundary = ? WHERE boundary_id = ?", [reassignTo, target.name, id]);
+  } else {
+    await run(
+      "UPDATE tickets SET boundary = COALESCE(NULLIF(boundary, ''), ?), boundary_id = NULL WHERE boundary_id = ?",
+      [boundary.name, id],
+    );
+    await run("UPDATE images SET boundary_id = NULL WHERE boundary_id = ?", [id]);
+    await run("UPDATE issue_candidates SET boundary_id = NULL WHERE boundary_id = ?", [id]);
+  }
+  await run("DELETE FROM boundaries WHERE id = ?", [id]);
 }
 
 // ── Fleet ─────────────────────────────────────────────────────────────────────
@@ -473,25 +592,6 @@ function toDrone(r: DroneRow): Drone {
 }
 export async function listDrones(): Promise<Drone[]> {
   return (await all<DroneRow>("SELECT * FROM drones ORDER BY id")).map(toDrone);
-}
-export async function getZone(id: string): Promise<Zone | undefined> {
-  const r = await one<ZoneRow>("SELECT * FROM zones WHERE id = ?", [id]);
-  return r ? toZone(r) : undefined;
-}
-export async function createZone(input: {
-  runwayId: string;
-  name: string;
-  stationStartM?: number;
-  stationEndM?: number;
-  notes?: string;
-  polygon: LngLat[];
-}): Promise<Zone> {
-  const id = gid("zone");
-  await run(
-    `INSERT INTO zones (id, runway_id, name, station_start_m, station_end_m, polygon_json, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.runwayId, input.name, input.stationStartM ?? null, input.stationEndM ?? null, JSON.stringify(input.polygon), input.notes ?? null, now()],
-  );
-  return (await getZone(id))!;
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -575,16 +675,16 @@ export async function listJobs(inspectionId: string): Promise<InspectionJob[]> {
 }
 export async function getInspectionWithJobs(
   id: string,
-): Promise<{ inspection: Inspection; jobs: Array<InspectionJob & { runway?: Runway }> } | undefined> {
+): Promise<{ inspection: Inspection; jobs: Array<InspectionJob & { zone?: Zone }> } | undefined> {
   const inspection = await getInspection(id);
   if (!inspection) return undefined;
   const jobs = await Promise.all(
-    (await listJobs(id)).map(async (job) => ({ ...job, runway: await getRunway(job.runwayId) })),
+    (await listJobs(id)).map(async (job) => ({ ...job, zone: await getZone(job.zoneId) })),
   );
   return { inspection, jobs };
 }
 
-/** Materialize today's 6 AM inspection + one job per runway. Records only; idempotent per day. */
+/** Materialize today's 6 AM inspection + one job per zone. Records only; idempotent per day. */
 export async function runInspectionNow(airportId?: string): Promise<Inspection> {
   const airport = airportId ? await getAirport(airportId) : await getDefaultAirport();
   if (!airport) throw new Error("Airport not found");
@@ -601,7 +701,7 @@ export async function runInspectionNow(airportId?: string): Promise<Inspection> 
   const id = gid("insp");
   const createdAt = now();
   // Idempotent under concurrency: UNIQUE(airport_id, scheduled_time) +
-  // UNIQUE(inspection_id, runway_id) mean a racing caller's rows win, ours no-op,
+  // UNIQUE(inspection_id, zone_id) mean a racing caller's rows win, ours no-op,
   // and jobs attach to the canonical inspection id (theirs or ours).
   const inspectionId = await tx(async () => {
     await run(
@@ -615,12 +715,12 @@ export async function runInspectionNow(airportId?: string): Promise<Inspection> 
       [airport.id, scheduled],
     );
     const cid = canon!.id;
-    for (const rw of await listRunways(airport.id)) {
+    for (const z of await listZones(airport.id)) {
       await run(
-        `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
+        `INSERT INTO inspection_jobs (id, inspection_id, zone_id, status, image_count, issue_count, created_at)
          VALUES (?, ?, ?, 'not_started', 0, 0, ?)
-         ON CONFLICT (inspection_id, runway_id) DO NOTHING`,
-        [gid("job"), cid, rw.id, createdAt],
+         ON CONFLICT (inspection_id, zone_id) DO NOTHING`,
+        [gid("job"), cid, z.id, createdAt],
       );
     }
     return cid;
@@ -631,32 +731,32 @@ export async function runInspectionNow(airportId?: string): Promise<Inspection> 
 // ── Issue candidates ──────────────────────────────────────────────────────────
 
 const ISSUE_SELECT =
-  "SELECT ic.*, z.name AS zone_name, im.file_url AS image_url FROM issue_candidates ic LEFT JOIN zones z ON z.id = ic.zone_id LEFT JOIN images im ON im.id = ic.image_id";
+  "SELECT ic.*, b.name AS boundary_name, im.file_url AS image_url FROM issue_candidates ic LEFT JOIN boundaries b ON b.id = ic.boundary_id LEFT JOIN images im ON im.id = ic.image_id";
 
 export async function getIssue(id: string): Promise<IssueCandidate | undefined> {
   const r = await one<IssueRow>(`${ISSUE_SELECT} WHERE ic.id = ?`, [id]);
   return r ? toIssue(r) : undefined;
 }
-export async function listIssuesByRunway(runwayId: string, inspectionId?: string): Promise<IssueCandidate[]> {
+export async function listIssuesByZone(zoneId: string, inspectionId?: string): Promise<IssueCandidate[]> {
   const rows = inspectionId
-    ? await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.runway_id = ? AND ic.inspection_id = ? ORDER BY ic.confidence DESC`, [runwayId, inspectionId])
-    : await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.runway_id = ? ORDER BY ic.confidence DESC`, [runwayId]);
+    ? await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.zone_id = ? AND ic.inspection_id = ? ORDER BY ic.confidence DESC`, [zoneId, inspectionId])
+    : await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.zone_id = ? ORDER BY ic.confidence DESC`, [zoneId]);
   return rows.map(toIssue);
 }
 export async function listIssuesByInspection(inspectionId: string): Promise<IssueCandidate[]> {
   return (await all<IssueRow>(`${ISSUE_SELECT} WHERE ic.inspection_id = ? ORDER BY ic.confidence DESC`, [inspectionId])).map(toIssue);
 }
-export async function getRunwayWithIssues(
-  runwayId: string,
+export async function getZoneWithIssues(
+  zoneId: string,
   inspectionId?: string,
-): Promise<{ runway: Runway; issues: IssueCandidate[]; tickets: Ticket[] } | undefined> {
-  const runway = await getRunway(runwayId);
-  if (!runway) return undefined;
-  const issues = await listIssuesByRunway(runwayId, inspectionId);
+): Promise<{ zone: Zone; issues: IssueCandidate[]; tickets: Ticket[] } | undefined> {
+  const zone = await getZone(zoneId);
+  if (!zone) return undefined;
+  const issues = await listIssuesByZone(zoneId, inspectionId);
   const tickets = inspectionId
-    ? await listTicketsByInspection(inspectionId).then((ts) => ts.filter((t) => t.runwayId === runwayId))
-    : await all<TicketRow>(`${TICKET_SELECT} WHERE t.runway_id = ? ORDER BY t.created_at DESC`, [runwayId]).then((rows) => rows.map(toTicket));
-  return { runway, issues, tickets };
+    ? await listTicketsByInspection(inspectionId).then((ts) => ts.filter((t) => t.zoneId === zoneId))
+    : await all<TicketRow>(`${TICKET_SELECT} WHERE t.zone_id = ? ORDER BY t.created_at DESC`, [zoneId]).then((rows) => rows.map(toTicket));
+  return { zone, issues, tickets };
 }
 
 export async function createIssueCandidate(input: NewIssueCandidate): Promise<IssueCandidate> {
@@ -665,12 +765,12 @@ export async function createIssueCandidate(input: NewIssueCandidate): Promise<Is
   const severity = input.severity ?? severityFor(input.confidence);
   await run(
     `INSERT INTO issue_candidates
-       (id, inspection_id, runway_id, zone_id, image_id, issue_type, confidence, confidence_band,
+       (id, inspection_id, zone_id, boundary_id, image_id, issue_type, confidence, confidence_band,
         severity, severity_model, status, station_m, lateral_offset_m, size_m, bbox_json, gps_lat, gps_lng,
         ai_draft_text, draft, inspector_notes, model_notes, created_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`,
     [
-      id, input.inspectionId, input.runwayId, input.zoneId ?? null, input.imageId ?? null, input.category,
+      id, input.inspectionId, input.zoneId, input.boundaryId ?? null, input.imageId ?? null, input.category,
       input.confidence, bandFor(input.confidence), severity, severity, input.stationM ?? null,
       input.lateralOffsetM ?? null, input.sizeM ?? null, JSON.stringify(input.bbox), input.gps?.lat ?? null,
       input.gps?.lng ?? null, input.aiDraftText, draft, input.modelNotes ?? null, input.createdBy ?? "STRVX Detector", now(),
@@ -685,15 +785,15 @@ export async function createIssueCandidate(input: NewIssueCandidate): Promise<Is
 }
 
 export async function createImage(input: {
-  runwayId: string; zoneId?: string; jobId?: string; fileUrl: string; sourceFile?: string;
+  zoneId: string; boundaryId?: string; jobId?: string; fileUrl: string; sourceFile?: string;
   gps?: LngLat; geomConfidence?: GeomConfidence; timestamp?: string; createdBy?: string;
 }): Promise<Image> {
   const id = gid("img");
   await run(
-    `INSERT INTO images (id, job_id, runway_id, zone_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_by, created_at)
+    `INSERT INTO images (id, job_id, zone_id, boundary_id, file_url, gps_lat, gps_lng, geom_confidence, timestamp, source_file, created_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      id, input.jobId ?? null, input.runwayId, input.zoneId ?? null, input.fileUrl, input.gps?.lat ?? null,
+      id, input.jobId ?? null, input.zoneId, input.boundaryId ?? null, input.fileUrl, input.gps?.lat ?? null,
       input.gps?.lng ?? null, input.geomConfidence ?? (input.gps ? "gps" : "manual"), input.timestamp ?? now(),
       input.sourceFile ?? null, input.createdBy ?? null, now(),
     ],
@@ -704,37 +804,37 @@ export async function createImage(input: {
 
 /** Persist an uploaded image + its stub-detected candidates; bumps job counts. */
 export async function ingestUpload(input: UploadInput): Promise<{ image: Image; candidates: IssueCandidate[] }> {
-  const runway = await getRunway(input.runwayId);
-  if (!runway) throw new Error(`Runway not found: ${input.runwayId}`);
+  const zone = await getZone(input.zoneId);
+  if (!zone) throw new Error(`Zone not found: ${input.zoneId}`);
   const inspectionId =
     input.inspectionId ??
-    (await getLatestInspection(runway.airportId))?.id ??
-    (await runInspectionNow(runway.airportId)).id;
+    (await getLatestInspection(zone.airportId))?.id ??
+    (await runInspectionNow(zone.airportId)).id;
 
-  // Resolve (or create) the per-runway job for this inspection. ON CONFLICT +
-  // UNIQUE(inspection_id, runway_id) make this race-safe (no duplicate jobs that
+  // Resolve (or create) the per-zone job for this inspection. ON CONFLICT +
+  // UNIQUE(inspection_id, zone_id) make this race-safe (no duplicate jobs that
   // would split image/issue tallies); then read back the canonical job id.
   let jobId = input.jobId;
   if (!jobId) {
     await run(
-      `INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at)
+      `INSERT INTO inspection_jobs (id, inspection_id, zone_id, status, image_count, issue_count, created_at)
        VALUES (?, ?, ?, 'processing', 0, 0, ?)
-       ON CONFLICT (inspection_id, runway_id) DO NOTHING`,
-      [gid("job"), inspectionId, input.runwayId, now()],
+       ON CONFLICT (inspection_id, zone_id) DO NOTHING`,
+      [gid("job"), inspectionId, input.zoneId, now()],
     );
-    const job = await one<{ id: string }>("SELECT id FROM inspection_jobs WHERE inspection_id = ? AND runway_id = ? LIMIT 1", [inspectionId, input.runwayId]);
+    const job = await one<{ id: string }>("SELECT id FROM inspection_jobs WHERE inspection_id = ? AND zone_id = ? LIMIT 1", [inspectionId, input.zoneId]);
     jobId = job!.id;
   }
 
   return tx(async () => {
     const createdBy = input.actor ? await actorName(input.actor) : undefined;
-    const image = await createImage({ runwayId: input.runwayId, zoneId: input.zoneId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence, createdBy });
+    const image = await createImage({ zoneId: input.zoneId, boundaryId: input.boundaryId, jobId, fileUrl: input.fileUrl, sourceFile: input.sourceFile, gps: input.gps, geomConfidence: input.geomConfidence, createdBy });
     // Sequential: every query inside a tx shares one connection and can't overlap.
     const candidates: IssueCandidate[] = [];
     for (const det of input.detections) {
       candidates.push(
         await createIssueCandidate({
-          inspectionId, runwayId: input.runwayId, zoneId: input.zoneId, imageId: image.id, category: det.category,
+          inspectionId, zoneId: input.zoneId, boundaryId: input.boundaryId, imageId: image.id, category: det.category,
           confidence: det.confidence, severity: det.severity, bbox: det.bbox, gps: input.gps, stationM: det.stationM,
           lateralOffsetM: det.lateralOffsetM, sizeM: det.sizeM, aiDraftText: det.aiDraftText, draft: det.draft, modelNotes: det.modelNotes,
         }),
@@ -794,9 +894,9 @@ export async function approveIssue(id: string, actor?: Actor): Promise<{ issue: 
       const seq = await one<{ id: string }>("SELECT 'WO-' || nextval('ticket_seq') AS id");
       const tid = seq!.id;
       await run(
-        `INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, assigned_to, created_by, maintenance_notes, created_at)
+        `INSERT INTO tickets (id, issue_id, zone_id, boundary_id, boundary, category, status, description, severity, assigned_to, created_by, maintenance_notes, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, '', ?)`,
-        [tid, issue.id, issue.runwayId, issue.zoneId ?? null, issue.zone ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts],
+        [tid, issue.id, issue.zoneId, issue.boundaryId ?? null, issue.boundary ?? "", issue.category, issue.draft, issue.severity, assignedTo, createdBy, ts],
       );
       await run("UPDATE issue_candidates SET status = 'approved', ticket_id = ?, draft_edit_distance = ? WHERE id = ?", [tid, editDistance, id]);
       await appendIssueHistory({ issueId: id, action: "approve", fromStatus: issue.status, toStatus: "approved", note: `Created ticket ${tid} (edit distance ${editDistance})`, actor });
@@ -865,7 +965,7 @@ export async function editIssue(id: string, patch: EditIssuePatch, actor?: Actor
 // ── Tickets ───────────────────────────────────────────────────────────────────
 
 const TICKET_SELECT =
-  "SELECT t.*, z.name AS zone_name FROM tickets t LEFT JOIN zones z ON z.id = t.zone_id";
+  "SELECT t.*, b.name AS boundary_name FROM tickets t LEFT JOIN boundaries b ON b.id = t.boundary_id";
 
 export async function getTicket(id: string): Promise<Ticket | undefined> {
   const r = await one<TicketRow>(`${TICKET_SELECT} WHERE t.id = ?`, [id]);
@@ -873,10 +973,10 @@ export async function getTicket(id: string): Promise<Ticket | undefined> {
 }
 export async function getTicketDetail(
   id: string,
-): Promise<{ ticket: Ticket; issue?: IssueCandidate; runway?: Runway } | undefined> {
+): Promise<{ ticket: Ticket; issue?: IssueCandidate; zone?: Zone } | undefined> {
   const ticket = await getTicket(id);
   if (!ticket) return undefined;
-  return { ticket, issue: await getIssue(ticket.issueId), runway: await getRunway(ticket.runwayId) };
+  return { ticket, issue: await getIssue(ticket.issueId), zone: await getZone(ticket.zoneId) };
 }
 export async function listTicketsByInspection(inspectionId: string): Promise<Ticket[]> {
   return (await all<TicketRow>(`${TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id WHERE ic.inspection_id = ?`, [inspectionId])).map(toTicket);
@@ -941,29 +1041,29 @@ export async function closeTicket(id: string, input: { notes?: string }, actor?:
 export async function getOverview(inspectionId?: string): Promise<Overview> {
   const airport = await getDefaultAirport();
   const inspection = inspectionId ? await getInspection(inspectionId) : await getLatestInspection(airport.id);
-  const runways = await listRunways(airport.id);
+  const zones = await listZones(airport.id);
   const inspections = await listInspections(airport.id);
   const issues = inspection ? await listIssuesByInspection(inspection.id) : [];
   const tickets = inspection ? await listTicketsByInspection(inspection.id) : [];
   const jobs = inspection ? await listJobs(inspection.id) : [];
 
-  // Images scanned per runway, summed from this inspection's jobs.
-  const imagesByRunway = new Map<string, number>();
+  // Images scanned per zone, summed from this inspection's jobs.
+  const imagesByZone = new Map<string, number>();
   for (const j of jobs)
-    imagesByRunway.set(j.runwayId, (imagesByRunway.get(j.runwayId) ?? 0) + j.imageCount);
+    imagesByZone.set(j.zoneId, (imagesByZone.get(j.zoneId) ?? 0) + j.imageCount);
 
-  const runwayRows: RunwayOverview[] = runways.map((runway) => {
-    const ri = issues.filter((i) => i.runwayId === runway.id);
-    const rt = tickets.filter((t) => t.runwayId === runway.id);
+  const zoneRows: ZoneOverview[] = zones.map((zone) => {
+    const zi = issues.filter((i) => i.zoneId === zone.id);
+    const zt = tickets.filter((t) => t.zoneId === zone.id);
     return {
-      runway,
-      issueCount: ri.length,
-      pendingCount: ri.filter((i) => i.status === "pending" || i.status === "manual_review").length,
-      ticketsOpen: rt.filter((t) => TICKET_OPEN.has(t.status)).length,
-      ticketsCompleted: rt.filter((t) => t.status === "closed").length,
-      bySeverity: buildBreakdown(ri).bySeverity,
-      imageCount: imagesByRunway.get(runway.id) ?? 0,
-      status: runwayStatusOf(ri, rt),
+      zone,
+      issueCount: zi.length,
+      pendingCount: zi.filter((i) => i.status === "pending" || i.status === "manual_review").length,
+      ticketsOpen: zt.filter((t) => TICKET_OPEN.has(t.status)).length,
+      ticketsCompleted: zt.filter((t) => t.status === "closed").length,
+      bySeverity: buildBreakdown(zi).bySeverity,
+      imageCount: imagesByZone.get(zone.id) ?? 0,
+      status: zoneStatusOf(zi, zt),
     };
   });
 
@@ -974,7 +1074,7 @@ export async function getOverview(inspectionId?: string): Promise<Overview> {
   return {
     inspection,
     airport,
-    runways: runwayRows,
+    zones: zoneRows,
     totals: {
       issues: issues.length,
       pending: countStatus("pending"),
@@ -1025,7 +1125,7 @@ export async function getChecklist(inspectionId: string): Promise<ChecklistItem[
   });
 }
 
-/** Images captured during this inspection (via its runway jobs). */
+/** Images captured during this inspection (via its zone jobs). */
 export async function listImagesByInspection(inspectionId: string): Promise<Image[]> {
   const rows = await all<ImageRow>(
     "SELECT i.* FROM images i JOIN inspection_jobs j ON j.id = i.job_id WHERE j.inspection_id = ? ORDER BY i.timestamp",
@@ -1040,10 +1140,10 @@ export async function getInspectionReport(id: string): Promise<InspectionReport 
   const airport = (await getAirport(inspection.airportId)) ?? (await getDefaultAirport());
   const issues = await listIssuesByInspection(id);
   const tickets = await listTicketsByInspection(id);
-  const runways = (await listRunways(airport.id)).map((runway) => ({
-    runway,
-    issues: issues.filter((i) => i.runwayId === runway.id),
-    tickets: tickets.filter((t) => t.runwayId === runway.id),
+  const zones = (await listZones(airport.id)).map((zone) => ({
+    zone,
+    issues: issues.filter((i) => i.zoneId === zone.id),
+    tickets: tickets.filter((t) => t.zoneId === zone.id),
   }));
   return {
     inspection,
@@ -1055,7 +1155,7 @@ export async function getInspectionReport(id: string): Promise<InspectionReport 
       ticketsOpen: tickets.filter((t) => TICKET_OPEN.has(t.status)).length,
       ticketsCompleted: tickets.filter((t) => t.status === "closed").length,
     },
-    runways,
+    zones,
     checklist: await getChecklist(id),
     images: await listImagesByInspection(id),
   };
@@ -1069,7 +1169,7 @@ const esc = (s: string): string =>
 const REPORT_CATEGORY: Record<string, string> = {
   fod: "Debris / FOD",
   pavement: "Pavement damage",
-  marking: "Runway marking",
+  marking: "Zone marking",
   lighting: "Lighting / signage",
 };
 const REPORT_REVIEW_STATUSES = new Set(["pending", "manual_review"]);
@@ -1083,7 +1183,7 @@ const REPORT_ACTIVE_TICKET_STATUSES = new Set([
 const titleCase = (s: string): string =>
   s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
-function summarizeReportRunway(entry: InspectionReport["runways"][number]) {
+function summarizeReportZone(entry: InspectionReport["zones"][number]) {
   const reviewCount = entry.issues.filter((issue) => REPORT_REVIEW_STATUSES.has(issue.status)).length;
   const approvedCount = entry.issues.filter((issue) => issue.status === "approved").length;
   const openTickets = entry.tickets.filter((ticket) => REPORT_ACTIVE_TICKET_STATUSES.has(ticket.status)).length;
@@ -1105,8 +1205,8 @@ function inspectionObjectiveHtml(input: {
   signedAt?: string;
   reviewQueue: number;
   activeTickets: number;
-  attentionRunways: number;
-  totalRunways: number;
+  attentionZones: number;
+  totalZones: number;
   totalIssues: number;
 }) {
   if (!input.allComplete) {
@@ -1126,7 +1226,7 @@ function inspectionObjectiveHtml(input: {
   if (input.reviewQueue > 0) {
     return {
       title: "Work the findings queue",
-      detail: `${input.reviewQueue} candidate${input.reviewQueue === 1 ? "" : "s"} still require review across ${input.attentionRunways} runway${input.attentionRunways === 1 ? "" : "s"}.`,
+      detail: `${input.reviewQueue} candidate${input.reviewQueue === 1 ? "" : "s"} still require review across ${input.attentionZones} zone${input.attentionZones === 1 ? "" : "s"}.`,
       tone: "amber",
     };
   }
@@ -1140,13 +1240,13 @@ function inspectionObjectiveHtml(input: {
   if (input.totalIssues === 0) {
     return {
       title: "Inspection is clear",
-      detail: `All ${input.totalRunways} runway${input.totalRunways === 1 ? "" : "s"} were inspected with no findings recorded.`,
+      detail: `All ${input.totalZones} zone${input.totalZones === 1 ? "" : "s"} were inspected with no findings recorded.`,
       tone: "green",
     };
   }
   return {
     title: "Inspection record is in good shape",
-    detail: "Checklist, sign-off, and runway findings are all documented.",
+    detail: "Checklist, sign-off, and zone findings are all documented.",
     tone: "green",
   };
 }
@@ -1177,45 +1277,45 @@ export function renderReportHtml(report: InspectionReport): string {
     attestation: report.inspection.attestation,
     completedAt: report.inspection.completedAt,
   });
-  const ticketByIssue = new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
-  const runwaySummaries = report.runways
-    .map(summarizeReportRunway)
+  const ticketByIssue = new Map(report.zones.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
+  const zoneSummaries = report.zones
+    .map(summarizeReportZone)
     .sort(
       (a, b) =>
         a.priority - b.priority ||
         b.reviewCount - a.reviewCount ||
         b.openTickets - a.openTickets ||
         b.issues.length - a.issues.length ||
-        a.runway.name.localeCompare(b.runway.name),
+        a.zone.name.localeCompare(b.zone.name),
     );
-  const findingRunways = runwaySummaries.filter((entry) => entry.issues.length > 0);
-  const clearRunways = runwaySummaries.filter((entry) => entry.issues.length === 0);
-  const reviewQueue = runwaySummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
-  const activeTickets = runwaySummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
-  const attentionRunways = runwaySummaries.filter((entry) => entry.reviewCount > 0 || entry.openTickets > 0).length;
+  const findingZones = zoneSummaries.filter((entry) => entry.issues.length > 0);
+  const clearZones = zoneSummaries.filter((entry) => entry.issues.length === 0);
+  const reviewQueue = zoneSummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
+  const activeTickets = zoneSummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
+  const attentionZones = zoneSummaries.filter((entry) => entry.reviewCount > 0 || entry.openTickets > 0).length;
   const objective = inspectionObjectiveHtml({
     allComplete: allChecklistComplete,
     remainingChecklist: checklistRemaining,
     signedAt: report.inspection.signedAt,
     reviewQueue,
     activeTickets,
-    attentionRunways,
-    totalRunways: report.runways.length,
+    attentionZones,
+    totalZones: report.zones.length,
     totalIssues: report.totals.issues,
   });
 
   const summaryText =
     report.totals.issues === 0
-      ? "This pass is clear. No runway findings or work orders were generated."
-      : `${report.totals.issues} finding${report.totals.issues === 1 ? "" : "s"} were recorded across ${findingRunways.length} runway${findingRunways.length === 1 ? "" : "s"}. ${
+      ? "This pass is clear. No zone findings or work orders were generated."
+      : `${report.totals.issues} finding${report.totals.issues === 1 ? "" : "s"} were recorded across ${findingZones.length} zone${findingZones.length === 1 ? "" : "s"}. ${
           reviewQueue > 0
             ? `${reviewQueue} candidate${reviewQueue === 1 ? "" : "s"} still need review.`
             : "All findings have already been dispositioned."
         }`;
 
-  const sections = findingRunways
+  const sections = findingZones
     .map((r) => {
-      const body = `<div class="runway-metrics">
+      const body = `<div class="zone-metrics">
         <div><span class="metric-label">Awaiting review</span><strong>${r.reviewCount}</strong></div>
         <div><span class="metric-label">Approved</span><strong>${r.approvedCount}</strong></div>
         <div><span class="metric-label">Active tickets</span><strong>${r.openTickets}</strong></div>
@@ -1225,18 +1325,18 @@ export function renderReportHtml(report: InspectionReport): string {
         .map(
           (i) => {
             const ticket = ticketByIssue.get(i.id);
-            return `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.zone ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td><td>${ticket ? esc(workOrderStatusLabel(ticket.status)) : "—"}</td><td>${esc(discrepancyConditionsFound(i))}</td><td>${esc(discrepancyCorrectiveAction(i, ticket))}</td></tr>`;
+            return `<tr><td><strong>${esc(REPORT_CATEGORY[i.category] ?? titleCase(i.category))}</strong></td><td>${esc(i.boundary ?? "—")}</td><td>${(i.confidence * 100).toFixed(0)}%</td><td>${esc(titleCase(i.severity))}</td><td>${esc(titleCase(i.status))}</td><td>${ticket ? esc(workOrderStatusLabel(ticket.status)) : "—"}</td><td>${esc(discrepancyConditionsFound(i))}</td><td>${esc(discrepancyCorrectiveAction(i, ticket))}</td></tr>`;
           },
         )
         .join("")}</tbody></table>`;
-      return `<section class="runway-card"><div class="runway-head"><div><h3>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h3><p class="section-copy">${r.issues.length} finding${r.issues.length === 1 ? "" : "s"} logged. ${r.reviewCount > 0 ? `${r.reviewCount} still need review.` : "All findings have already been reviewed."}</p></div><span class="pill pill-${r.tone}">${esc(r.label)}</span></div>${body}</section>`;
+      return `<section class="zone-card"><div class="zone-head"><div><h3>${esc(r.zone.name)} <span class="desig">${esc(r.zone.designation)}</span></h3><p class="section-copy">${r.issues.length} finding${r.issues.length === 1 ? "" : "s"} logged. ${r.reviewCount > 0 ? `${r.reviewCount} still need review.` : "All findings have already been reviewed."}</p></div><span class="pill pill-${r.tone}">${esc(r.label)}</span></div>${body}</section>`;
     })
     .join("");
-  const clearRunwaySection = clearRunways.length
-    ? `<details class="clear-runways"><summary>Clear runways <span>${clearRunways.length}</span></summary><div class="clear-grid">${clearRunways
+  const clearZoneSection = clearZones.length
+    ? `<details class="clear-zones"><summary>Clear zones <span>${clearZones.length}</span></summary><div class="clear-grid">${clearZones
         .map(
           (r) =>
-            `<article class="clear-card"><h4>${esc(r.runway.name)} <span class="desig">${esc(r.runway.designation)}</span></h4><p>No findings were recorded on this runway during the selected pass.</p></article>`,
+            `<article class="clear-card"><h4>${esc(r.zone.name)} <span class="desig">${esc(r.zone.designation)}</span></h4><p>No findings were recorded on this zone during the selected pass.</p></article>`,
         )
         .join("")}</div></details>`
     : "";
@@ -1313,15 +1413,15 @@ export function renderReportHtml(report: InspectionReport): string {
   td{padding:.4rem .5rem;border-bottom:1px solid #eef1f4;vertical-align:top}
   tr:last-child td{border-bottom:none}
   .none{color:#6b7176;margin:.25rem 0}
-  .runway-card{margin-top:1rem}
-  .runway-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.75rem}
-  .runway-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#dbdfe3;border-radius:8px;overflow:hidden;margin-bottom:.9rem}
-  .runway-metrics div{padding:.75rem;background:#fbfcfd}
+  .zone-card{margin-top:1rem}
+  .zone-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.75rem}
+  .zone-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#dbdfe3;border-radius:8px;overflow:hidden;margin-bottom:.9rem}
+  .zone-metrics div{padding:.75rem;background:#fbfcfd}
   .metric-label{display:block;font:700 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#6b7176}
-  .runway-metrics strong{display:block;margin-top:.35rem;font:600 18px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
-  .clear-runways{margin-top:1rem;border:1px solid #dbdfe3;border-radius:10px;background:#fbfcfd}
-  .clear-runways summary{display:flex;justify-content:space-between;gap:1rem;padding:1rem;cursor:pointer;font-weight:600}
-  .clear-runways summary span{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;color:#5b6166}
+  .zone-metrics strong{display:block;margin-top:.35rem;font:600 18px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .clear-zones{margin-top:1rem;border:1px solid #dbdfe3;border-radius:10px;background:#fbfcfd}
+  .clear-zones summary{display:flex;justify-content:space-between;gap:1rem;padding:1rem;cursor:pointer;font-weight:600}
+  .clear-zones summary span{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;color:#5b6166}
   .clear-grid{display:grid;gap:.75rem;padding:0 1rem 1rem}
   .clear-card{border:1px solid #e4eaee;border-radius:8px;padding:.85rem;background:#f7f9fa}
   .clear-card h4{margin:0 0 .35rem;font-size:13px}
@@ -1332,7 +1432,7 @@ export function renderReportHtml(report: InspectionReport): string {
   .asset-img{display:block;width:100%;max-height:420px;object-fit:contain;border:1px solid #eef1f4;background:#f8fafb}
   .source{color:#6b7176;font-size:11px;margin:.5rem 0 0}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
-  @media (max-width:900px){.workspace,.summary-grid,.runway-metrics{grid-template-columns:1fr}.objective{position:static}.brand{flex-direction:column}.airport-logo{max-width:240px;width:100%}}
+  @media (max-width:900px){.workspace,.summary-grid,.zone-metrics{grid-template-columns:1fr}.objective{position:static}.brand{flex-direction:column}.airport-logo{max-width:240px;width:100%}}
   @media print{body{margin:0;max-width:none;padding:0}.toolbar{display:none}.workspace{grid-template-columns:1fr}.objective{position:static}}
 </style>
 </head><body>
@@ -1352,8 +1452,8 @@ export function renderReportHtml(report: InspectionReport): string {
   </div>
   <div class="summary-grid">
     <div class="summary-card"><div class="eyebrow">Checklist</div><strong>${report.checklist.length === 0 ? "N/A" : `${checklistComplete}/${report.checklist.length}`}</strong><span>${report.checklist.length === 0 ? "No self-check items on this pass" : allChecklistComplete ? "Ready for sign-off" : `${checklistRemaining} remaining`}</span></div>
-    <div class="summary-card"><div class="eyebrow">Runways scanned</div><strong>${report.runways.length}</strong><span>${findingRunways.length > 0 ? `${findingRunways.length} produced findings` : "No findings recorded"}</span></div>
-    <div class="summary-card"><div class="eyebrow">Awaiting review</div><strong>${reviewQueue}</strong><span>${reviewQueue > 0 ? `Across ${attentionRunways} runway${attentionRunways === 1 ? "" : "s"}` : "No unresolved candidates"}</span></div>
+    <div class="summary-card"><div class="eyebrow">Zones scanned</div><strong>${report.zones.length}</strong><span>${findingZones.length > 0 ? `${findingZones.length} produced findings` : "No findings recorded"}</span></div>
+    <div class="summary-card"><div class="eyebrow">Awaiting review</div><strong>${reviewQueue}</strong><span>${reviewQueue > 0 ? `Across ${attentionZones} zone${attentionZones === 1 ? "" : "s"}` : "No unresolved candidates"}</span></div>
     <div class="summary-card"><div class="eyebrow">Tickets open</div><strong>${report.totals.ticketsOpen}</strong><span>${report.totals.ticketsCompleted > 0 ? `${report.totals.ticketsCompleted} completed` : "No maintenance queue yet"}</span></div>
   </div>
 </header>
@@ -1361,7 +1461,7 @@ export function renderReportHtml(report: InspectionReport): string {
   <div>${checklistSection}${assetSection}</div>
   <aside class="objective"><div class="objective-head"><p class="eyebrow">Inspection objective</p><h2>${esc(objective.title)}</h2><p>${esc(objective.detail)}</p></div><ul class="step-list"><li><span>Checklist</span><span class="step-value">${report.checklist.length === 0 ? "Not required" : allChecklistComplete ? "Complete" : `${checklistRemaining} remaining`}</span></li><li><span>Sign-off</span><span class="step-value">${report.inspection.signedAt ? "Recorded" : allChecklistComplete ? "Ready now" : "Blocked"}</span></li><li><span>Findings queue</span><span class="step-value">${reviewQueue > 0 ? `${reviewQueue} to review` : activeTickets > 0 ? `${activeTickets} active` : "Clear"}</span></li></ul></aside>
 </div>
-<section><div class="section-head"><div><p class="eyebrow">Runway findings</p><h3>Findings by runway</h3><p class="section-copy">Runways with findings stay expanded in review order. Fully clear runways are tucked below so the working queue stays visible without losing audit coverage.</p></div><div class="status-row"><span class="pill pill-${reviewQueue > 0 ? "amber" : "green"}">${reviewQueue > 0 ? `${reviewQueue} to review` : "Review queue clear"}</span><span class="pill pill-${activeTickets > 0 ? "blue" : "green"}">${activeTickets > 0 ? `${activeTickets} active` : "No active tickets"}</span></div></div>${sections || `<p class="none">No runway findings recorded.</p>`}${clearRunwaySection}</section>
+<section><div class="section-head"><div><p class="eyebrow">Zone findings</p><h3>Findings by zone</h3><p class="section-copy">Zones with findings stay expanded in review order. Fully clear zones are tucked below so the working queue stays visible without losing audit coverage.</p></div><div class="status-row"><span class="pill pill-${reviewQueue > 0 ? "amber" : "green"}">${reviewQueue > 0 ? `${reviewQueue} to review` : "Review queue clear"}</span><span class="pill pill-${activeTickets > 0 ? "blue" : "green"}">${activeTickets > 0 ? `${activeTickets} active` : "No active tickets"}</span></div></div>${sections || `<p class="none">No zone findings recorded.</p>`}${clearZoneSection}</section>
 </body></html>`;
 }
 
@@ -1374,7 +1474,7 @@ export function renderReportCsv(report: InspectionReport): string {
   };
   const imageUrl = (id: string | null | undefined): string =>
     id ? (report.images.find((i) => i.id === id)?.fileUrl ?? "") : "";
-  const ticketByIssue = new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
+  const ticketByIssue = new Map(report.zones.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
   const rows: string[] = [];
   if (report.checklist.length) {
     rows.push("DAILY CHECKLIST");
@@ -1395,10 +1495,10 @@ export function renderReportCsv(report: InspectionReport): string {
   rows.push("ISSUES");
   rows.push(
     [
-      "Runway",
+      "Zone",
       "Designation",
       "Category",
-      "Zone",
+      "Boundary",
       "Confidence",
       "Severity",
       "Finding Status",
@@ -1407,15 +1507,15 @@ export function renderReportCsv(report: InspectionReport): string {
       "Corrective Action Taken",
     ].join(","),
   );
-  for (const { runway, issues } of report.runways) {
+  for (const { zone, issues } of report.zones) {
     for (const i of issues) {
       const ticket = ticketByIssue.get(i.id);
       rows.push(
         [
-          q(runway.name),
-          q(runway.designation),
+          q(zone.name),
+          q(zone.designation),
           q(REPORT_CATEGORY[i.category] ?? i.category),
-          q(i.zone ?? ""),
+          q(i.boundary ?? ""),
           `${(i.confidence * 100).toFixed(0)}%`,
           q(titleCase(i.severity)),
           q(titleCase(i.status)),
@@ -1476,10 +1576,10 @@ export async function getDraftPairs(): Promise<DraftPair[]> {
     const issue = toIssue(r);
     const finalText = issue.ticketId ? (await getTicket(issue.ticketId))?.description ?? issue.draft : issue.draft;
     if (!issue.ticketId && finalText === issue.aiDraftText) continue; // no signal yet
-    const runway = await getRunway(issue.runwayId);
+    const zone = await getZone(issue.zoneId);
     pairs.push({
       issueId: issue.id,
-      issueContext: `${issue.category} | RWY ${runway?.designation ?? issue.runwayId} | ${issue.zone ?? "-"} | conf ${issue.confidence.toFixed(2)} | severity ${issue.severity}`,
+      issueContext: `${issue.category} | ZON ${zone?.designation ?? issue.zoneId} | ${issue.boundary ?? "-"} | conf ${issue.confidence.toFixed(2)} | severity ${issue.severity}`,
       aiDraftText: issue.aiDraftText,
       finalText,
       editDistance: issue.draftEditDistance ?? computeDraftEditDistance(issue.aiDraftText, finalText),

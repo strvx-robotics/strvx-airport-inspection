@@ -1,7 +1,7 @@
-// Domain types for the STRVX runway-inspection app.
+// Domain types for the STRVX zone-inspection app.
 // Mirrors PRD §11 data model + design-plan §4/§13 (feedback loop).
 //
-// Phase 0 shipped a trimmed UI model (Issue / Ticket / Runway). This file
+// Phase 0 shipped a trimmed UI model (Issue / Ticket / Zone). This file
 // extends that model with the persisted Postgres/API domain (IssueCandidate,
 // Inspection, Image, history, ...), while keeping compatibility exports used by
 // existing screens and helpers.
@@ -43,7 +43,7 @@ export type InspectionStatus =
   | "completed"
   | "failed";
 
-/** Per-runway inspection job lifecycle. */
+/** Per-zone inspection job lifecycle. */
 export type JobStatus =
   | "not_started"
   | "in_progress"
@@ -69,7 +69,7 @@ export type UserRole = "admin" | "inspector" | "maintenance";
 export type GeomConfidence = "gps" | "pose" | "manual";
 
 /** Lifecycle for manually maintained operational map geometry. */
-export type RunwayMapStatus = "draft" | "active" | "retired" | "needs_review";
+export type ZoneMapStatus = "draft" | "active" | "retired" | "needs_review";
 
 /** Illumination-driven inspection window (design §4 [GAP 4]). */
 export type InspectionWindow = "daylight" | "dusk_lit";
@@ -134,7 +134,7 @@ export const REJECTION_REASONS: RejectionReason[] = [
   "other",
 ];
 export const USER_ROLES: UserRole[] = ["admin", "inspector", "maintenance"];
-export const RUNWAY_MAP_STATUSES: RunwayMapStatus[] = [
+export const ZONE_MAP_STATUSES: ZoneMapStatus[] = [
   "draft",
   "active",
   "retired",
@@ -208,10 +208,11 @@ export interface Airport {
   createdAt: string;
 }
 
-export interface Runway {
+/** Operational zone (formerly zone) — the primary map/admin entity. */
+export interface Zone {
   id: string;
   airportId: string;
-  name: string; // "Runway 1"
+  name: string; // "Zone 1"
   designation: string; // "17 – 35"
   length: string; // display, e.g. "8,001 ft" (Phase-0 field)
   description?: string;
@@ -219,15 +220,16 @@ export interface Runway {
   thresholdHeadingDeg?: number;
   thresholdLat?: number; // threshold anchor — origin for station_m → map projection
   thresholdLng?: number;
-  runwayPolygon?: LngLat[]; // admin operational boundary — never rendered on satellite maps
-  mapStatus?: RunwayMapStatus;
+  zonePolygon?: LngLat[]; // admin operational boundary — never rendered on satellite maps
+  mapStatus?: ZoneMapStatus;
   activeStatus?: string;
   createdAt?: string;
 }
 
-export interface Zone {
+/** Inspection boundary segment within a zone (formerly inspection zone). */
+export interface Boundary {
   id: string;
-  runwayId: string;
+  zoneId: string;
   name: string; // "Zone B · midfield"
   stationStartM?: number;
   stationEndM?: number;
@@ -240,7 +242,7 @@ export interface Zone {
 export interface KeepOutZone {
   id: string;
   airportId: string;
-  runwayId: string;
+  zoneId: string;
   name: string;
   reason?: string;
   polygon?: LngLat[];
@@ -284,7 +286,7 @@ export interface ChecklistItem {
 export interface InspectionJob {
   id: string;
   inspectionId: string;
-  runwayId: string;
+  zoneId: string;
   status: JobStatus;
   startedAt?: string;
   completedAt?: string;
@@ -327,8 +329,8 @@ export interface InspectionSchedule {
 export interface Image {
   id: string;
   jobId?: string;
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
   fileUrl: string;
   gps?: LngLat;
   stationM?: number;
@@ -348,12 +350,12 @@ export interface Image {
 export interface IssueCandidate {
   id: string;
   inspectionId: string;
-  runwayId: string;
-  zoneId?: string;
+  zoneId: string;
+  boundaryId?: string;
   imageId?: string;
   imageUrl?: string; // real captured photo URL (object storage), when present
   category: IssueCategory; // DB column issue_type
-  zone?: string; // display label, joined from Zone.name
+  boundary?: string; // display label, joined from Boundary.name
   confidence: number; // 0–1
   confidenceBand: ConfidenceBand;
   severity: Severity; // effective/final severity (inspector-editable)
@@ -382,8 +384,8 @@ export interface IssueCandidate {
 export interface Ticket {
   id: string;
   issueId: string;
-  runwayId: string;
-  zone: string; // display label (Phase-0 field)
+  zoneId: string;
+  boundary: string; // display label (Phase-0 field)
   category: IssueCategory;
   severity: Severity;
   description: string;
@@ -392,7 +394,7 @@ export interface Ticket {
   assignedTo: string;
   maintenanceNotes: string;
   // Extended persisted fields (optional so the Phase-0 store literal still compiles):
-  zoneId?: string;
+  boundaryId?: string;
   createdAt?: string;
   repairedAt?: string;
   closedAt?: string;
@@ -421,7 +423,7 @@ export interface Drone {
   model: string;
   status: DroneStatus;
   battery?: number; // 0–100; absent when offline / unknown
-  assignment?: string; // free-text post (runway, dock, bay)
+  assignment?: string; // free-text post (zone, dock, bay)
   lastSeen?: string; // ISO — last telemetry contact
   createdAt: string;
 }
@@ -475,12 +477,12 @@ export interface TicketStatusHistory {
 
 // ── Phase-0 legacy view type ──────────────────────────────────────────────────
 // Kept verbatim for the existing in-memory store + screens (lib/store.tsx,
-// app/{runway,issue,ticket}). The UI-refactor migrates these to IssueCandidate.
+// app/{zone,issue,ticket}). The UI-refactor migrates these to IssueCandidate.
 
 export interface Issue {
   id: string;
-  runwayId: string;
-  zone: string;
+  zoneId: string;
+  boundary: string;
   category: IssueCategory;
   confidence: number; // 0–1
   severity: Severity;

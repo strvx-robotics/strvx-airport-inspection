@@ -24,17 +24,18 @@ import Badge, { type Tone } from "@/components/Badge";
 import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 import ExportPreviewModal, { type ExportFormat } from "@/components/ExportPreviewModal";
 import AirportSearchSelect from "@/components/AirportSearchSelect";
+import LengthField from "@/components/LengthField";
 import { useOverview, useStore } from "@/lib/store";
 import { loadUsAirports, matchUsAirport, type UsAirportRef } from "@/lib/usAirports";
 import * as api from "@/lib/api";
 import { apiErrorMessage, type Overview } from "@/lib/api";
 import { INSPECTION_STATUS, INSPECTION_TYPE, INSPECTION_WINDOW, ROLE, SCHEDULE_FREQUENCY } from "@/lib/ui";
 import { fmtInTz } from "@/lib/format";
-import { MAP_STATUS_LABEL, mapStatusTone } from "@/lib/runwayAdmin";
+import { MAP_STATUS_LABEL, mapStatusTone } from "@/lib/zoneAdmin";
 import {
   INSPECTION_WINDOWS,
   PERIODIC_FREQUENCIES,
-  RUNWAY_MAP_STATUSES,
+  ZONE_MAP_STATUSES,
   USER_ROLES,
 } from "@/lib/types";
 import type {
@@ -43,7 +44,7 @@ import type {
   InspectionSchedule,
   InspectionWindow,
   LngLat,
-  RunwayMapStatus,
+  ZoneMapStatus,
   ScheduleFrequency,
   ScheduleInspectionType,
   User,
@@ -64,20 +65,20 @@ import {
   METRIC_CELL,
 } from "@/lib/vstyle";
 
-type RunwayLite = {
+type ZoneLite = {
   id: string;
   name: string;
   designation: string;
   length: string;
-  runwayPolygon?: LngLat[];
-  mapStatus?: RunwayMapStatus;
+  zonePolygon?: LngLat[];
+  mapStatus?: ZoneMapStatus;
   activeStatus?: string;
 };
 
 const SECTIONS = [
   { id: "general", label: "General", icon: Building2, desc: "General information for this airfield." },
   { id: "users", label: "Users & access", icon: Users, desc: "People with access and the role that governs what they can do." },
-  { id: "runways", label: "Runways & zones", icon: Route, desc: "Runways under inspection and the zones defined along each." },
+  { id: "zones", label: "Zones", icon: Route, desc: "Zones under inspection and the boundaries defined along each." },
   { id: "schedule", label: "Schedule", icon: CalendarClock, desc: "Daily self-inspection passes and periodic surveillance cadence." },
   { id: "data", label: "Data & export", icon: Database, desc: "Export reports from scheduled inspection passes." },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon; desc: string }>;
@@ -116,7 +117,7 @@ export default function AdminPage() {
   }
 
   const airport = overview?.airport;
-  const runways: RunwayLite[] = overview?.runways.map((r) => r.runway) ?? [];
+  const zones: ZoneLite[] = overview?.zones.map((r) => r.zone) ?? [];
   const reload = () => void refresh();
 
   const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
@@ -150,21 +151,21 @@ export default function AdminPage() {
           <div
             className={cn(
               "min-h-0 flex-1 overflow-y-auto p-5 pb-8",
-              active === "users" || active === "runways" ? "flex flex-col" : undefined,
+              active === "users" || active === "zones" ? "flex flex-col" : undefined,
             )}
           >
             <div
               className={cn(
                 "space-y-6",
-                (active === "users" || active === "runways") && "flex min-h-0 flex-1 flex-col",
+                (active === "users" || active === "zones") && "flex min-h-0 flex-1 flex-col",
               )}
             >
               {active === "general" && (
                 <GeneralSection airport={airport} overview={overview} onSaved={reload} />
               )}
               {active === "users" && <UsersSection airportId={airport?.id} />}
-              {active === "runways" && airport && (
-                <RunwaysSection airportId={airport.id} runways={runways} onDone={reload} />
+              {active === "zones" && airport && (
+                <ZonesSection airportId={airport.id} zones={zones} onDone={reload} />
               )}
               {active === "schedule" && airport && (
                 <ScheduleSection airportId={airport.id} onDone={reload} />
@@ -339,9 +340,9 @@ function GeneralSnapshot({
   overview?: Overview;
   setup?: { users: number; schedules: number };
 }) {
-  const runways = overview?.runways ?? [];
-  const activeRunways = runways.filter((r) => r.runway.activeStatus !== "retired").length;
-  const mappedRunways = runways.filter((r) => r.runway.runwayPolygon?.length).length;
+  const zones = overview?.zones ?? [];
+  const activeZones = zones.filter((r) => r.zone.activeStatus !== "retired").length;
+  const mappedZones = zones.filter((r) => r.zone.zonePolygon?.length).length;
   const inspection = overview?.inspection;
   const inspectionStatus = inspection ? INSPECTION_STATUS[inspection.status] : undefined;
 
@@ -355,9 +356,9 @@ function GeneralSnapshot({
       </div>
       <div className="grid grid-cols-2 gap-px bg-[#dbdfe3] lg:grid-cols-4">
         <SnapshotMetric
-          label="Runways"
-          value={`${activeRunways}/${runways.length}`}
-          detail={mappedRunways ? `${mappedRunways} mapped` : "none mapped yet"}
+          label="Zones"
+          value={`${activeZones}/${zones.length}`}
+          detail={mappedZones ? `${mappedZones} mapped` : "none mapped yet"}
         />
         <SnapshotMetric
           label="Schedules"
@@ -436,7 +437,7 @@ function GeneralForm({ airport, onSaved }: { airport: Airport; onSaved: () => vo
 
   // Treat the center as "changed" only beyond ~1 km so a directory pick whose
   // coordinate differs trivially from the stored center doesn't flag the form
-  // dirty (and a save then won't reposition runways — see lib/repo.ts).
+  // dirty (and a save then won't reposition zones — see lib/repo.ts).
   const CENTER_MOVE_DEG = 0.01;
   const dirty =
     name !== airport.name ||
@@ -521,14 +522,14 @@ const ROLE_TONE: Record<UserRole, Tone> = {
   maintenance: "purple",
 };
 const ROLE_ACCESS: Record<UserRole, string> = {
-  admin: "Full access — configuration, runways, schedules, and data export.",
+  admin: "Full access — configuration, zones, schedules, and data export.",
   inspector: "Reviews detections, approves or rejects issues, runs live passes.",
   maintenance: "Work orders only — repairs and closes assigned tickets.",
 };
 
 const SCHEDULE_WINDOW_HELP: Record<InspectionWindow, string> = {
   daylight: "Runs during standard daylight hours for optimal imaging.",
-  dusk_lit: "Runs at dusk with runway lighting for low-light capture.",
+  dusk_lit: "Runs at dusk with zone lighting for low-light capture.",
 };
 
 const SECTION_INFO: Record<Exclude<SectionId, "general">, SidebarInfo> = {
@@ -542,12 +543,12 @@ const SECTION_INFO: Record<Exclude<SectionId, "general">, SidebarInfo> = {
       </dl>
     ),
   },
-  runways: {
+  zones: {
     title: "Map status",
-    desc: "Open a runway to edit boundaries, zones, and map data.",
+    desc: "Open a zone to edit its boundary and map data.",
     body: (
       <dl className="space-y-3">
-        {(Object.keys(MAP_STATUS_LABEL) as RunwayMapStatus[]).map((s) => (
+        {(Object.keys(MAP_STATUS_LABEL) as ZoneMapStatus[]).map((s) => (
           <div key={s} className="space-y-1">
             <dt>
               <Badge tone={s === "active" ? "green" : s === "needs_review" ? "amber" : "gray"}>
@@ -563,8 +564,8 @@ const SECTION_INFO: Record<Exclude<SectionId, "general">, SidebarInfo> = {
           </div>
         ))}
         <InfoItem
-          term="Zones"
-          detail="Open a runway row to add or edit inspection segments along its length."
+          term="Boundary"
+          detail="Open a zone row to draw or edit its inspection boundary."
         />
       </dl>
     ),
@@ -622,8 +623,8 @@ function GeneralInfoPanel({
     };
   }, [airport.id]);
 
-  const runways = overview?.runways ?? [];
-  const mappedRunways = runways.filter((r) => r.runway.runwayPolygon?.length).length;
+  const zones = overview?.zones ?? [];
+  const mappedZones = zones.filter((r) => r.zone.zonePolygon?.length).length;
   const checklist = [
     {
       label: "Airfield identity",
@@ -631,16 +632,16 @@ function GeneralInfoPanel({
       detail: "Name and code set for reports and navigation.",
     },
     {
-      label: "Runways defined",
-      ok: runways.length > 0,
-      detail: runways.length ? `${runways.length} runway${runways.length === 1 ? "" : "s"}` : "Add at least one runway.",
+      label: "Zones defined",
+      ok: zones.length > 0,
+      detail: zones.length ? `${zones.length} zone${zones.length === 1 ? "" : "s"}` : "Add at least one zone.",
     },
     {
       label: "Boundaries mapped",
-      ok: mappedRunways > 0,
-      detail: mappedRunways
-        ? `${mappedRunways} with operational polygons`
-        : "Draw or import runway boundaries.",
+      ok: mappedZones > 0,
+      detail: mappedZones
+        ? `${mappedZones} with operational polygons`
+        : "Draw or import zone boundaries.",
     },
     {
       label: "Automated schedule",
@@ -758,7 +759,7 @@ const userBaseColumns: DataTableColumn<User>[] = [
   },
 ];
 
-const runwayBaseColumns: DataTableColumn<RunwayLite>[] = [
+const zoneBaseColumns: DataTableColumn<ZoneLite>[] = [
   {
     colId: "name",
     headerName: "Name",
@@ -786,15 +787,15 @@ const runwayBaseColumns: DataTableColumn<RunwayLite>[] = [
     colId: "map",
     headerName: "Map",
     valueGetter: ({ data }) =>
-      data?.runwayPolygon?.length ? MAP_STATUS_LABEL[data.mapStatus ?? "draft"] : "Unmapped",
+      data?.zonePolygon?.length ? MAP_STATUS_LABEL[data.mapStatus ?? "draft"] : "Unmapped",
     cellClass: ({ data }) => {
       if (!data) return "valanor-status-cell valanor-status-gray";
-      const mapped = Boolean(data.runwayPolygon?.length);
+      const mapped = Boolean(data.zonePolygon?.length);
       return `valanor-status-cell valanor-status-${mapStatusTone(data.mapStatus, mapped)}`;
     },
-    cellRenderer: ({ data }: { data?: RunwayLite }) => {
+    cellRenderer: ({ data }: { data?: ZoneLite }) => {
       if (!data) return null;
-      const mapped = Boolean(data.runwayPolygon?.length);
+      const mapped = Boolean(data.zonePolygon?.length);
       const label = mapped ? MAP_STATUS_LABEL[data.mapStatus ?? "draft"] : "Unmapped";
       return <span>{label}</span>;
     },
@@ -811,20 +812,20 @@ const runwayBaseColumns: DataTableColumn<RunwayLite>[] = [
       const tone = status === "retired" ? "red" : status === "active" ? "green" : "gray";
       return `valanor-status-cell valanor-status-${tone}`;
     },
-    cellRenderer: ({ data }: { data?: RunwayLite }) =>
+    cellRenderer: ({ data }: { data?: ZoneLite }) =>
       data ? <span>{data.activeStatus ?? "active"}</span> : null,
     minWidth: 90,
     maxWidth: 110,
   },
 ];
 
-function RunwaysSection({
+function ZonesSection({
   airportId,
-  runways,
+  zones,
   onDone,
 }: {
   airportId: string;
-  runways: RunwayLite[];
+  zones: ZoneLite[];
   onDone: () => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -834,7 +835,7 @@ function RunwaysSection({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className={cn("text-[12px]", MUTED)}>
-          {runways.length} runway{runways.length === 1 ? "" : "s"} · click a row to configure zones and map data
+          {zones.length} zone{zones.length === 1 ? "" : "s"} · click a row to configure its boundary and map data
         </p>
         <button
           type="button"
@@ -845,12 +846,12 @@ function RunwaysSection({
           className={cn("h-8 px-3 text-[12px]", BTN)}
         >
           <Plus size={13} strokeWidth={2} />
-          {adding ? "Cancel" : "Add runway"}
+          {adding ? "Cancel" : "Add zone"}
         </button>
       </div>
 
       {adding && (
-        <AddRunwayForm
+        <AddZoneForm
           airportId={airportId}
           onAdded={() => {
             setAdding(false);
@@ -864,16 +865,16 @@ function RunwaysSection({
       {err && <p className="text-[12px] font-medium text-[#b91c1c]">{err}</p>}
 
       <div className="min-h-0 flex-1">
-        {runways.length === 0 ? (
-          <p className={cn("text-[13px]", MUTED)}>No runways yet — add one to get started.</p>
+        {zones.length === 0 ? (
+          <p className={cn("text-[13px]", MUTED)}>No zones yet — add one to get started.</p>
         ) : (
           <DataTable
-            rows={runways}
-            columns={runwayBaseColumns}
-            label="Runways"
+            rows={zones}
+            columns={zoneBaseColumns}
+            label="Zones"
             fill
             rowHeight={44}
-            rowHref={(r) => `/admin/runway/${r.id}`}
+            rowHref={(r) => `/admin/zone/${r.id}`}
             getRowId={(r) => r.id}
           />
         )}
@@ -882,7 +883,7 @@ function RunwaysSection({
   );
 }
 
-function AddRunwayForm({
+function AddZoneForm({
   airportId,
   onAdded,
   onCancel,
@@ -901,7 +902,7 @@ function AddRunwayForm({
     setBusy(true);
     setErr(null);
     try {
-      await api.createRunway({
+      await api.createZone({
         airportId,
         name: name.trim(),
         designation: designation.trim(),
@@ -912,7 +913,7 @@ function AddRunwayForm({
       setLength("");
       onAdded();
     } catch (e) {
-      setErr(apiErrorMessage(e, "Failed to add runway."));
+      setErr(apiErrorMessage(e, "Failed to add zone."));
     } finally {
       setBusy(false);
     }
@@ -920,14 +921,14 @@ function AddRunwayForm({
 
   return (
     <div className={cn("rounded-md p-4", CARD)}>
-      <p className="text-[13px] font-semibold text-[#181b1e]">New runway</p>
+      <p className="text-[13px] font-semibold text-[#181b1e]">New zone</p>
       <p className={cn("mt-0.5 text-[12px]", MUTED)}>
-        Add the basics here — open the runway afterward to set map boundaries and zones.
+        Add the basics here — open the zone afterward to set its boundary and map data.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <Input label="Name" value={name} onChange={setName} placeholder="Runway 4" />
+        <Input label="Name" value={name} onChange={setName} placeholder="Zone 4" />
         <Input label="Designation" value={designation} onChange={setDesignation} placeholder="14 – 32" />
-        <Input label="Length" value={length} onChange={setLength} placeholder="7,000 ft" />
+        <LengthField label="Length" value={length} onChange={setLength} placeholder="7,000 ft" />
       </div>
       <div className="mt-3 flex items-center gap-2">
         <button
@@ -936,7 +937,7 @@ function AddRunwayForm({
           onClick={() => void submit()}
           className={cn("h-8 px-3 text-[12px]", BTN_PRIMARY)}
         >
-          {busy ? "Adding…" : "Add runway"}
+          {busy ? "Adding…" : "Add zone"}
         </button>
         <button type="button" onClick={onCancel} className={cn("h-8 px-3 text-[12px]", BTN)}>
           Cancel
@@ -1620,7 +1621,7 @@ function DataSection({
                 <SnapshotMetric
                   label="Images"
                   value={counts?.images ?? "—"}
-                  detail={counts ? "captured across runways" : "loading…"}
+                  detail={counts ? "captured across zones" : "loading…"}
                 />
               </div>
 

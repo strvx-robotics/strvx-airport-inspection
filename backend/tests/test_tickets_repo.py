@@ -7,19 +7,19 @@ from app.repo import tickets as repo
 
 
 async def _seed_issue_and_ticket(conn, *, status="sent"):
-    """Insert a runway, an issue candidate, and one ticket in the given status."""
+    """Insert a zone, an issue candidate, and one ticket in the given status."""
     await conn.execute(
-        "INSERT INTO runways (id, airport_id, name, designation, created_at) "
+        "INSERT INTO zones (id, airport_id, name, designation, created_at) "
         "VALUES ('r1','ags','Runway 1','17 - 35','2026-06-22T06:30:00.000Z')"
     )
     await conn.execute(
         "INSERT INTO issue_candidates "
-        "(id, runway_id, issue_type, confidence, confidence_band, severity, status, "
+        "(id, zone_id, issue_type, confidence, confidence_band, severity, status, "
         " bbox_json, ai_draft_text, draft, created_at) "
         "VALUES ('ic1','r1','pavement',0.9,'high','high','approved','{}','d','d','2026-06-22T06:30:00.000Z')"
     )
     await conn.execute(
-        "INSERT INTO tickets (id, issue_id, runway_id, category, status, description, "
+        "INSERT INTO tickets (id, issue_id, zone_id, category, status, description, "
         " severity, maintenance_notes, created_at) "
         f"VALUES ('WO-1042','ic1','r1','pavement','{status}','desc','high','','2026-06-22T06:30:00.000Z')"
     )
@@ -98,7 +98,7 @@ async def test_start_rejects_non_sent(seed):
     await _seed_issue_and_ticket(seed, status="repaired")
     await db.connect()
     try:
-        with pytest.raises(AppError, match="Cannot start a repaired ticket"):
+        with pytest.raises(AppError, match="Cannot start work on a repaired ticket"):
             await repo.start_ticket("WO-1042", Actor(role="maintenance"))
     finally:
         await db.disconnect()
@@ -136,7 +136,8 @@ async def test_close_with_notes_persists_them(seed):
     await _seed_issue_and_ticket(seed, status="repaired")
     await db.connect()
     try:
-        t = await repo.close_ticket("WO-1042", "reinspected, looks good", Actor(role="inspector"))
+        await repo.update_ticket_notes("WO-1042", "reinspected, looks good", Actor(role="inspector"))
+        t = await repo.close_ticket("WO-1042", Actor(role="inspector"))
         assert t.status == "closed"
         assert t.maintenance_notes == "reinspected, looks good"
     finally:
@@ -148,7 +149,7 @@ async def test_close_is_idempotent(seed):
     await _seed_issue_and_ticket(seed, status="closed")
     await db.connect()
     try:
-        t = await repo.close_ticket("WO-1042", None, Actor(role="admin"))
+        t = await repo.close_ticket("WO-1042", Actor(role="admin"))
         assert t.status == "closed"
         # No new history row for an already-closed ticket.
         n = await db.one("SELECT count(*) AS c FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
@@ -162,7 +163,7 @@ async def test_close_repaired_ticket(seed):
     await _seed_issue_and_ticket(seed, status="repaired")
     await db.connect()
     try:
-        t = await repo.close_ticket("WO-1042", None, Actor(role="inspector"))
+        t = await repo.close_ticket("WO-1042", Actor(role="inspector"))
         assert t.status == "closed"
         assert t.closed_at is not None
         h = await db.one("SELECT action FROM ticket_status_history WHERE ticket_id = $1", "WO-1042")
@@ -172,14 +173,14 @@ async def test_close_repaired_ticket(seed):
 
 
 @pytest.mark.asyncio
-async def test_to_ticket_falls_back_to_zone_name(seed):
-    await seed.execute("INSERT INTO runways (id, airport_id, name, designation, created_at) VALUES ('r1','ags','Runway 1','17 - 35','2026-06-22T06:30:00.000Z')")
-    await seed.execute("INSERT INTO zones (id, runway_id, name, created_at) VALUES ('z1','r1','Zone X','2026-06-22T06:30:00.000Z')")
-    await seed.execute("INSERT INTO issue_candidates (id, runway_id, issue_type, confidence, confidence_band, severity, status, bbox_json, ai_draft_text, draft, created_at) VALUES ('ic1','r1','pavement',0.9,'high','high','approved','{}','d','d','2026-06-22T06:30:00.000Z')")
-    await seed.execute("INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, description, severity, maintenance_notes, created_at) VALUES ('WO-1042','ic1','r1','z1',NULL,'pavement','sent','desc','high','','2026-06-22T06:30:00.000Z')")
+async def test_to_ticket_falls_back_to_boundary_name(seed):
+    await seed.execute("INSERT INTO zones (id, airport_id, name, designation, created_at) VALUES ('r1','ags','Runway 1','17 - 35','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO boundaries (id, zone_id, name, created_at) VALUES ('b1','r1','Zone X','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO issue_candidates (id, zone_id, issue_type, confidence, confidence_band, severity, status, bbox_json, ai_draft_text, draft, created_at) VALUES ('ic1','r1','pavement',0.9,'high','high','approved','{}','d','d','2026-06-22T06:30:00.000Z')")
+    await seed.execute("INSERT INTO tickets (id, issue_id, zone_id, boundary_id, boundary, category, status, description, severity, maintenance_notes, created_at) VALUES ('WO-1042','ic1','r1','b1',NULL,'pavement','sent','desc','high','','2026-06-22T06:30:00.000Z')")
     await db.connect()
     try:
         t = await repo.get_ticket("WO-1042")
-        assert t.zone == "Zone X"
+        assert t.boundary == "Zone X"
     finally:
         await db.disconnect()

@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Map as MapIcon } from "lucide-react";
 import * as api from "@/lib/api";
 import type { Overview } from "@/lib/api";
-import type { RunwayLayer } from "@/components/map/AirportMap";
+import type { ZoneLayer } from "@/components/map/AirportMap";
 import type { IssueCandidate, Ticket } from "@/lib/types";
 import { fmtInTz } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -49,10 +49,10 @@ function MapPageContent() {
   const searchParams = useSearchParams();
   const autoDrawZone = useMemo(() => {
     if (searchParams.get("drawZone") !== "1") return undefined;
-    const runwayId = searchParams.get("runwayId") ?? undefined;
-    return { runwayId };
+    const zoneId = searchParams.get("zoneId") ?? undefined;
+    return { zoneId };
   }, [searchParams]);
-  const [layers, setLayers] = useState<RunwayLayer[] | null>(null);
+  const [layers, setLayers] = useState<ZoneLayer[] | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [inspectionScope, setInspectionScope] = useState("current");
@@ -66,21 +66,21 @@ function MapPageContent() {
       setOverview(ov);
       const inspectionId = resolveInspectionId(scope, ov);
 
-      const baseLayers: RunwayLayer[] = ov.runways.map(({ runway }) => ({
-        runway,
+      const baseLayers: ZoneLayer[] = ov.zones.map(({ zone }) => ({
+        zone,
         issues: [],
         zones: [],
       }));
       setLayers(baseLayers);
 
-      const [ticketList, ...runwayResults] = await Promise.all([
+      const [ticketList, ...zoneResults] = await Promise.all([
         api.listTickets().catch(() => [] as Ticket[]),
-        ...baseLayers.map(({ runway }) => api.getRunway(runway.id, inspectionId)),
+        ...baseLayers.map(({ zone }) => api.getZone(zone.id, inspectionId)),
       ]);
 
       const scopedTickets = inspectionId
         ? ticketList.filter((t) =>
-            runwayResults.some((r) => r.issues.some((i) => i.id === t.issueId)),
+            zoneResults.some((r) => r.issues.some((i) => i.id === t.issueId)),
           )
         : ticketList;
       setTickets(scopedTickets);
@@ -88,7 +88,7 @@ function MapPageContent() {
       setLayers(
         baseLayers.map((layer, index) => ({
           ...layer,
-          issues: runwayResults[index]?.issues ?? [],
+          issues: zoneResults[index]?.issues ?? [],
         })),
       );
       setLastSynced(new Date());
@@ -107,7 +107,7 @@ function MapPageContent() {
     setLayers(
       (current) =>
         current?.map((layer) =>
-          layer.runway.id === updated.runwayId
+          layer.zone.id === updated.zoneId
             ? {
                 ...layer,
                 issues: layer.issues.map((i) => (i.id === updated.id ? updated : i)),
@@ -158,7 +158,6 @@ function MapPageContent() {
           <AirportMap
             layers={layers}
             tickets={tickets}
-            runwayOverviews={overview?.runways ?? []}
             inspections={overview ? inspectionOptions(overview) : []}
             airportId={overview?.airport.id ?? ""}
             airportCenter={airportCenter}

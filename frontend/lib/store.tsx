@@ -12,7 +12,7 @@ import {
 } from "react";
 import type {
   IssueCandidate,
-  Runway,
+  Zone,
   RejectionReason,
   Ticket,
   UserRole,
@@ -37,7 +37,7 @@ interface Store {
   overview: Maybe<Overview>;
   issues: Record<string, IssueCandidate>;
   tickets: Record<string, Ticket>;
-  runways: Record<string, Runway>;
+  zones: Record<string, Zone>;
 
   // system telemetry — drives the header lamp + the status bar. online is
   // undefined until the first overview attempt resolves.
@@ -46,7 +46,7 @@ interface Store {
 
   // loaders (stable refs)
   loadOverview: () => Promise<Maybe<Overview>>;
-  loadRunway: (id: string) => Promise<Maybe<api.RunwayWithIssues>>;
+  loadZone: (id: string) => Promise<Maybe<api.ZoneWithIssues>>;
   loadIssue: (id: string) => Promise<Maybe<IssueCandidate>>;
   loadTicket: (id: string) => Promise<Maybe<api.TicketDetail>>;
 
@@ -75,7 +75,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [overview, setOverview] = useState<Maybe<Overview>>(undefined);
   const [issues, setIssues] = useState<Record<string, IssueCandidate>>({});
   const [tickets, setTickets] = useState<Record<string, Ticket>>({});
-  const [runways, setRunways] = useState<Record<string, Runway>>({});
+  const [zones, setZones] = useState<Record<string, Zone>>({});
   const [online, setOnline] = useState<boolean | undefined>(undefined);
   const [lastSyncAt, setLastSyncAt] = useState<number | undefined>(undefined);
 
@@ -108,8 +108,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (t: Ticket) => setTickets((p) => ({ ...p, [t.id]: t })),
     [],
   );
-  const mergeRunway = useCallback(
-    (r: Runway) => setRunways((p) => ({ ...p, [r.id]: r })),
+  const mergeZone = useCallback(
+    (z: Zone) => setZones((p) => ({ ...p, [z.id]: z })),
     [],
   );
 
@@ -117,9 +117,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api.getOverview();
       setOverview(data);
-      setRunways((p) => {
+      setZones((p) => {
         const next = { ...p };
-        for (const r of data.runways) next[r.runway.id] = r.runway;
+        for (const r of data.zones) next[r.zone.id] = r.zone;
         return next;
       });
       setOnline(true);
@@ -133,10 +133,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadRunway = useCallback(
+  const loadZone = useCallback(
     async (id: string) => {
-      const data = await api.getRunway(id);
-      mergeRunway(data.runway);
+      const data = await api.getZone(id);
+      mergeZone(data.zone);
       setIssues((p) => {
         const next = { ...p };
         for (const i of Array.isArray(data.issues) ? data.issues : []) next[i.id] = i;
@@ -149,7 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
       return data;
     },
-    [mergeRunway],
+    [mergeZone],
   );
 
   const loadIssue = useCallback(
@@ -166,10 +166,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const data = await api.getTicket(id);
       mergeTicket(data.ticket);
       if (data.issue) mergeIssue(data.issue);
-      if (data.runway) mergeRunway(data.runway);
+      if (data.zone) mergeZone(data.zone);
       return data;
     },
-    [mergeIssue, mergeTicket, mergeRunway],
+    [mergeIssue, mergeTicket, mergeZone],
   );
 
   // ── Optimistic mutations ───────────────────────────────────────────────────
@@ -335,11 +335,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     overview,
     issues,
     tickets,
-    runways,
+    zones,
     online,
     lastSyncAt,
     loadOverview,
-    loadRunway,
+    loadZone,
     loadIssue,
     loadTicket,
     approveIssue,
@@ -390,13 +390,13 @@ export function useOverview() {
   return { overview, loading, refresh: loadOverview };
 }
 
-export function useRunwayDetail(id: string) {
-  const { runways, issues, tickets, loadRunway } = useStore();
+export function useZoneDetail(id: string) {
+  const { zones, issues, tickets, loadZone } = useStore();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let live = true;
     setLoading(true);
-    loadRunway(id)
+    loadZone(id)
       .catch(() => undefined)
       .finally(() => {
         if (live) setLoading(false);
@@ -404,20 +404,20 @@ export function useRunwayDetail(id: string) {
     return () => {
       live = false;
     };
-  }, [id, loadRunway]);
-  const runway = runways[id];
-  // Stable reference: recompute only when the issues map or runway id changes.
-  // Returning a fresh array every render sends TanStack Table (on the runway
+  }, [id, loadZone]);
+  const zone = zones[id];
+  // Stable reference: recompute only when the issues map or zone id changes.
+  // Returning a fresh array every render sends TanStack Table (on the zone
   // detail page) into a re-render loop that freezes the page mid-navigation.
-  const runwayIssues = useMemo(
-    () => Object.values(issues).filter((i) => i.runwayId === id),
+  const zoneIssues = useMemo(
+    () => Object.values(issues).filter((i) => i.zoneId === id),
     [issues, id],
   );
-  const runwayTickets = useMemo(
-    () => Object.values(tickets).filter((t) => t.runwayId === id),
+  const zoneTickets = useMemo(
+    () => Object.values(tickets).filter((t) => t.zoneId === id),
     [tickets, id],
   );
-  return { runway, issues: runwayIssues, tickets: runwayTickets, loading };
+  return { zone, issues: zoneIssues, tickets: zoneTickets, loading };
 }
 
 export function useIssueDetail(id: string) {
@@ -439,7 +439,7 @@ export function useIssueDetail(id: string) {
 }
 
 export function useTicketDetail(id: string) {
-  const { tickets, issues, runways, loadTicket } = useStore();
+  const { tickets, issues, zones, loadTicket } = useStore();
   const [loading, setLoading] = useState(true);
   const issueIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -459,6 +459,6 @@ export function useTicketDetail(id: string) {
   }, [id, loadTicket]);
   const ticket = tickets[id];
   const issue = ticket ? issues[ticket.issueId] : undefined;
-  const runway = ticket ? runways[ticket.runwayId] : undefined;
-  return { ticket, issue, runway, loading };
+  const zone = ticket ? zones[ticket.zoneId] : undefined;
+  return { ticket, issue, zone, loading };
 }

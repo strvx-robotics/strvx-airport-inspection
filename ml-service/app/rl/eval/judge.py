@@ -19,7 +19,7 @@ RUBRIC = ["correctness", "specificity", "actionability", "tone"]
 
 _SYS = (
     "You are a senior FAA-savvy airfield maintenance supervisor grading the quality of "
-    "auto-drafted runway-inspection maintenance tickets. Judge ONLY the draft text against "
+    "auto-drafted zone-inspection maintenance tickets. Judge ONLY the draft text against "
     "the finding context. Good tickets are factually consistent with the finding, specific "
     "about what/where, give a clear actionable maintenance step, and read in a professional "
     "ops tone. Penalize hallucinated details, vagueness, missing action, or wrong severity."

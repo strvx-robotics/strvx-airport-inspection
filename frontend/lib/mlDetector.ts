@@ -56,12 +56,12 @@ function mapDetection(d: MlDetection): Detection | null {
     sizeM: typeof d.sizeM === "number" ? d.sizeM : undefined,
     modelNotes: typeof d.modelNotes === "string" && d.modelNotes.trim()
       ? d.modelNotes.trim()
-      : "Detected runway anomaly.",
+      : "Detected zone anomaly.",
   };
 }
 
 /**
- * Detect runway defects in an image via the CV service. Falls back to the
+ * Detect zone defects in an image via the CV service. Falls back to the
  * deterministic stub when ML_SERVICE_URL is unset or anything goes wrong.
  */
 export async function detectImage(
@@ -91,7 +91,7 @@ export async function detectImage(
     const data = (await res.json()) as { detections?: MlDetection[] };
     if (!Array.isArray(data.detections)) return detect(ctx);
 
-    // A successful empty array is a real result (clean runway) — return it.
+    // A successful empty array is a real result (clean zone) — return it.
     return data.detections.map(mapDetection).filter((d): d is Detection => d !== null);
   } catch {
     return detect(ctx);

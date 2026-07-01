@@ -9,11 +9,11 @@ from app.models import BBox, IssueCandidate, LngLat, Ticket
 from app.repo.helpers import actor_name, actor_role, gid, now
 from app.difftext import compute_draft_edit_distance, diff_words
 
-# Mirrors lib/repo.ts ISSUE_SELECT (joins zone name + image url).
+# Mirrors lib/repo.ts ISSUE_SELECT (joins boundary name + image url).
 ISSUE_SELECT = (
-    "SELECT ic.*, z.name AS zone_name, im.file_url AS image_url "
+    "SELECT ic.*, b.name AS boundary_name, im.file_url AS image_url "
     "FROM issue_candidates ic "
-    "LEFT JOIN zones z ON z.id = ic.zone_id "
+    "LEFT JOIN boundaries b ON b.id = ic.boundary_id "
     "LEFT JOIN images im ON im.id = ic.image_id"
 )
 
@@ -29,12 +29,12 @@ def _to_issue(r) -> IssueCandidate:
     return IssueCandidate(
         id=r["id"],
         inspection_id=r["inspection_id"] if r["inspection_id"] is not None else "",
-        runway_id=r["runway_id"],
         zone_id=r["zone_id"],
+        boundary_id=r["boundary_id"],
         image_id=r["image_id"],
         image_url=r["image_url"],
         category=r["issue_type"],
-        zone=r["zone_name"],
+        boundary=r["boundary_name"],
         confidence=r["confidence"],
         confidence_band=r["confidence_band"],
         severity=r["severity"],
@@ -53,8 +53,8 @@ def _to_issue(r) -> IssueCandidate:
         rejection_note=r["rejection_note"],
         draft_edit_distance=r["draft_edit_distance"],
         ticket_id=r["ticket_id"],
-        conditions_found=r["conditions_found"],
-        corrective_action=r["corrective_action"],
+        conditions_found=r.get("conditions_found"),
+        corrective_action=r.get("corrective_action"),
         created_by=r["created_by"],
         created_at=r["created_at"],
     )
@@ -108,10 +108,10 @@ async def approve_issue(id: str, actor: Actor | None) -> tuple[IssueCandidate, T
             seq = await db.one("SELECT 'WO-' || nextval('ticket_seq') AS id")
             tid = seq["id"]
             await db.run(
-                "INSERT INTO tickets (id, issue_id, runway_id, zone_id, zone, category, status, "
+                "INSERT INTO tickets (id, issue_id, zone_id, boundary_id, boundary, category, status, "
                 " description, severity, assigned_to, created_by, maintenance_notes, created_at) "
                 "VALUES ($1,$2,$3,$4,$5,$6,'sent',$7,$8,$9,$10,'',$11)",
-                tid, issue.id, issue.runway_id, issue.zone_id, issue.zone or "",
+                tid, issue.id, issue.zone_id, issue.boundary_id, issue.boundary or "",
                 issue.category, issue.draft, issue.severity, assigned_to, created_by, ts,
             )
             await db.run(

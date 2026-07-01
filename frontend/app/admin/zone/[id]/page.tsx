@@ -6,16 +6,18 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, Layers, Trash2 } from "lucide-react";
 import Badge from "@/components/Badge";
 import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
+import LengthField from "@/components/LengthField";
 import SelectMenu from "@/components/Select";
 import * as api from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
+  formatLengthFt,
   MAP_STATUS_LABEL,
   mapStatusTone,
-} from "@/lib/runwayAdmin";
-import type { Runway, RunwayMapStatus, Zone } from "@/lib/types";
-import { RUNWAY_MAP_STATUSES } from "@/lib/types";
+} from "@/lib/zoneAdmin";
+import type { Boundary, Zone, ZoneMapStatus } from "@/lib/types";
+import { ZONE_MAP_STATUSES } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import {
   BAR,
@@ -30,88 +32,88 @@ import {
   PAGE,
 } from "@/lib/vstyle";
 
-const MAP_STATUS_HELP: Record<RunwayMapStatus, string> = {
+const MAP_STATUS_HELP: Record<ZoneMapStatus, string> = {
   draft: "Polygon defined but not yet approved for inspections.",
   active: "Current operational boundary used for zone placement.",
   retired: "Historical boundary — no longer used for new passes.",
   needs_review: "Boundary flagged for admin review before next pass.",
 };
 
-export default function AdminRunwayPage() {
+export default function AdminZonePage() {
   const { role } = useStore();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [runway, setRunway] = useState<Runway | null>(null);
-  const [zones, setZones] = useState<Zone[] | undefined>();
+  const [zone, setZone] = useState<Zone | null>(null);
+  const [boundaries, setBoundaries] = useState<Boundary[] | undefined>();
   const [err, setErr] = useState<string | null>(null);
-  const [pendingRunwayDelete, setPendingRunwayDelete] = useState(false);
+  const [pendingZoneDelete, setPendingZoneDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const detail = await api.getRunway(id);
-      setRunway(detail.runway);
+      const detail = await api.getZone(id);
+      setZone(detail.zone);
       setErr(null);
     } catch (e) {
-      setRunway(null);
-      setErr(apiErrorMessage(e, "Runway not found."));
+      setZone(null);
+      setErr(apiErrorMessage(e, "Zone not found."));
     }
   }, [id]);
 
-  const loadZones = useCallback(async () => {
+  const loadBoundaries = useCallback(async () => {
     try {
-      setZones(await api.listZones(id));
+      setBoundaries(await api.listBoundaries(id));
     } catch {
-      setZones([]);
+      setBoundaries([]);
     }
   }, [id]);
 
   useEffect(() => {
     void load();
-    void loadZones();
-  }, [load, loadZones]);
+    void loadBoundaries();
+  }, [load, loadBoundaries]);
 
   if (role !== "admin") {
     return (
       <Shell>
-        <p className={cn("text-[13px]", MUTED)}>Switch to the Admin role to manage runways.</p>
+        <p className={cn("text-[13px]", MUTED)}>Switch to the Admin role to manage zones.</p>
       </Shell>
     );
   }
 
-  if (!runway) {
+  if (!zone) {
     return (
       <Shell>
         <BackLink />
-        <p className={cn("mt-4 text-[13px]", MUTED)}>{err ?? "Loading runway…"}</p>
+        <p className={cn("mt-4 text-[13px]", MUTED)}>{err ?? "Loading zone…"}</p>
       </Shell>
     );
   }
 
-  const mapped = Boolean(runway.runwayPolygon?.length);
-  const mapTone = mapStatusTone(runway.mapStatus, mapped);
-  const retired = runway.activeStatus === "retired";
+  const mapped = Boolean(zone.zonePolygon?.length);
+  const mapTone = mapStatusTone(zone.mapStatus, mapped);
+  const retired = zone.activeStatus === "retired";
 
   return (
     <Shell>
-      {pendingRunwayDelete && (
+      {pendingZoneDelete && (
         <ConfirmDeleteModal
-          title="Delete runway"
-          description="This removes the runway from the airfield configuration. Past inspection records are kept for reports and training."
-          itemLabel={`${runway.name} · ${runway.designation}`}
+          title="Delete zone"
+          description="This removes the zone from the airfield configuration. Past inspection records are kept for reports and training."
+          itemLabel={`${zone.name} · ${zone.designation}`}
           onCancel={() => {
-            if (!deleteBusy) setPendingRunwayDelete(false);
+            if (!deleteBusy) setPendingZoneDelete(false);
           }}
           onConfirm={async () => {
             setDeleteBusy(true);
             setDeleteErr(null);
             try {
-              await api.deleteRunway(runway.id);
-              setPendingRunwayDelete(false);
-              router.push("/admin?section=runways");
+              await api.deleteZone(zone.id);
+              setPendingZoneDelete(false);
+              router.push("/admin?section=zones");
             } catch (e) {
-              setDeleteErr(apiErrorMessage(e, "Failed to delete runway."));
+              setDeleteErr(apiErrorMessage(e, "Failed to delete zone."));
             } finally {
               setDeleteBusy(false);
             }
@@ -122,30 +124,30 @@ export default function AdminRunwayPage() {
         <aside className={cn("flex h-full min-h-0 flex-col overflow-hidden lg:sticky lg:top-0 lg:self-stretch", CARD)}>
           <div className={cn("border-b border-[#dfe4e8] px-4 py-3", BAR)}>
             <BackLink />
-            <p className={cn("mt-3", EYEBROW)}>Runway</p>
-            <p className="mt-1 text-[14px] font-semibold text-[#181b1e]">{runway.name}</p>
-            <p className={cn("mt-0.5 font-mono text-[12px]", MUTED)}>{runway.designation}</p>
+            <p className={cn("mt-3", EYEBROW)}>Zone</p>
+            <p className="mt-1 text-[14px] font-semibold text-[#181b1e]">{zone.name}</p>
+            <p className={cn("mt-0.5 font-mono text-[12px]", MUTED)}>{zone.designation}</p>
           </div>
           <div className="space-y-3 p-4">
             <div className="flex flex-wrap gap-2">
-              <Badge tone={retired ? "gray" : "green"}>{runway.activeStatus ?? "active"}</Badge>
+              <Badge tone={retired ? "gray" : "green"}>{zone.activeStatus ?? "active"}</Badge>
               <Badge tone={mapTone}>
-                {mapped ? MAP_STATUS_LABEL[runway.mapStatus ?? "draft"] : "Unmapped"}
+                {mapped ? MAP_STATUS_LABEL[zone.mapStatus ?? "draft"] : "Unmapped"}
               </Badge>
             </div>
             <dl className="space-y-2 border-t border-[#dbdfe3] pt-3">
-              <InfoRow label="Runway ID" value={runway.id} mono />
-              {runway.length && <InfoRow label="Length" value={runway.length} />}
+              <InfoRow label="Zone ID" value={zone.id} mono />
+              {zone.length && <InfoRow label="Length" value={zone.length} />}
               <InfoRow
-                label="Zone"
+                label="Boundary"
                 value={
-                  zones === undefined
+                  boundaries === undefined
                     ? "…"
-                    : zones.length === 0
+                    : boundaries.length === 0
                       ? "Not drawn"
-                      : zones.length === 1
-                        ? zones[0].name
-                        : `${zones.length} — pick one`
+                      : boundaries.length === 1
+                        ? boundaries[0].name
+                        : `${boundaries.length} — pick one`
                 }
               />
             </dl>
@@ -154,23 +156,23 @@ export default function AdminRunwayPage() {
 
         <section className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden", CARD)}>
           <div className={cn("border-b border-[#dfe4e8] px-5 py-3.5", BAR)}>
-            <p className={EYEBROW}>Runway configuration</p>
+            <p className={EYEBROW}>Zone configuration</p>
             <p className="mt-1 text-[12px] text-[#5b6166]">
-              Identity, map status, and the inspection zone for this runway.
+              Identity, map status, and the inspection boundary for this zone.
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-5 pb-8">
-            <RunwayEditor
-              runway={runway}
-              zones={zones ?? []}
-              zonesLoading={zones === undefined}
+            <ZoneEditor
+              zone={zone}
+              boundaries={boundaries ?? []}
+              boundariesLoading={boundaries === undefined}
               onSaved={async () => {
                 await load();
               }}
-              onZonesChanged={() => {
-                void loadZones();
+              onBoundariesChanged={() => {
+                void loadBoundaries();
               }}
-              onRequestDelete={() => setPendingRunwayDelete(true)}
+              onRequestDelete={() => setPendingZoneDelete(true)}
             />
 
             {deleteErr && (
@@ -183,12 +185,12 @@ export default function AdminRunwayPage() {
           <div className={cn("border-b border-[#dfe4e8] px-4 py-3", BAR)}>
             <p className={EYEBROW}>Map status</p>
             <p className="mt-1 text-[12px] text-[#5b6166]">
-              Draw inspection zones on the satellite map — not entered as coordinates here.
+              Draw the inspection boundary on the satellite map — not entered as coordinates here.
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <dl className="space-y-3">
-              {RUNWAY_MAP_STATUSES.map((s) => (
+              {ZONE_MAP_STATUSES.map((s) => (
                 <div key={s} className="space-y-1">
                   <dt>
                     <Badge tone={s === "active" ? "green" : s === "needs_review" ? "amber" : "gray"}>
@@ -199,15 +201,15 @@ export default function AdminRunwayPage() {
                 </div>
               ))}
               <div className="space-y-0.5 border-t border-[#dbdfe3] pt-3">
-                <dt className="text-[12px] font-semibold text-[#181b1e]">Inspection zone</dt>
+                <dt className="text-[12px] font-semibold text-[#181b1e]">Inspection boundary</dt>
                 <dd className="text-[12px] leading-relaxed text-[#3f4448]">
-                  Each runway has one zone, drawn on the satellite map. Hover it on the map to edit or delete.
+                  Each zone has one boundary, drawn on the satellite map. Hover it on the map to edit or delete.
                 </dd>
               </div>
               <div className="space-y-0.5">
                 <dt className="text-[12px] font-semibold text-[#181b1e]">Delete vs retire</dt>
                 <dd className="text-[12px] leading-relaxed text-[#3f4448]">
-                  Delete removes runway or zone configuration from the map and admin views.
+                  Delete removes zone or boundary configuration from the map and admin views.
                   Inspection history stays in the database for reports and model training.
                 </dd>
               </div>
@@ -230,14 +232,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 function BackLink() {
   return (
     <Link
-      href="/admin?section=runways"
+      href="/admin?section=zones"
       className={cn(
         "inline-flex h-8 items-center gap-1.5 rounded-md border border-[#c7cdd2] bg-[#fbfcfd] px-3 text-[12px] font-medium text-[#5b6166] transition-colors hover:border-[#a8afb5] hover:bg-[#eef1f4] hover:text-[#181b1e]",
         BTN,
       )}
     >
       <ChevronLeft size={14} strokeWidth={2} />
-      Runways & zones
+      Zones
     </Link>
   );
 }
@@ -276,44 +278,44 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
-function RunwayEditor({
-  runway,
-  zones,
-  zonesLoading,
+function ZoneEditor({
+  zone,
+  boundaries,
+  boundariesLoading,
   onSaved,
-  onZonesChanged,
+  onBoundariesChanged,
   onRequestDelete,
 }: {
-  runway: Runway;
-  zones: Zone[];
-  zonesLoading: boolean;
+  zone: Zone;
+  boundaries: Boundary[];
+  boundariesLoading: boolean;
   onSaved: () => void | Promise<void>;
-  onZonesChanged: () => void;
+  onBoundariesChanged: () => void;
   onRequestDelete: () => void;
 }) {
-  const [name, setName] = useState(runway.name);
-  const [designation, setDesignation] = useState(runway.designation);
-  const [length, setLength] = useState(runway.length ?? "");
-  const [mapStatus, setMapStatus] = useState<RunwayMapStatus>(runway.mapStatus ?? "draft");
+  const [name, setName] = useState(zone.name);
+  const [designation, setDesignation] = useState(zone.designation);
+  const [length, setLength] = useState(formatLengthFt(zone.length ?? ""));
+  const [mapStatus, setMapStatus] = useState<ZoneMapStatus>(zone.mapStatus ?? "draft");
   const [busy, setBusy] = useState(false);
   const [zoneBusy, setZoneBusy] = useState(false);
-  const [pendingKeep, setPendingKeep] = useState<Zone | null>(null);
+  const [pendingKeep, setPendingKeep] = useState<Boundary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setName(runway.name);
-    setDesignation(runway.designation);
-    setLength(runway.length ?? "");
-    setMapStatus(runway.mapStatus ?? "draft");
-  }, [runway]);
+    setName(zone.name);
+    setDesignation(zone.designation);
+    setLength(formatLengthFt(zone.length ?? ""));
+    setMapStatus(zone.mapStatus ?? "draft");
+  }, [zone]);
 
-  const mapped = Boolean(runway.runwayPolygon?.length);
-  const retired = runway.activeStatus === "retired";
+  const mapped = Boolean(zone.zonePolygon?.length);
+  const retired = zone.activeStatus === "retired";
   const dirty =
-    name !== runway.name ||
-    designation !== runway.designation ||
-    length !== (runway.length ?? "") ||
-    mapStatus !== (runway.mapStatus ?? "draft");
+    name !== zone.name ||
+    designation !== zone.designation ||
+    length !== formatLengthFt(zone.length ?? "") ||
+    mapStatus !== (zone.mapStatus ?? "draft");
 
   const act = async (fn: () => Promise<unknown>, opts?: { refresh?: boolean }) => {
     setBusy(true);
@@ -332,13 +334,13 @@ function RunwayEditor({
     setZoneBusy(true);
     setErr(null);
     try {
-      for (const z of zones.filter((x) => x.id !== keepId)) {
-        await api.deleteZone(z.id, { reassignToZoneId: keepId });
+      for (const b of boundaries.filter((x) => x.id !== keepId)) {
+        await api.deleteBoundary(b.id, { reassignToBoundaryId: keepId });
       }
       setPendingKeep(null);
-      onZonesChanged();
+      onBoundariesChanged();
     } catch (e) {
-      setErr(apiErrorMessage(e, "Failed to consolidate zones."));
+      setErr(apiErrorMessage(e, "Failed to consolidate boundaries."));
     } finally {
       setZoneBusy(false);
     }
@@ -346,11 +348,11 @@ function RunwayEditor({
 
   return (
     <Panel
-      title="Runway details"
-      desc="Name, designation, map status, and inspection zone."
+      title="Zone details"
+      desc="Name, designation, map status, and inspection boundary."
       action={
         <div className="flex flex-wrap gap-2">
-          <Badge tone={retired ? "gray" : "green"}>{runway.activeStatus ?? "active"}</Badge>
+          <Badge tone={retired ? "gray" : "green"}>{zone.activeStatus ?? "active"}</Badge>
           <Badge tone={mapStatusTone(mapStatus, mapped)}>
             {MAP_STATUS_LABEL[mapStatus]}
           </Badge>
@@ -360,10 +362,10 @@ function RunwayEditor({
       <div className="space-y-5">
         {pendingKeep && (
           <ConfirmDeleteModal
-            title="Keep this zone"
-            description={`Remove ${zones.length - 1} other zone${zones.length === 2 ? "" : "s"} from this runway. Any inspection history on removed zones will move to "${pendingKeep.name}".`}
+            title="Keep this boundary"
+            description={`Remove ${boundaries.length - 1} other boundar${boundaries.length === 2 ? "y" : "ies"} from this zone. Any inspection history on removed boundaries will move to "${pendingKeep.name}".`}
             itemLabel={pendingKeep.name}
-            confirmLabel="Keep this zone"
+            confirmLabel="Keep this boundary"
             onCancel={() => {
               if (!zoneBusy) setPendingKeep(null);
             }}
@@ -371,20 +373,20 @@ function RunwayEditor({
           />
         )}
         <div className="grid gap-px overflow-hidden rounded-md border border-[#dbdfe3] bg-[#dbdfe3] sm:grid-cols-2">
-          <Metric label="Designation" value={runway.designation} detail="threshold pair" />
-          <Metric label="Length" value={runway.length || "—"} detail="published length" />
+          <Metric label="Designation" value={zone.designation} detail="threshold pair" />
+          <Metric label="Length" value={zone.length || "—"} detail="published length" />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" value={name} onChange={setName} />
           <Field label="Designation" value={designation} onChange={setDesignation} />
-          <Field label="Length" value={length} onChange={setLength} placeholder="7,000 ft" />
+          <LengthField label="Length" value={length} onChange={setLength} placeholder="7,000 ft" />
           <div className="space-y-1">
             <label className={EYEBROW}>Map status</label>
             <SelectMenu
               value={mapStatus}
-              options={RUNWAY_MAP_STATUSES.map((s) => ({ value: s, label: MAP_STATUS_LABEL[s] }))}
-              onChange={(v) => setMapStatus(v as RunwayMapStatus)}
+              options={ZONE_MAP_STATUSES.map((s) => ({ value: s, label: MAP_STATUS_LABEL[s] }))}
+              onChange={(v) => setMapStatus(v as ZoneMapStatus)}
               ariaLabel="Map status"
             />
           </div>
@@ -393,46 +395,46 @@ function RunwayEditor({
         <div className="space-y-3 border-t border-[#dbdfe3] pt-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className={EYEBROW}>Inspection zone</p>
+              <p className={EYEBROW}>Inspection boundary</p>
               <p className={cn("mt-0.5 text-[12px]", MUTED)}>
-                One zone per runway — plot on the satellite map.
+                One boundary per zone — plot on the satellite map.
               </p>
             </div>
-            {!zonesLoading && zones.length === 0 && (
+            {!boundariesLoading && boundaries.length === 0 && (
               <Link
-                href={`/map?drawZone=1&runwayId=${encodeURIComponent(runway.id)}`}
+                href={`/map?drawZone=1&zoneId=${encodeURIComponent(zone.id)}`}
                 className={cn("inline-flex h-8 items-center gap-1.5 px-3 text-[12px]", BTN_PRIMARY)}
               >
                 <Layers size={13} strokeWidth={2} />
-                Draw zone on map
+                Draw boundary on map
               </Link>
             )}
           </div>
-          {zonesLoading ? (
-            <p className={cn("text-[13px]", MUTED)}>Loading zone…</p>
-          ) : zones.length > 0 ? (
+          {boundariesLoading ? (
+            <p className={cn("text-[13px]", MUTED)}>Loading boundary…</p>
+          ) : boundaries.length > 0 ? (
             <div className="space-y-3">
-              {zones.length > 1 && (
+              {boundaries.length > 1 && (
                 <p className="text-[12px] leading-relaxed text-[#b45309]">
-                  This runway has {zones.length} zones but only one is allowed. Click{" "}
-                  <span className="font-medium">Keep this zone</span> on the one you want — inspection
+                  This zone has {boundaries.length} boundaries but only one is allowed. Click{" "}
+                  <span className="font-medium">Keep this boundary</span> on the one you want — inspection
                   history from the others will move over automatically.
                 </p>
               )}
-              {zones.map((z) => (
-                <ZoneRow
-                  key={z.id}
-                  zone={z}
-                  onChanged={onZonesChanged}
-                  multiZone={zones.length > 1}
-                  onKeep={() => setPendingKeep(z)}
+              {boundaries.map((b) => (
+                <BoundaryRow
+                  key={b.id}
+                  boundary={b}
+                  onChanged={onBoundariesChanged}
+                  multiBoundary={boundaries.length > 1}
+                  onKeep={() => setPendingKeep(b)}
                   busy={zoneBusy}
                 />
               ))}
             </div>
           ) : (
             <p className={cn("text-[13px]", MUTED)}>
-              No zone drawn yet — use the button above to plot the runway boundary on the map.
+              No boundary drawn yet — use the button above to plot the zone boundary on the map.
             </p>
           )}
         </div>
@@ -443,7 +445,7 @@ function RunwayEditor({
             disabled={!dirty || busy}
             onClick={() =>
               void act(() =>
-                api.updateRunway(runway.id, {
+                api.updateZone(zone.id, {
                   name,
                   designation,
                   length,
@@ -463,7 +465,7 @@ function RunwayEditor({
         <div className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] p-4">
           <p className={EYEBROW}>Lifecycle</p>
           <p className={cn("mt-1 text-[12px] leading-relaxed", MUTED)}>
-            Retire a runway to stop new passes without removing it from the list. Delete removes the runway config; inspection history is preserved.
+            Retire a zone to stop new passes without removing it from the list. Delete removes the zone config; inspection history is preserved.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -471,12 +473,12 @@ function RunwayEditor({
               disabled={busy}
               onClick={() =>
                 void act(() =>
-                  api.updateRunway(runway.id, { activeStatus: retired ? "active" : "retired" }),
+                  api.updateZone(zone.id, { activeStatus: retired ? "active" : "retired" }),
                 )
               }
               className={cn("h-8 px-3 text-[12px]", BTN)}
             >
-              {retired ? "Activate runway" : "Retire runway"}
+              {retired ? "Activate zone" : "Retire zone"}
             </button>
             <button
               type="button"
@@ -485,7 +487,7 @@ function RunwayEditor({
               className={cn("h-8 px-3 text-[12px]", BTN_DANGER)}
             >
               <Trash2 size={13} strokeWidth={2} />
-              Delete runway
+              Delete zone
             </button>
           </div>
         </div>
@@ -506,29 +508,29 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   );
 }
 
-function ZoneRow({
-  zone,
+function BoundaryRow({
+  boundary,
   onChanged,
-  multiZone,
+  multiBoundary,
   onKeep,
   busy: rowBusy,
 }: {
-  zone: Zone;
+  boundary: Boundary;
   onChanged: () => void;
-  multiZone?: boolean;
+  multiBoundary?: boolean;
   onKeep?: () => void;
   busy?: boolean;
 }) {
-  const [name, setName] = useState(zone.name);
+  const [name, setName] = useState(boundary.name);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
-  const dirty = name !== zone.name;
+  const dirty = name !== boundary.name;
   const disabled = busy || rowBusy;
 
   useEffect(() => {
-    setName(zone.name);
-  }, [zone.name]);
+    setName(boundary.name);
+  }, [boundary.name]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -543,15 +545,15 @@ function ZoneRow({
     }
   };
 
-  const confirmDeleteZone = async () => {
+  const confirmDeleteBoundary = async () => {
     setBusy(true);
     setErr(null);
     try {
-      await api.deleteZone(zone.id);
+      await api.deleteBoundary(boundary.id);
       setPendingDelete(false);
       onChanged();
     } catch (e) {
-      setErr(apiErrorMessage(e, "Failed to delete zone."));
+      setErr(apiErrorMessage(e, "Failed to delete boundary."));
     } finally {
       setBusy(false);
     }
@@ -561,11 +563,11 @@ function ZoneRow({
     <div className="space-y-1 rounded-md border border-[#dbdfe3] bg-[#f3f5f7] p-3">
       {pendingDelete && (
         <ConfirmDeleteModal
-          title="Delete zone"
-          description="This removes the inspection zone from the map. Past inspection records are kept for reports and training."
-          itemLabel={zone.name}
+          title="Delete boundary"
+          description="This removes the inspection boundary from the map. Past inspection records are kept for reports and training."
+          itemLabel={boundary.name}
           onCancel={() => setPendingDelete(false)}
-          onConfirm={confirmDeleteZone}
+          onConfirm={confirmDeleteBoundary}
         />
       )}
       <div className="flex items-center gap-2">
@@ -574,26 +576,26 @@ function ZoneRow({
           onChange={(e) => setName(e.target.value)}
           disabled={disabled}
           className={cn("h-8 min-w-0 flex-1 px-3 text-[13px]", INPUT)}
-          aria-label={`Zone name for ${zone.id}`}
+          aria-label={`Boundary name for ${boundary.id}`}
         />
         {dirty && (
           <button
             type="button"
             disabled={disabled}
-            onClick={() => void act(() => api.updateZone(zone.id, { name: name.trim() }))}
+            onClick={() => void act(() => api.updateBoundary(boundary.id, { name: name.trim() }))}
             className={cn("h-8 shrink-0 px-3 text-[12px]", BTN_PRIMARY)}
           >
             Save
           </button>
         )}
-        {multiZone && onKeep ? (
+        {multiBoundary && onKeep ? (
           <button
             type="button"
             disabled={disabled}
             onClick={onKeep}
             className={cn("h-8 shrink-0 px-3 text-[12px]", BTN_PRIMARY)}
           >
-            Keep this zone
+            Keep this boundary
           </button>
         ) : (
           <button
@@ -604,7 +606,7 @@ function ZoneRow({
               "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#c7cdd2] text-[#5b6166] transition-colors",
               "hover:border-[#b91c1c] hover:bg-[#fbeae8] hover:text-[#b91c1c] disabled:opacity-40",
             )}
-            aria-label={`Delete ${zone.name}`}
+            aria-label={`Delete ${boundary.name}`}
           >
             <Trash2 size={13} strokeWidth={2} />
           </button>

@@ -20,7 +20,7 @@ its track expires is a new observation. (ponytail: centroid + TTL, no IoU/Kalman
 
 Run:
     .venv/bin/python -m app.live.worker --source <rtsp|rtmp|http .m3u8|file.mp4|0> \\
-        --runway r1 --endpoint http://localhost:3000/api/live-capture
+        --zone r1 --endpoint http://localhost:3000/api/live-capture
     .venv/bin/python -m app.live.worker --selfcheck      # tracker logic, no stream
 """
 
@@ -124,16 +124,14 @@ def det_to_dict(d) -> dict:
     }
 
 
-def post_capture(endpoint: str, runway: str, zone: str | None, frame_bgr, dets: list[dict], role: str) -> bool:
+def post_capture(endpoint: str, zone_id: str, frame_bgr, dets: list[dict], role: str) -> bool:
     import cv2  # local import so --selfcheck needs no opencv
     import requests
 
     ok, buf = cv2.imencode(".jpg", frame_bgr)
     if not ok:
         return False
-    data = {"runwayId": runway, "detections": json.dumps(dets)}
-    if zone:
-        data["zoneId"] = zone
+    data = {"zoneId": zone_id, "detections": json.dumps(dets)}
     try:
         resp = requests.post(
             endpoint,
@@ -156,9 +154,9 @@ class _Overlay:
     relay so the Live page can draw them in real time. Never blocks the detection
     loop — short timeout, and self-disables after repeated failures (relay down)."""
 
-    def __init__(self, url: str | None, runway: str):
+    def __init__(self, url: str | None, zone: str):
         self.url = url or None
-        self.runway = runway
+        self.zone = zone
         self.fails = 0
         self.session = None
 
@@ -171,7 +169,7 @@ class _Overlay:
             if self.session is None:
                 self.session = requests.Session()
             self.session.post(
-                self.url, json={"runway": self.runway, "ts": now, "detections": dets}, timeout=0.5
+                self.url, json={"zone": self.zone, "ts": now, "detections": dets}, timeout=0.5
             )
             self.fails = 0
         except Exception:
@@ -225,7 +223,7 @@ def run(args) -> None:
     print(f"[live] VLM (marking+lighting): {'on' if vlm.enabled else 'off (no ANTHROPIC_API_KEY)'}")
 
     tracker = Tracker(confirm_hits=args.confirm, ttl_s=args.ttl, cooldown_s=args.cooldown)
-    overlay = _Overlay(args.overlay_url, args.runway)
+    overlay = _Overlay(args.overlay_url, args.zone)
     last_vlm = 0.0
     captures = 0
 
@@ -250,9 +248,9 @@ def run(args) -> None:
             print(f"[live] WOULD capture {len(due)} finding(s): {summary}")
             captures += 1
             continue
-        if post_capture(args.endpoint, args.runway, args.zone, frame_bgr, due, args.actor_role):
+        if post_capture(args.endpoint, args.zone, frame_bgr, due, args.actor_role):
             captures += 1
-            print(f"[live] captured {len(due)} finding(s) -> {args.runway}: {summary}")
+            print(f"[live] captured {len(due)} finding(s) -> {args.zone}: {summary}")
 
     print(f"[live] done. {captures} capture(s) emitted.")
 
@@ -291,8 +289,7 @@ def main() -> None:
     load_env()  # pick up ANTHROPIC_API_KEY (+ overrides) from ml-service/.env
     p = argparse.ArgumentParser(description="STRVX live-feed inspection worker")
     p.add_argument("--source", default=os.environ.get("STREAM_URL"), help="rtsp/rtmp/http(.m3u8)/file path, or webcam index")
-    p.add_argument("--runway", default=os.environ.get("LIVE_RUNWAY_ID", "r1"))
-    p.add_argument("--zone", default=os.environ.get("LIVE_ZONE_ID") or None)
+    p.add_argument("--zone", default=os.environ.get("LIVE_ZONE_ID", "r1"))
     p.add_argument("--endpoint", default=os.environ.get("CAPTURE_ENDPOINT", "http://localhost:3000/api/live-capture"))
     p.add_argument("--overlay-url", default=os.environ.get("OVERLAY_URL", "http://localhost:8000/live/detections"), help="relay for the live detection overlay; '' disables")
     p.add_argument("--actor-role", default=os.environ.get("ACTOR_ROLE", "inspector"))

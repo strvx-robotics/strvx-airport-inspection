@@ -19,7 +19,7 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Valanor Airfield Inspection Console",
   description:
-    "Autonomous drone runway inspection: detection review, work-order lifecycle, and audit trail for airport operations.",
+    "Autonomous drone zone inspection: detection review, work-order lifecycle, and audit trail for airport operations.",
   icons: {
     icon: [
       {

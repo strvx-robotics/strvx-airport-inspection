@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Request
 
 from app.errors import AppError
-from app.repo import checklist, images, inspections, overview, runways, schedules, users
+from app.repo import checklist, images, inspections, overview, schedules, users, zones
 from app.repo.inspections import list_inspections
-from app.repo.zones import list_zones
-from app.repo.keep_out_zones import list_by_airport, list_by_runway
+from app.repo.boundaries import list_boundaries
+from app.repo.keep_out_zones import list_by_airport, list_by_zone
 from app.serialize import dump
 
 router = APIRouter()
@@ -31,45 +31,45 @@ async def get_inspection_detail(id: str) -> dict:
     }
 
 
-@router.get("/runways")
-async def get_runways(request: Request) -> dict:
+@router.get("/zones")
+async def get_zones(request: Request) -> dict:
     airport_id = request.query_params.get("airportId")
-    return {"runways": [dump(r) for r in await runways.list_runways(airport_id)]}
+    return {"zones": [dump(z) for z in await zones.list_zones(airport_id)]}
 
 
-@router.get("/runways/{id}")
-async def get_runway_detail(id: str, request: Request) -> dict:
+@router.get("/zones/{id}")
+async def get_zone_detail(id: str, request: Request) -> dict:
     inspection_id = request.query_params.get("inspectionId")
-    detail = await overview.get_runway_with_issues(id, inspection_id)
+    detail = await overview.get_zone_with_issues(id, inspection_id)
     if detail is None:
-        raise AppError(f"Runway not found: {id}")
+        raise AppError(f"Zone not found: {id}")
     return {
-        "runway": dump(detail["runway"]),
+        "zone": dump(detail["zone"]),
         "issues": [dump(i) for i in detail["issues"]],
         "tickets": [dump(t) for t in detail["tickets"]],
     }
 
 
-@router.get("/zones")
-async def get_zones(request: Request) -> dict:
-    runway_id = request.query_params.get("runwayId")
-    if not runway_id:
-        raise AppError("runwayId is required")
-    return {"zones": [dump(z) for z in await list_zones(runway_id)]}
+@router.get("/boundaries")
+async def get_boundaries(request: Request) -> dict:
+    zone_id = request.query_params.get("zoneId")
+    if not zone_id:
+        raise AppError("zoneId is required")
+    return {"boundaries": [dump(b) for b in await list_boundaries(zone_id)]}
 
 
 @router.get("/keep-out-zones")
 async def get_keep_out_zones(request: Request) -> dict:
-    runway_id = request.query_params.get("runwayId")
+    zone_id = request.query_params.get("zoneId")
     airport_id = request.query_params.get("airportId")
     active_only = request.query_params.get("activeOnly") == "1"
-    if runway_id:
-        zones = await list_by_runway(runway_id, active_only=active_only)
+    if zone_id:
+        koz = await list_by_zone(zone_id, active_only=active_only)
     elif airport_id:
-        zones = await list_by_airport(airport_id, active_only=active_only)
+        koz = await list_by_airport(airport_id, active_only=active_only)
     else:
-        raise AppError("runwayId or airportId is required")
-    return {"keepOutZones": [dump(z) for z in zones]}
+        raise AppError("zoneId or airportId is required")
+    return {"keepOutZones": [dump(z) for z in koz]}
 
 
 @router.get("/users")

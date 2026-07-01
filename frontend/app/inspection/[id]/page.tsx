@@ -63,7 +63,7 @@ const ACTIVE_TICKET_STATUSES = new Set([
 const pluralize = (count: number, singular: string, plural = `${singular}s`) =>
   `${count} ${count === 1 ? singular : plural}`;
 
-function summarizeRunway(entry: api.InspectionReport["runways"][number]) {
+function summarizeZone(entry: api.InspectionReport["zones"][number]) {
   const reviewCount = entry.issues.filter((issue) => REVIEW_STATUSES.has(issue.status)).length;
   const approvedCount = entry.issues.filter((issue) => issue.status === "approved").length;
   const rejectedCount = entry.issues.filter((issue) => issue.status === "rejected").length;
@@ -99,7 +99,7 @@ function summarizeRunway(entry: api.InspectionReport["runways"][number]) {
 }
 
 /** Inspection detail — the daily pass report rendered inside the console: the
- *  Part 139-style self-inspection checklist + sign-off, then one card per runway
+ *  Part 139-style self-inspection checklist + sign-off, then one card per zone
  *  with the AI issue candidates linking through to their review pages. */
 export default function InspectionPage() {
   const { id } = useParams<{ id: string }>();
@@ -148,7 +148,7 @@ export default function InspectionPage() {
     );
   }
 
-  const { airport, totals, runways } = report;
+  const { airport, totals, zones } = report;
   const insp = detail?.inspection ?? report.inspection;
   const checklist = detail?.checklist ?? [];
   const evidence = detail?.images ?? [];
@@ -158,8 +158,6 @@ export default function InspectionPage() {
   const completed = checklist.filter((item) => item.result).length;
   const allComplete = checklist.length > 0 && completed === checklist.length;
   const remainingChecklist = Math.max(0, checklist.length - completed);
-  // Is the report a complete, final compliance record (checklist answered +
-  // attestation signed + completion time)? Drives the export-readiness indicator.
   const completeness = evaluateCompleteness({
     checklistTotal: checklist.length,
     checklistAnswered: completed,
@@ -170,25 +168,25 @@ export default function InspectionPage() {
   const exportBlockedTitle = completeness.isFinal
     ? "Final compliance record export is available."
     : `Export blocked: ${completeness.missing.join(", ")}. Complete the checklist and sign the inspector attestation first.`;
-  const runwaySummaries = runways
-    .map(summarizeRunway)
+  const zoneSummaries = zones
+    .map(summarizeZone)
     .sort(
       (a, b) =>
         a.priority - b.priority ||
         b.reviewCount - a.reviewCount ||
         b.openTickets - a.openTickets ||
         b.issues.length - a.issues.length ||
-        a.runway.name.localeCompare(b.runway.name),
+        a.zone.name.localeCompare(b.zone.name),
     );
-  const findingRunways = runwaySummaries.filter((entry) => entry.issues.length > 0);
-  const clearRunways = runwaySummaries.filter((entry) => entry.issues.length === 0);
-  const runwaysWithFindings = runwaySummaries.filter((entry) => entry.issues.length > 0).length;
-  const runwaysWithAttention = runwaySummaries.filter(
+  const findingZones = zoneSummaries.filter((entry) => entry.issues.length > 0);
+  const clearZones = zoneSummaries.filter((entry) => entry.issues.length === 0);
+  const zonesWithFindings = zoneSummaries.filter((entry) => entry.issues.length > 0).length;
+  const zonesWithAttention = zoneSummaries.filter(
     (entry) => entry.reviewCount > 0 || entry.openTickets > 0,
   ).length;
-  const reviewQueue = runwaySummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
-  const activeTickets = runwaySummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
-  const reviewedIssues = runwaySummaries.reduce(
+  const reviewQueue = zoneSummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
+  const activeTickets = zoneSummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
+  const reviewedIssues = zoneSummaries.reduce(
     (sum, entry) => sum + entry.approvedCount + entry.rejectedCount,
     0,
   );
@@ -205,7 +203,7 @@ export default function InspectionPage() {
       : reviewQueue > 0
         ? {
             title: "Work the findings queue",
-            detail: `${pluralize(reviewQueue, "candidate")} still require review across ${pluralize(runwaysWithAttention, "runway")}.`,
+            detail: `${pluralize(reviewQueue, "candidate")} still require review across ${pluralize(zonesWithAttention, "zone")}.`,
           }
         : activeTickets > 0
           ? {
@@ -215,11 +213,11 @@ export default function InspectionPage() {
           : totals.issues === 0
             ? {
                 title: "Inspection is clear",
-                detail: `All ${pluralize(runways.length, "runway")} were inspected with no findings recorded.`,
+                detail: `All ${pluralize(zones.length, "zone")} were inspected with no findings recorded.`,
               }
             : {
                 title: "Inspection record is in good shape",
-                detail: "Checklist, sign-off, and runway findings are all documented.",
+                detail: "Checklist, sign-off, and zone findings are all documented.",
               };
   const workflowSteps = [
     {
@@ -251,11 +249,11 @@ export default function InspectionPage() {
       hint: checklist.length === 0 ? "No self-check items on this pass" : allComplete ? "Ready for sign-off" : `${remainingChecklist} remaining`,
     },
     {
-      label: "Runways scanned",
-      value: String(runways.length),
+      label: "Zones scanned",
+      value: String(zones.length),
       hint:
-        runwaysWithFindings > 0
-          ? `${pluralize(runwaysWithFindings, "runway")} produced findings`
+        zonesWithFindings > 0
+          ? `${pluralize(zonesWithFindings, "zone")} produced findings`
           : "No findings recorded",
     },
     {
@@ -263,7 +261,7 @@ export default function InspectionPage() {
       value: String(reviewQueue),
       hint:
         reviewQueue > 0
-          ? `Across ${pluralize(runwaysWithAttention, "runway")}`
+          ? `Across ${pluralize(zonesWithAttention, "zone")}`
           : "No unresolved candidates",
     },
     {
@@ -279,10 +277,10 @@ export default function InspectionPage() {
   ];
   const summaryText =
     totals.issues === 0
-      ? "This pass is clear. No runway findings or work orders were generated."
+      ? "This pass is clear. No zone findings or work orders were generated."
       : `${pluralize(totals.issues, "finding")} were recorded across ${pluralize(
-          runwaysWithFindings,
-          "runway",
+          zonesWithFindings,
+          "zone",
         )}. ${reviewQueue > 0 ? `${pluralize(reviewQueue, "candidate")} still need review.` : `${pluralize(reviewedIssues, "finding")} have already been dispositioned.`}`;
 
   const setResult = (itemKey: string, result: ChecklistResult) => {
@@ -647,10 +645,10 @@ export default function InspectionPage() {
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className={EYEBROW}>Runway findings</p>
-            <h3 className="mt-1 text-[18px] font-semibold text-[#181b1e]">Findings by runway</h3>
+            <p className={EYEBROW}>Zone findings</p>
+            <h3 className="mt-1 text-[18px] font-semibold text-[#181b1e]">Findings by zone</h3>
             <p className={cn("mt-2 max-w-3xl text-[13px] leading-6", MUTED)}>
-              Runways with findings stay expanded in review order. Fully clear runways are tucked
+              Zones with findings stay expanded in review order. Fully clear zones are tucked
               below so the working queue stays visible without losing audit coverage.
             </p>
           </div>
@@ -665,9 +663,9 @@ export default function InspectionPage() {
         </div>
 
         <div className="space-y-4">
-          {findingRunways.map(
+          {findingZones.map(
             ({
-              runway,
+              zone,
               issues,
               tickets,
               label,
@@ -677,16 +675,16 @@ export default function InspectionPage() {
               openTickets,
               closedTickets,
             }) => (
-              <section key={runway.id} className={cn("overflow-hidden rounded-md", CARD)}>
+              <section key={zone.id} className={cn("overflow-hidden rounded-md", CARD)}>
                 <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", BAR)}>
                   <div>
                     <h3 className="text-[14px] font-semibold text-[#181b1e]">
-                      {runway.name}{" "}
-                      <span className={cn("font-mono text-[12px]", MUTED)}>{runway.designation}</span>
+                      {zone.name}{" "}
+                      <span className={cn("font-mono text-[12px]", MUTED)}>{zone.designation}</span>
                     </h3>
                     <p className={cn("mt-1 text-[12px] leading-5", MUTED)}>
                       {issues.length === 0
-                        ? "No findings were recorded on this runway during the selected pass."
+                        ? "No findings were recorded on this zone during the selected pass."
                         : `${pluralize(issues.length, "finding")} logged. ${reviewCount > 0 ? `${pluralize(
                             reviewCount,
                             "finding",
@@ -753,8 +751,8 @@ export default function InspectionPage() {
                                   <span className="text-[13px] font-medium text-[#181b1e]">
                                     {CATEGORY[issue.category]}
                                   </span>
-                                  {issue.zone && (
-                                    <span className={cn("text-[12px]", MUTED)}>{issue.zone}</span>
+                                  {issue.boundary && (
+                                    <span className={cn("text-[12px]", MUTED)}>{issue.boundary}</span>
                                   )}
                                 </div>
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -785,33 +783,33 @@ export default function InspectionPage() {
             ),
           )}
 
-          {clearRunways.length > 0 && (
+          {clearZones.length > 0 && (
             <details className={cn("overflow-hidden rounded-md", CARD)}>
               <summary className={cn("flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3", BAR)}>
                 <span>
                   <span className={EYEBROW}>Audit trail</span>
                   <span className="mt-1 block text-[13px] font-semibold text-[#181b1e]">
-                    Clear runways
+                    Clear zones
                   </span>
                 </span>
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#6b7176]">
-                  {pluralize(clearRunways.length, "runway")}
+                  {pluralize(clearZones.length, "zone")}
                 </span>
               </summary>
 
               <div className="divide-y divide-[#dbdfe3]">
-                {clearRunways.map(({ runway }) => (
+                {clearZones.map(({ zone }) => (
                   <div
-                    key={runway.id}
+                    key={zone.id}
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                   >
                     <div>
                       <p className="text-[13px] font-medium text-[#181b1e]">
-                        {runway.name}{" "}
-                        <span className={cn("font-mono text-[12px]", MUTED)}>{runway.designation}</span>
+                        {zone.name}{" "}
+                        <span className={cn("font-mono text-[12px]", MUTED)}>{zone.designation}</span>
                       </p>
                       <p className={cn("mt-1 text-[12px]", MUTED)}>
-                        No findings were recorded on this runway during the selected pass.
+                        No findings were recorded on this zone during the selected pass.
                       </p>
                     </div>
                     <Badge tone="green">Clear</Badge>

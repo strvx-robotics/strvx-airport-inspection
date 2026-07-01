@@ -21,8 +21,8 @@ async def get_ticket_detail_route(id: str) -> dict:
     out = {"ticket": dump(detail["ticket"])}
     if detail["issue"] is not None:
         out["issue"] = dump(detail["issue"])
-    if detail["runway"] is not None:
-        out["runway"] = dump(detail["runway"])
+    if detail["zone"] is not None:
+        out["zone"] = dump(detail["zone"])
     return out
 
 
@@ -50,7 +50,7 @@ async def post_repair(id: str, request: Request) -> dict:
 @router.post("/tickets/{id}/close")
 async def post_close(id: str, request: Request) -> dict:
     body = await _json(request)
-    ticket = await repo.close_ticket(id, body.get("notes"), actor_from(request, body))
+    ticket = await repo.close_ticket(id, actor_from(request, body))
     return {"ticket": dump(ticket)}
 
 

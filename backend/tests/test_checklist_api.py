@@ -5,19 +5,19 @@ from app.repo.checklist import STANDARD_CHECKLIST_ITEMS
 
 async def _seed_inspection(conn):
     await conn.execute(
-        "INSERT INTO runways (id, airport_id, name, designation, length, created_at) "
+        "INSERT INTO zones (id, airport_id, name, designation, length, created_at) "
         "VALUES ('r1','ags','Runway 1','17 - 35','8,001 ft','2026-06-22T06:30:00.000Z')"
     )
     await conn.execute(
-        "INSERT INTO inspections (id, airport_id, scheduled_time, window, type, status, created_at) "
+        "INSERT INTO inspections (id, airport_id, scheduled_time, \"window\", type, status, created_at) "
         "VALUES ('insp1','ags','2026-06-29T06:00:00.000Z','daylight','daily','not_started','2026-06-29T06:00:00.000Z')"
     )
     await conn.execute(
-        "INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) "
+        "INSERT INTO inspection_jobs (id, inspection_id, zone_id, status, image_count, issue_count, created_at) "
         "VALUES ('job1','insp1','r1','not_started',1,0,'2026-06-29T06:00:00.000Z')"
     )
     await conn.execute(
-        "INSERT INTO images (id, job_id, runway_id, file_url, geom_confidence, timestamp, created_at) "
+        "INSERT INTO images (id, job_id, zone_id, file_url, geom_confidence, timestamp, created_at) "
         "VALUES ('img1','job1','r1','/uploads/sample.jpg','manual','2026-06-29T06:05:00.000Z','2026-06-29T06:05:00.000Z')"
     )
 

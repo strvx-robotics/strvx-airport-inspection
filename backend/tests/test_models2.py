@@ -1,5 +1,5 @@
 from app.constants import TICKET_OPEN, zero_counts, SEVERITY_VALUES
-from app.models import Airport, InspectionSchedule, LngLat, OverviewTotals, Runway
+from app.models import Airport, InspectionSchedule, LngLat, OverviewTotals, Zone
 from app.serialize import dump
 
 
@@ -24,14 +24,14 @@ def test_schedule_enabled_is_bool():
     assert dump(s)["enabled"] is True
 
 
-def test_runway_manual_map_serializes_camelcase():
-    r = Runway(
+def test_zone_manual_map_serializes_camelcase():
+    r = Zone(
         id="r1", airport_id="ags", name="Runway 1", designation="08 - 26",
-        length="", runway_polygon=[LngLat(lat=1, lng=2), LngLat(lat=3, lng=4), LngLat(lat=5, lng=6)],
+        length="", zone_polygon=[LngLat(lat=1, lng=2), LngLat(lat=3, lng=4), LngLat(lat=5, lng=6)],
         map_status="active", created_at="t",
     )
     d = dump(r)
-    assert d["runwayPolygon"][0] == {"lat": 1.0, "lng": 2.0}
+    assert d["zonePolygon"][0] == {"lat": 1.0, "lng": 2.0}
     assert d["mapStatus"] == "active"
 
 

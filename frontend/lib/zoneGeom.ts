@@ -1,16 +1,16 @@
-// Runway geometry: turn a runway's stored threshold anchor + heading + length
-// into real map coordinates (centerline, zone rectangles, station projection).
-// Pure; depends only on geo.ts. Heading falls back to the runway designation
+// Zone geometry: turn a zone's stored threshold anchor + heading + length
+// into real map coordinates (centerline, boundary rectangles, station projection).
+// Pure; depends only on geo.ts. Heading falls back to the zone designation
 // ("08 – 26" → 080°) when threshold_heading_deg isn't stored.
 //
 // Map policy: these helpers are for operational/station math only. Do NOT use
 // them to draw polygons, pins, or overlays on the satellite map UI — see
 // frontend/docs.md § Map policy.
 
-import type { IssueCandidate, LngLat, Runway, Zone } from "./types";
+import type { Boundary, IssueCandidate, LngLat, Zone } from "./types";
 import { bearingBetween, destinationPoint, distanceM, toRad } from "./geo";
 
-const RUNWAY_HALF_WIDTH_M = 23; // ~45 m runway
+const ZONE_HALF_WIDTH_M = 23; // ~45 m surface width
 
 /** Heading (deg) from the lower designation number: "08 – 26" → 80, "17 – 35" → 170. */
 export function headingFromDesignation(designation: string): number | undefined {
@@ -20,14 +20,14 @@ export function headingFromDesignation(designation: string): number | undefined 
   return n >= 1 && n <= 36 ? n * 10 : undefined;
 }
 
-export function runwayHeading(runway: Runway): number | undefined {
-  return runway.thresholdHeadingDeg ?? headingFromDesignation(runway.designation);
+export function zoneHeading(zone: Zone): number | undefined {
+  return zone.thresholdHeadingDeg ?? headingFromDesignation(zone.designation);
 }
 
-/** The runway threshold anchor, if stored. */
-export function runwayAnchor(runway: Runway): LngLat | undefined {
-  return runway.thresholdLat != null && runway.thresholdLng != null
-    ? { lat: runway.thresholdLat, lng: runway.thresholdLng }
+/** The zone threshold anchor, if stored. */
+export function zoneAnchor(zone: Zone): LngLat | undefined {
+  return zone.thresholdLat != null && zone.thresholdLng != null
+    ? { lat: zone.thresholdLat, lng: zone.thresholdLng }
     : undefined;
 }
 
@@ -41,8 +41,8 @@ const interp = (a: LngLat, b: LngLat, t: number): LngLat => ({
   lng: a.lng + (b.lng - a.lng) * t,
 });
 
-function runwayBoxEdges(runway: Runway): { start: [LngLat, LngLat]; end: [LngLat, LngLat] } | undefined {
-  const pts = runway.runwayPolygon?.slice(0, 4);
+function zoneBoxEdges(zone: Zone): { start: [LngLat, LngLat]; end: [LngLat, LngLat] } | undefined {
+  const pts = zone.zonePolygon?.slice(0, 4);
   if (!pts || pts.length < 4) return undefined;
 
   const edges = pts.map((a, i) => {
@@ -57,23 +57,23 @@ function runwayBoxEdges(runway: Runway): { start: [LngLat, LngLat]; end: [LngLat
   return { start: [start.a, start.b], end: [end.a, end.b] };
 }
 
-function polygonCenterline(runway: Runway): [LngLat, LngLat] | undefined {
-  const edges = runwayBoxEdges(runway);
+function polygonCenterline(zone: Zone): [LngLat, LngLat] | undefined {
+  const edges = zoneBoxEdges(zone);
   if (!edges) return undefined;
   return [midpoint(edges.start[0], edges.start[1]), midpoint(edges.end[0], edges.end[1])];
 }
 
-function runwayAxis(runway: Runway): { anchor: LngLat; heading: number } | undefined {
-  const manual = polygonCenterline(runway);
+function zoneAxis(zone: Zone): { anchor: LngLat; heading: number } | undefined {
+  const manual = polygonCenterline(zone);
   if (manual) return { anchor: manual[0], heading: bearingBetween(manual[0], manual[1]) };
-  const anchor = runwayAnchor(runway);
-  const heading = runwayHeading(runway);
+  const anchor = zoneAnchor(zone);
+  const heading = zoneHeading(zone);
   return anchor && heading != null ? { anchor, heading } : undefined;
 }
 
-/** Whether a runway has enough geometry to draw on the map. */
-export function isMappable(runway: Runway): boolean {
-  return (runway.runwayPolygon?.length ?? 0) >= 3 || (runwayAnchor(runway) != null && runwayHeading(runway) != null);
+/** Whether a zone has enough geometry to draw on the map. */
+export function isMappable(zone: Zone): boolean {
+  return (zone.zonePolygon?.length ?? 0) >= 3 || (zoneAnchor(zone) != null && zoneHeading(zone) != null);
 }
 
 /** Project a station (m from threshold) + lateral offset (m, + = right of centerline) → LngLat. */
@@ -90,30 +90,30 @@ export function stationToLngLat(
 }
 
 /** Centerline endpoints [threshold, far end], or undefined if not mappable. */
-export function centerline(runway: Runway): [LngLat, LngLat] | undefined {
-  const manual = polygonCenterline(runway);
+export function centerline(zone: Zone): [LngLat, LngLat] | undefined {
+  const manual = polygonCenterline(zone);
   if (manual) return manual;
-  const anchor = runwayAnchor(runway);
-  const heading = runwayHeading(runway);
-  if (!anchor || heading == null || !runway.lengthM) return undefined;
-  return [anchor, destinationPoint(anchor, heading, runway.lengthM)];
+  const anchor = zoneAnchor(zone);
+  const heading = zoneHeading(zone);
+  if (!anchor || heading == null || !zone.lengthM) return undefined;
+  return [anchor, destinationPoint(anchor, heading, zone.lengthM)];
 }
 
-/** A runway-aligned rectangle between two stations (defaults to the whole runway). */
-export function runwayRect(
-  runway: Runway,
+/** A zone-aligned rectangle between two stations (defaults to the whole zone). */
+export function zoneSurfaceRect(
+  zone: Zone,
   startM = 0,
-  endM = runway.lengthM ?? 0,
-  halfWidthM = RUNWAY_HALF_WIDTH_M,
+  endM = zone.lengthM ?? 0,
+  halfWidthM = ZONE_HALF_WIDTH_M,
 ): LngLat[] | undefined {
-  if ((runway.runwayPolygon?.length ?? 0) >= 3 && startM === 0 && endM === (runway.lengthM ?? 0)) {
-    return runway.runwayPolygon;
+  if ((zone.zonePolygon?.length ?? 0) >= 3 && startM === 0 && endM === (zone.lengthM ?? 0)) {
+    return zone.zonePolygon;
   }
-  if ((runway.runwayPolygon?.length ?? 0) >= 4 && runway.lengthM) {
-    const edges = runwayBoxEdges(runway);
+  if ((zone.zonePolygon?.length ?? 0) >= 4 && zone.lengthM) {
+    const edges = zoneBoxEdges(zone);
     if (edges) {
-      const startF = Math.max(0, Math.min(1, startM / runway.lengthM));
-      const endF = Math.max(0, Math.min(1, endM / runway.lengthM));
+      const startF = Math.max(0, Math.min(1, startM / zone.lengthM));
+      const endF = Math.max(0, Math.min(1, endM / zone.lengthM));
       const sideA0 = edges.start[0];
       const sideA1 = edges.end[1];
       const sideB0 = edges.start[1];
@@ -126,8 +126,8 @@ export function runwayRect(
       ];
     }
   }
-  const anchor = runwayAnchor(runway);
-  const heading = runwayHeading(runway);
+  const anchor = zoneAnchor(zone);
+  const heading = zoneHeading(zone);
   if (!anchor || heading == null) return undefined;
   const left = (heading + 270) % 360;
   const right = (heading + 90) % 360;
@@ -141,97 +141,97 @@ export function runwayRect(
   ];
 }
 
-/** A zone drawn as a runway-aligned rectangle over its station range. */
-export function zoneRect(runway: Runway, zone: Zone): LngLat[] | undefined {
-  return runwayRect(runway, zone.stationStartM ?? 0, zone.stationEndM ?? runway.lengthM ?? 0);
+/** A boundary drawn as a zone-aligned rectangle over its station range. */
+export function boundaryRect(zone: Zone, boundary: Boundary): LngLat[] | undefined {
+  return zoneSurfaceRect(zone, boundary.stationStartM ?? 0, boundary.stationEndM ?? zone.lengthM ?? 0);
 }
 
 /** Best map position for an issue: real GPS if present, else project its station. */
 export function issuePosition(
-  runway: Runway,
+  zone: Zone,
   issue: Pick<IssueCandidate, "gps" | "stationM" | "lateralOffsetM">,
 ): LngLat | undefined {
   if (issue.gps) return issue.gps;
-  const axis = runwayAxis(runway);
+  const axis = zoneAxis(zone);
   if (!axis || issue.stationM == null) return undefined;
   return stationToLngLat(axis.anchor, axis.heading, issue.stationM, issue.lateralOffsetM ?? 0);
 }
 
-/** Where a GPS point falls relative to one runway: station (m from threshold) +
+/** Where a GPS point falls relative to one zone: station (m from threshold) +
  *  signed lateral offset (m, + = right of centerline). undefined if not mappable. */
-export function projectOntoRunway(
-  runway: Runway,
+export function projectOntoZone(
+  zone: Zone,
   point: LngLat,
 ): { stationM: number; lateralOffsetM: number } | undefined {
-  const axis = runwayAxis(runway);
+  const axis = zoneAxis(zone);
   if (!axis) return undefined;
   const dist = distanceM(axis.anchor, point);
   const rel = toRad(bearingBetween(axis.anchor, point) - axis.heading);
   return { stationM: dist * Math.cos(rel), lateralOffsetM: dist * Math.sin(rel) };
 }
 
-/** Pick the runway a GPS point sits on (within length + margin of the surface),
- *  nearest centerline wins. Returns the runway id + its station/lateral offset,
- *  or undefined if the point isn't on any runway. */
-export function locateOnRunways(
-  runways: Runway[],
+/** Pick the zone a GPS point sits on (within length + margin of the surface),
+ *  nearest centerline wins. Returns the zone id + its station/lateral offset,
+ *  or undefined if the point isn't on any zone. */
+export function locateOnZones(
+  zones: Zone[],
   point: LngLat,
   marginM = 40,
-): { runwayId: string; stationM: number; lateralOffsetM: number } | undefined {
-  let best: { runwayId: string; stationM: number; lateralOffsetM: number } | undefined;
+): { zoneId: string; stationM: number; lateralOffsetM: number } | undefined {
+  let best: { zoneId: string; stationM: number; lateralOffsetM: number } | undefined;
   let bestLateral = Infinity;
-  for (const runway of runways) {
-    if (!isMappable(runway)) continue;
-    const p = projectOntoRunway(runway, point);
+  for (const zone of zones) {
+    if (!isMappable(zone)) continue;
+    const p = projectOntoZone(zone, point);
     if (!p) continue;
-    const len = runway.lengthM ?? 0;
+    const len = zone.lengthM ?? 0;
     const onAlong = p.stationM >= -marginM && p.stationM <= len + marginM;
-    const onLateral = Math.abs(p.lateralOffsetM) <= RUNWAY_HALF_WIDTH_M + marginM;
+    const onLateral = Math.abs(p.lateralOffsetM) <= ZONE_HALF_WIDTH_M + marginM;
     if (onAlong && onLateral && Math.abs(p.lateralOffsetM) < bestLateral) {
       bestLateral = Math.abs(p.lateralOffsetM);
-      best = { runwayId: runway.id, stationM: p.stationM, lateralOffsetM: p.lateralOffsetM };
+      best = { zoneId: zone.id, stationM: p.stationM, lateralOffsetM: p.lateralOffsetM };
     }
   }
   return best;
 }
 
-// ── Self-check (ponytail: `npx tsx lib/runwayGeom.ts`) ────────────────────────
+// ── Self-check (ponytail: `npx tsx lib/zoneGeom.ts`) ────────────────────────
 
 function selfCheck(): void {
   console.assert(headingFromDesignation("08 – 26") === 80, "des 08 → 80");
   console.assert(headingFromDesignation("17 – 35") === 170, "des 17 → 170");
   console.assert(headingFromDesignation("11 – 29") === 110, "des 11 → 110");
 
-  const rwy = {
-    id: "r2", airportId: "ags", name: "Runway 2", designation: "08 – 26",
+  const z = {
+    id: "r2", airportId: "ags", name: "Zone 2", designation: "08 – 26",
     length: "6,000 ft", lengthM: 1829, thresholdLat: 33.3675, thresholdLng: -81.976,
-  } as Runway;
+  } as Zone;
 
-  console.assert(isMappable(rwy), "rwy is mappable");
-  const cl = centerline(rwy)!;
+  console.assert(isMappable(z), "zone is mappable");
+  const cl = centerline(z)!;
   console.assert(cl[1].lng > cl[0].lng && cl[1].lat > cl[0].lat, "080° heads ENE");
 
-  const rect = runwayRect(rwy)!;
+  const rect = zoneSurfaceRect(z)!;
   console.assert(rect.length === 4, "rect has 4 corners");
 
-  const gps = issuePosition(rwy, { gps: { lat: 33.37, lng: -81.96 } });
+  const gps = issuePosition(z, { gps: { lat: 33.37, lng: -81.96 } });
   console.assert(gps?.lng === -81.96, "issue with gps uses gps");
-  const proj = issuePosition(rwy, { stationM: 900, lateralOffsetM: 5 });
-  console.assert(proj != null && proj.lng > rwy.thresholdLng!, "station projects forward");
+  const proj = issuePosition(z, { stationM: 900, lateralOffsetM: 5 });
+  console.assert(proj != null && proj.lng > z.thresholdLng!, "station projects forward");
 
-  const bare = { ...rwy, thresholdLat: undefined, thresholdLng: undefined } as Runway;
+  const bare = { ...z, thresholdLat: undefined, thresholdLng: undefined } as Zone;
   console.assert(!isMappable(bare) && centerline(bare) === undefined, "no anchor → not mappable");
 
-  const manual = { ...bare, runwayPolygon: rect } as Runway;
+  const manual = { ...bare, zonePolygon: rect } as Zone;
   console.assert(isMappable(manual), "manual polygon → mappable");
-  console.assert(runwayRect(manual) === rect, "manual polygon is preferred surface");
+  console.assert(zoneSurfaceRect(manual) === rect, "manual polygon is preferred surface");
 
-  console.log("runwayGeom self-check passed");
+  console.log("zoneGeom self-check passed");
 }
 
 if (
   typeof process !== "undefined" &&
-  process.argv?.[1]?.replace(/\\/g, "/").endsWith("lib/runwayGeom.ts")
+  process.argv?.[1]?.replace(/\\/g, "/").endsWith("lib/zoneGeom.ts")
 ) {
   selfCheck();
 }

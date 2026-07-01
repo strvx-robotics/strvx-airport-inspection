@@ -8,7 +8,7 @@ from app.repo.inspections import run_inspection_now
 
 @pytest.mark.asyncio
 async def test_run_now_materializes_and_is_idempotent(seed):
-    await seed.execute("INSERT INTO runways (id, airport_id, name, designation, length, created_at) VALUES "
+    await seed.execute("INSERT INTO zones (id, airport_id, name, designation, length, created_at) VALUES "
                        "('r1','ags','Runway 1','17 - 35','8,001 ft','2026-01-01'),"
                        "('r2','ags','Runway 2','08 - 26','6,000 ft','2026-01-02')")
     await db.connect()
@@ -17,9 +17,9 @@ async def test_run_now_materializes_and_is_idempotent(seed):
         day = datetime.now().strftime("%Y-%m-%d")
         assert insp1.scheduled_time == f"{day}T06:00:00.000Z"
         assert insp1.status == "not_started"
-        # one job per runway
-        jobs = await db.all("SELECT runway_id FROM inspection_jobs WHERE inspection_id = $1", insp1.id)
-        assert {j["runway_id"] for j in jobs} == {"r1", "r2"}
+        # one job per zone
+        jobs = await db.all("SELECT zone_id FROM inspection_jobs WHERE inspection_id = $1", insp1.id)
+        assert {j["zone_id"] for j in jobs} == {"r1", "r2"}
         # idempotent: second call returns the same inspection, no duplicate
         insp2 = await run_inspection_now()
         assert insp2.id == insp1.id

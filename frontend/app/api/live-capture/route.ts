@@ -6,15 +6,15 @@
 //
 // multipart/form-data:
 //   frame       — the captured JPEG (clean; the UI overlays the bbox)
-//   runwayId    — the runway being inspected this live session
-//   zoneId?     — optional zone
+//   zoneId      — the zone being inspected this live session
+//   boundaryId? — optional boundary
 //   detections  — JSON array of { category, confidence, bbox:{x,y,w,h}, severity?, modelNotes?, sizeM? }
 // header x-actor-role drives the audit actor (the worker sends "inspector").
 
 import { randomUUID } from "node:crypto";
 import { draftTicket } from "@/lib/llm";
 import { putImage } from "@/lib/storage";
-import { getRunway, getZone, ingestUpload, type UploadDetection } from "@/lib/repo";
+import { getBoundary, getZone, ingestUpload, type UploadDetection } from "@/lib/repo";
 import { actorFrom, json, route } from "@/lib/http";
 import { ISSUE_CATEGORIES, SEVERITY_VALUES, type BBox, type IssueCategory, type Severity } from "@/lib/types";
 
@@ -76,16 +76,16 @@ function sanitize(d: RawDetection): Omit<UploadDetection, "aiDraftText"> | null 
 export const POST = route(async (req) => {
   const form = await req.formData();
   const frame = form.get("frame") ?? form.get("image") ?? form.get("file");
-  const runwayId = form.get("runwayId");
   const zoneIdRaw = form.get("zoneId");
+  const boundaryIdRaw = form.get("boundaryId");
   const detectionsRaw = form.get("detections");
 
-  if (typeof runwayId !== "string" || !runwayId) throw new Error("runwayId is required");
-  const runway = await getRunway(runwayId);
-  if (!runway) throw new Error(`Runway not found: ${runwayId}`);
+  if (typeof zoneIdRaw !== "string" || !zoneIdRaw) throw new Error("zoneId is required");
+  const zone = await getZone(zoneIdRaw);
+  if (!zone) throw new Error(`Zone not found: ${zoneIdRaw}`);
 
-  const zoneId = typeof zoneIdRaw === "string" && zoneIdRaw ? zoneIdRaw : undefined;
-  const zone = zoneId ? await getZone(zoneId) : undefined;
+  const boundaryId = typeof boundaryIdRaw === "string" && boundaryIdRaw ? boundaryIdRaw : undefined;
+  const boundary = boundaryId ? await getBoundary(boundaryId) : undefined;
 
   if (!(frame instanceof File)) throw new Error("A captured frame is required");
   if (frame.size > MAX_FRAME_BYTES) throw new Error("Frame exceeds the 15 MB limit");
@@ -119,8 +119,8 @@ export const POST = route(async (req) => {
         category: d.category,
         confidence: d.confidence,
         severity: d.severity,
-        runwayDesignation: runway.designation,
-        zoneName: zone?.name,
+        zoneDesignation: zone.designation,
+        boundaryName: boundary?.name,
         sizeM: d.sizeM,
         modelNotes: d.modelNotes,
       }),
@@ -128,8 +128,8 @@ export const POST = route(async (req) => {
   );
 
   const result = await ingestUpload({
-    runwayId,
-    zoneId,
+    zoneId: zoneIdRaw,
+    boundaryId,
     fileUrl,
     sourceFile: "live-capture",
     detections,

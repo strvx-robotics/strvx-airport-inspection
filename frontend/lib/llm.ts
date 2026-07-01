@@ -16,8 +16,8 @@ export interface DraftContext {
   category: IssueCategory;
   confidence: number;
   severity?: Severity;
-  runwayDesignation?: string;
-  zoneName?: string;
+  zoneDesignation?: string;
+  boundaryName?: string;
   sizeM?: number;
   stationM?: number;
   modelNotes?: string;
@@ -26,13 +26,13 @@ export interface DraftContext {
 const CATEGORY_LABEL: Record<IssueCategory, string> = {
   fod: "Debris / FOD",
   pavement: "Pavement damage",
-  marking: "Runway marking",
+  marking: "Zone marking",
   lighting: "Lighting / signage",
 };
 
 const ACTION: Record<IssueCategory, string> = {
   fod: "Dispatch a FOD sweep and remove the object before the next operating window.",
-  pavement: "Crack-seal and inspect the surrounding surface before returning the runway to service.",
+  pavement: "Crack-seal and inspect the surrounding surface before returning the zone to service.",
   marking: "Schedule remarking of the affected segment to restore visibility.",
   lighting: "Inspect and repair or replace the affected fixture before night operations.",
 };
@@ -41,8 +41,8 @@ const pct = (c: number): string => `${Math.round(c * 100)}%`;
 
 /** Deterministic, no-network draft. Also the fallback when the LLM is unavailable. */
 export function templateDraft(ctx: DraftContext): string {
-  const where = ctx.zoneName ? ` in ${ctx.zoneName}` : "";
-  const rwy = ctx.runwayDesignation ? ` on runway ${ctx.runwayDesignation}` : "";
+  const where = ctx.boundaryName ? ` in ${ctx.boundaryName}` : "";
+  const rwy = ctx.zoneDesignation ? ` on zone ${ctx.zoneDesignation}` : "";
   const size = ctx.sizeM != null ? ` (~${ctx.sizeM} m)` : "";
   const sev = ctx.severity ? `${ctx.severity} severity` : "severity TBD";
   const detail = ctx.modelNotes ? ` ${ctx.modelNotes}` : "";
@@ -57,8 +57,8 @@ function buildPrompt(ctx: DraftContext): string {
     `Category: ${CATEGORY_LABEL[ctx.category]}`,
     `Detection confidence: ${pct(ctx.confidence)}`,
     ctx.severity ? `Model severity: ${ctx.severity}` : undefined,
-    ctx.runwayDesignation ? `Runway: ${ctx.runwayDesignation}` : undefined,
-    ctx.zoneName ? `Zone: ${ctx.zoneName}` : undefined,
+    ctx.zoneDesignation ? `Zone: ${ctx.zoneDesignation}` : undefined,
+    ctx.boundaryName ? `Boundary: ${ctx.boundaryName}` : undefined,
     ctx.sizeM != null ? `Estimated size: ${ctx.sizeM} m` : undefined,
     ctx.stationM != null ? `Station: ${ctx.stationM} m` : undefined,
     ctx.modelNotes ? `Detector notes: ${ctx.modelNotes}` : undefined,
@@ -66,7 +66,7 @@ function buildPrompt(ctx: DraftContext): string {
 
   return (
     "You are an FAA-savvy airfield maintenance assistant. Draft a concise " +
-    "maintenance ticket description (2–3 sentences) for the runway inspection " +
+    "maintenance ticket description (2–3 sentences) for the zone inspection " +
     "finding below. State what was found and where, then a clear recommended " +
     "action. Plain text only — no preamble, headings, or markdown.\n\n" +
     lines.join("\n")
@@ -91,8 +91,8 @@ export async function draftTicket(ctx: DraftContext): Promise<string> {
           category: ctx.category,
           confidence: ctx.confidence,
           severity: ctx.severity,
-          runwayDesignation: ctx.runwayDesignation,
-          zoneName: ctx.zoneName,
+          zoneDesignation: ctx.zoneDesignation,
+          boundaryName: ctx.boundaryName,
           sizeM: ctx.sizeM,
           modelNotes: ctx.modelNotes,
           n: 3,

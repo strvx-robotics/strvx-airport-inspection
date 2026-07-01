@@ -3,17 +3,29 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Flag, Printer, ScanSearch, X } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Flag,
+  MapPin,
+  Printer,
+  ScanSearch,
+  Wrench,
+  X,
+} from "lucide-react";
 import Badge from "@/components/Badge";
 import DiffView from "@/components/DiffView";
 import RejectModal from "@/components/RejectModal";
-import RunwayImage from "@/components/RunwayImage";
+import ZoneImage from "@/components/ZoneImage";
 import Select, { type SelectOption } from "@/components/Select";
 import { useIssueDetail, useStore } from "@/lib/store";
 import { buildWorkOrder } from "@/lib/workOrder";
 import { CATEGORY, DECISION, SEVERITIES, SEVERITY, confidenceBand, pct } from "@/lib/ui";
 import { ISSUE_CATEGORIES } from "@/lib/types";
-import type { IssueCandidate, IssueCategory, RejectionReason, Runway, Severity, Ticket } from "@/lib/types";
+import type { IssueCandidate, IssueCategory, RejectionReason, Zone, Severity, Ticket } from "@/lib/types";
 import { BAR, BTN, BTN_DANGER, BTN_PRIMARY, CARD, DOT, EYEBROW, H2, INPUT, LINK, MUTED } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
@@ -33,8 +45,8 @@ function previewTicket(issue: IssueCandidate, category: IssueCategory, severity:
   return {
     id: "PENDING",
     issueId: issue.id,
-    runwayId: issue.runwayId,
-    zone: issue.zone ?? "",
+    zoneId: issue.zoneId,
+    boundary: issue.boundary ?? "",
     category,
     severity,
     description: draft,
@@ -50,7 +62,7 @@ export default function IssueDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { issue, loading } = useIssueDetail(id);
-  const { role, approveIssue, rejectIssue, manualReview, editIssue, runways } = useStore();
+  const { role, approveIssue, rejectIssue, manualReview, editIssue, zones } = useStore();
 
   const [category, setCategory] = useState<IssueCategory>("fod");
   const [severity, setSeverity] = useState<Severity>("medium");
@@ -85,12 +97,12 @@ export default function IssueDetail() {
     );
   }
 
-  const runway = runways[issue.runwayId];
+  const zone = zones[issue.zoneId];
   const band = confidenceBand(issue.confidence);
   const decided = issue.status !== "pending";
   const canReview = role === "inspector" || role === "admin";
   const edited = draft.trim() !== (issue.aiDraftText ?? "").trim();
-  const woFields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, runway);
+  const woFields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, zone);
 
   const persist = (patch: { category?: IssueCategory; severity?: Severity; draft?: string; notes?: string }) => {
     void editIssue(issue.id, patch).catch(() => undefined);
@@ -113,8 +125,8 @@ export default function IssueDetail() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
-      <Link href={`/runway/${issue.runwayId}`} className={cn("h-8 w-fit px-2.5 text-[12px]", BTN)}>
-        <ChevronLeft size={14} strokeWidth={2} /> {runway?.name ?? "Runway"}
+      <Link href={`/zone/${issue.zoneId}`} className={cn("h-8 w-fit px-2.5 text-[12px]", BTN)}>
+        <ChevronLeft size={14} strokeWidth={2} /> {zone?.name ?? "Zone"}
       </Link>
 
       {/* header box — matches the dashboard command strip */}
@@ -126,7 +138,7 @@ export default function IssueDetail() {
               <ScanSearch size={17} strokeWidth={2} /> {CATEGORY[issue.category]}
             </h2>
             <p className="mt-1 font-mono text-[12px] text-[#6b7176]">
-              {[runway?.name, issue.zone, issue.id.toUpperCase()].filter(Boolean).join(" · ")}
+              {[zone?.name, issue.boundary, issue.id.toUpperCase()].filter(Boolean).join(" · ")}
             </p>
           </div>
           <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
@@ -134,7 +146,7 @@ export default function IssueDetail() {
       </section>
 
       {decided ? (
-        <DecidedView issue={issue} runway={runway} ticketId={issue.ticketId} />
+        <DecidedView issue={issue} zone={zone} ticketId={issue.ticketId} />
       ) : !canReview ? (
         <p className={cn("rounded-md border-[#dbdfe3] bg-[#f3f5f7] px-4 py-3 text-center text-[13px] text-[#5b6166]", CARD)}>
           Switch to the Inspector role to review this candidate.
@@ -152,7 +164,7 @@ export default function IssueDetail() {
           <div className="p-4">
             {step === 1 ? (
               <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-                <RunwayImage
+                <ZoneImage
                   bbox={issue.bbox}
                   label={CATEGORY[category]}
                   src={issue.imageUrl}
@@ -260,7 +272,7 @@ export default function IssueDetail() {
                 </div>
               </div>
             ) : (
-              <WorkOrderSheet issue={issue} runway={runway} category={category} severity={severity} draft={draft} notes={notes} />
+              <WorkOrderSheet issue={issue} zone={zone} category={category} severity={severity} draft={draft} notes={notes} />
             )}
           </div>
 
@@ -338,20 +350,20 @@ function StepDots({ step }: { step: Step }) {
 /** Print-styled work-order sheet — what maintenance receives. */
 function WorkOrderSheet({
   issue,
-  runway,
+  zone,
   category,
   severity,
   draft,
   notes,
 }: {
   issue: IssueCandidate;
-  runway?: Runway;
+  zone?: Zone;
   category: IssueCategory;
   severity: Severity;
   draft: string;
   notes: string;
 }) {
-  const fields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, runway);
+  const fields = buildWorkOrder(previewTicket(issue, category, severity, draft), { ...issue, inspectorNotes: notes }, zone);
   const sev = SEVERITY[severity];
 
   return (
@@ -374,7 +386,7 @@ function WorkOrderSheet({
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
         <div>
           <h2 className="text-[20px] font-semibold text-[#181b1e]">{CATEGORY[category]}</h2>
-          <p className="mt-1 text-[13px] text-[#5b6166]">{[runway?.name, issue.zone].filter(Boolean).join(" · ") || "—"}</p>
+          <p className="mt-1 text-[13px] text-[#5b6166]">{[zone?.name, issue.boundary].filter(Boolean).join(" · ") || "—"}</p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-[#181b1e] px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wide text-[#181b1e]">
           <span className={cn("h-2 w-2 rounded-full", DOT[severity])} /> {sev.label} severity
@@ -405,22 +417,92 @@ function WorkOrderSheet({
 }
 
 /** Read-only view once a candidate is decided. */
-function DecidedView({ issue, runway, ticketId }: { issue: IssueCandidate; runway?: Runway; ticketId?: string }) {
+function DecidedView({ issue, zone, ticketId }: { issue: IssueCandidate; zone?: Zone; ticketId?: string }) {
   if (issue.status === "approved") {
+    const ticket: Ticket = {
+      ...previewTicket(issue, issue.category, issue.severity, issue.draft),
+      id: ticketId ?? issue.ticketId ?? "PENDING",
+      status: "sent",
+    };
+    const fields = buildWorkOrder(ticket, issue, zone);
+    const field = (label: string) => fields.find((f) => f.label === label)?.value ?? "—";
+
     return (
       <div className="space-y-4">
-        <WorkOrderSheet
-          issue={issue}
-          runway={runway}
-          category={issue.category}
-          severity={issue.severity}
-          draft={issue.draft}
-          notes={issue.inspectorNotes}
-        />
+        <section className={cn("overflow-hidden rounded-md", CARD)}>
+          <div className={cn("flex flex-wrap items-start justify-between gap-3 px-4 py-3", BAR)}>
+            <div className="min-w-0">
+              <p className={EYEBROW}>Approved maintenance package</p>
+              <h3 className="mt-1 flex items-center gap-2 text-[18px] font-semibold text-[#181b1e]">
+                <Wrench size={17} strokeWidth={2} /> {ticket.id}
+              </h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={SEVERITY[issue.severity].tone}>{SEVERITY[issue.severity].label} severity</Badge>
+              <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
+            </div>
+          </div>
+          <div className="grid gap-px bg-[#dbdfe3] md:grid-cols-4">
+            <SummaryMetric label="Priority" value={field("Priority")} />
+            <SummaryMetric label="Due" value={field("Due")} />
+            <SummaryMetric label="Confidence" value={pct(issue.confidence)} />
+            <SummaryMetric label="Assigned to" value={field("Assigned to")} />
+          </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+          <section className={cn("overflow-hidden rounded-md", CARD)}>
+            <div className={cn("flex items-center gap-2 px-4 py-2.5", BAR)}>
+              <ScanSearch size={15} strokeWidth={2} className="text-[#5b6166]" />
+              <h3 className="text-[13px] font-semibold text-[#181b1e]">Detection evidence</h3>
+            </div>
+            <div className="space-y-3 p-4">
+              <ZoneImage
+                bbox={issue.bbox}
+                label={CATEGORY[issue.category]}
+                src={issue.imageUrl}
+                fit="contain"
+                heightClass="h-[260px]"
+              />
+              <div className="grid gap-px overflow-hidden rounded-md border border-[#dbdfe3] bg-[#dbdfe3]">
+                <DetailCell label="Location" value={field("Location")} icon={<MapPin size={13} strokeWidth={2} />} />
+                <DetailCell label="Hazard" value={field("Hazard")} />
+                <DetailCell label="Operational status" value={field("Operational status")} />
+              </div>
+            </div>
+          </section>
+
+          <section className={cn("overflow-hidden rounded-md", CARD)}>
+            <div className={cn("flex items-center justify-between gap-3 px-4 py-2.5", BAR)}>
+              <div className="flex items-center gap-2">
+                <ClipboardList size={15} strokeWidth={2} className="text-[#5b6166]" />
+                <h3 className="text-[13px] font-semibold text-[#181b1e]">Maintenance work order</h3>
+              </div>
+              <button onClick={() => window.print()} className={cn("h-7 px-2.5 text-[11px]", BTN)}>
+                <Printer size={13} strokeWidth={2} /> Print
+              </button>
+            </div>
+            <div className="space-y-4 p-4">
+              <div className="rounded-md border border-[#dbdfe3] bg-[#f3f5f7] px-4 py-3">
+                <p className={EYEBROW}>Description</p>
+                <p className="mt-2 text-[14px] leading-relaxed text-[#181b1e]">{issue.draft || "—"}</p>
+              </div>
+              <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[#dbdfe3] bg-[#dbdfe3] sm:grid-cols-2">
+                <DetailCell label="Defect type" value={field("Defect type")} />
+                <DetailCell label="Asset" value={field("Asset")} />
+                <DetailCell label="Work required" value={field("Work required")} />
+                <DetailCell label="Closure criteria" value={field("Closure criteria")} />
+                <DetailCell label="Related items" value={field("Related items")} />
+                <DetailCell label="Logged" value={field("Logged")} />
+              </dl>
+            </div>
+          </section>
+        </div>
+
         {ticketId && (
           <Link
             href={`/ticket/${ticketId}`}
-            className={cn("mx-auto flex h-10 max-w-[720px] items-center justify-center px-4 text-[13px]", BTN)}
+            className={cn("ml-auto flex h-10 w-fit items-center justify-center px-4 text-[13px]", BTN)}
           >
             View dispatched ticket {ticketId} <ChevronRight size={14} strokeWidth={2} />
           </Link>
@@ -435,6 +517,35 @@ function DecidedView({ issue, runway, ticketId }: { issue: IssueCandidate; runwa
         This candidate was {DECISION[issue.status].label.toLowerCase()} — no ticket was dispatched.
       </p>
     </section>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-[#fbfcfd] px-4 py-3">
+      <p className={EYEBROW}>{label}</p>
+      <p className="mt-1 text-[13px] font-semibold leading-snug text-[#181b1e]">{value}</p>
+    </div>
+  );
+}
+
+function DetailCell({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="bg-[#fbfcfd] px-3 py-2.5">
+      <dt className={cn("flex items-center gap-1.5", EYEBROW)}>
+        {icon}
+        {label}
+      </dt>
+      <dd className="mt-1 text-[13px] leading-relaxed text-[#3f4448]">{value}</dd>
+    </div>
   );
 }
 

@@ -4,20 +4,19 @@ from app.errors import AppError
 from app.models import Ticket
 from app.repo.helpers import actor_name, actor_role, gid, now
 
-# Mirrors lib/repo.ts TICKET_SELECT (joins zone name for the zone fallback).
+# Mirrors lib/repo.ts TICKET_SELECT (joins boundary name for the boundary fallback).
 _TICKET_SELECT = (
-    "SELECT t.*, z.name AS zone_name FROM tickets t LEFT JOIN zones z ON z.id = t.zone_id"
+    "SELECT t.*, b.name AS boundary_name FROM tickets t LEFT JOIN boundaries b ON b.id = t.boundary_id"
 )
 
 
 def _to_ticket(r) -> Ticket:
-    # Mirrors lib/repo.ts toTicket exactly.
     return Ticket(
         id=r["id"],
         issue_id=r["issue_id"],
-        runway_id=r["runway_id"],
         zone_id=r["zone_id"],
-        zone=r["zone"] if r["zone"] is not None else (r["zone_name"] or ""),
+        boundary_id=r["boundary_id"],
+        boundary=r["boundary"] if r["boundary"] is not None else (r["boundary_name"] or ""),
         category=r["category"],
         severity=r["severity"],
         description=r["description"],
@@ -48,14 +47,14 @@ async def get_ticket(id: str) -> Ticket | None:
 
 async def get_ticket_detail(id: str):
     from app.repo.issues import get_issue
-    from app.repo.runways import get_runway
+    from app.repo.zones import get_zone
     ticket = await get_ticket(id)
     if ticket is None:
         return None
     return {
         "ticket": ticket,
         "issue": await get_issue(ticket.issue_id),
-        "runway": await get_runway(ticket.runway_id),
+        "zone": await get_zone(ticket.zone_id),
     }
 
 
@@ -72,16 +71,16 @@ async def list_tickets_by_inspection(inspection_id: str) -> list[Ticket]:
     return [_to_ticket(r) for r in rows]
 
 
-async def list_tickets_by_runway(runway_id: str, inspection_id: str | None = None) -> list[Ticket]:
+async def list_tickets_by_zone(zone_id: str, inspection_id: str | None = None) -> list[Ticket]:
     if inspection_id:
         rows = await db.all(
             f"{_TICKET_SELECT} JOIN issue_candidates ic ON ic.id = t.issue_id "
-            "WHERE t.runway_id = $1 AND ic.inspection_id = $2 ORDER BY t.created_at",
-            runway_id, inspection_id,
+            "WHERE t.zone_id = $1 AND ic.inspection_id = $2 ORDER BY t.created_at",
+            zone_id, inspection_id,
         )
     else:
         rows = await db.all(
-            f"{_TICKET_SELECT} WHERE t.runway_id = $1 ORDER BY t.created_at", runway_id,
+            f"{_TICKET_SELECT} WHERE t.zone_id = $1 ORDER BY t.created_at", zone_id,
         )
     return [_to_ticket(r) for r in rows]
 
@@ -124,7 +123,6 @@ async def close_ticket(id: str, actor: Actor | None) -> Ticket:
 
 
 async def start_ticket(id: str, actor: Actor | None) -> Ticket:
-    """Maintenance begins work: sent -> in_progress."""
     ticket = await get_ticket(id)
     if ticket is None:
         raise AppError(f"Ticket not found: {id}")
@@ -139,7 +137,6 @@ async def start_ticket(id: str, actor: Actor | None) -> Ticket:
 
 
 async def reinspect_ticket(id: str, notes: str | None, actor: Actor | None) -> Ticket:
-    """Inspector verifies the repair: repaired -> reinspected (ready to close)."""
     ticket = await get_ticket(id)
     if ticket is None:
         raise AppError(f"Ticket not found: {id}")
@@ -160,7 +157,6 @@ async def reinspect_ticket(id: str, notes: str | None, actor: Actor | None) -> T
 
 
 async def assign_ticket(id: str, assigned_to: str | None, actor: Actor | None) -> Ticket:
-    """Assign (or reassign) the ticket to a maintenance owner."""
     ticket = await get_ticket(id)
     if ticket is None:
         raise AppError(f"Ticket not found: {id}")
@@ -171,6 +167,22 @@ async def assign_ticket(id: str, assigned_to: str | None, actor: Actor | None) -
         await db.run("UPDATE tickets SET assigned_to = $1 WHERE id = $2", target, id)
         await _append_ticket_history(
             id, "assign", ticket.status, ticket.status, f"Assigned to {target}", actor,
+        )
+    result = await get_ticket(id)
+    assert result is not None
+    return result
+
+
+async def update_ticket_notes(id: str, notes: str, actor: Actor | None) -> Ticket:
+    ticket = await get_ticket(id)
+    if ticket is None:
+        raise AppError(f"Ticket not found: {id}")
+    if ticket.status == "closed":
+        raise AppError("Cannot edit notes on a closed ticket")
+    async with db.tx():
+        await db.run("UPDATE tickets SET maintenance_notes = $1 WHERE id = $2", notes, id)
+        await _append_ticket_history(
+            id, "note", ticket.status, ticket.status, "Updated notes", actor,
         )
     result = await get_ticket(id)
     assert result is not None

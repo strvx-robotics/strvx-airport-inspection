@@ -27,7 +27,7 @@ _LOCK = threading.Lock()
 CATEGORY_LABEL = {
     "fod": "Debris / FOD",
     "pavement": "Pavement damage",
-    "marking": "Runway marking",
+    "marking": "Zone marking",
     "lighting": "Lighting / signage",
 }
 ACTION = {
@@ -118,7 +118,7 @@ def _generate(b: DraftReq, strategy: str, n: int) -> list[str]:
         instr, temp = STRATEGY_PROMPT.get(strategy, STRATEGY_PROMPT["detailed"])
         prompt = (
             "You are an FAA-savvy airfield maintenance assistant. Draft a maintenance "
-            f"ticket description for this runway inspection finding. {instr} "
+            f"ticket description for this zone inspection finding. {instr} "
             "Plain text only, no markdown or preamble.\n\n"
             + _context(b)
             + (f"\nDetector notes: {b.modelNotes}" if b.modelNotes else "")

@@ -5,15 +5,15 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, Plane, CheckCircle2, Map as MapIcon } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
-import RunwayImage from "@/components/RunwayImage";
-import { useRunwayDetail } from "@/lib/store";
+import ZoneImage from "@/components/ZoneImage";
+import { useZoneDetail } from "@/lib/store";
 import type { IssueCandidate } from "@/lib/types";
 import { CATEGORY, DECISION, confidenceBand, pct } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 import { CARD, BAR, BTN, H2, MUTED, LINK } from "@/lib/vstyle";
 
 // MapLibre touches window/WebGL at construction, so load it client-only.
-const RunwayMap = dynamic(() => import("@/components/map/RunwayMap"), {
+const ZoneMap = dynamic(() => import("@/components/map/ZoneMap"), {
   ssr: false,
   loading: () => <div className="h-[420px] w-full animate-pulse rounded-md bg-[#f3f5f7]" />,
 });
@@ -29,7 +29,7 @@ const columns: DataTableColumn<IssueCandidate>[] = [
     cellRenderer: ({ data }: { data?: IssueCandidate }) =>
       data ? (
         <div className="w-16">
-          <RunwayImage bbox={data.bbox} src={data.imageUrl} heightClass="h-12" />
+          <ZoneImage bbox={data.bbox} src={data.imageUrl} heightClass="h-12" />
         </div>
       ) : null,
     width: 88,
@@ -50,7 +50,7 @@ const columns: DataTableColumn<IssueCandidate>[] = [
           >
             {value}
           </Link>
-          <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>{data.zone}</p>
+          <p className={cn("mt-0.5 truncate font-mono text-[11px] leading-tight", MUTED)}>{data.boundary}</p>
         </>
       ) : null,
     flex: 1,
@@ -88,12 +88,12 @@ const columns: DataTableColumn<IssueCandidate>[] = [
   },
 ];
 
-export default function RunwayDetail() {
+export default function ZoneDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { runway, issues, loading } = useRunwayDetail(id);
+  const { zone, issues, loading } = useZoneDetail(id);
 
-  if (!runway) return loading ? <Loading /> : <NotFound />;
+  if (!zone) return loading ? <Loading /> : <NotFound />;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
@@ -103,7 +103,7 @@ export default function RunwayDetail() {
 
       <header className="mt-5">
         <h1 className={cn("flex items-center gap-2", H2)}>
-          <Plane size={17} strokeWidth={2} className="text-[#5b6166]" /> {runway.name}
+          <Plane size={17} strokeWidth={2} className="text-[#5b6166]" /> {zone.name}
         </h1>
       </header>
 
@@ -111,12 +111,12 @@ export default function RunwayDetail() {
       <section className={cn("mt-6 overflow-hidden rounded-md", CARD)}>
         <div className={cn("flex items-center justify-between px-4 py-3", BAR)}>
           <h3 className="flex items-center gap-2 text-[13px] font-semibold text-[#181b1e]">
-            <MapIcon size={14} strokeWidth={2} /> Runway reference
+            <MapIcon size={14} strokeWidth={2} /> Zone reference
           </h3>
           <p className={cn("text-[12px]", MUTED)}>{issues.length} issue{issues.length === 1 ? "" : "s"}</p>
         </div>
         <div className="p-3">
-          <RunwayMap runway={runway} />
+          <ZoneMap zone={zone} />
         </div>
       </section>
 
@@ -130,7 +130,7 @@ export default function RunwayDetail() {
           <CheckCircle2 size={22} strokeWidth={1.6} className="text-[#6b7176]" />
           <p className="text-[13px] font-medium text-[#181b1e]">No issues found</p>
           <p className={cn("text-[12px]", MUTED)}>
-            The inspection pass for {runway.name} flagged no candidates.
+            The inspection pass for {zone.name} flagged no candidates.
           </p>
         </div>
       ) : (
@@ -158,7 +158,7 @@ export default function RunwayDetail() {
 function Loading() {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
-      <p className={cn("font-mono text-[12px]", MUTED)}>Loading runway…</p>
+      <p className={cn("font-mono text-[12px]", MUTED)}>Loading zone…</p>
     </div>
   );
 }
@@ -166,7 +166,7 @@ function Loading() {
 function NotFound() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-3 px-6 py-6">
-      <p className="text-[13px] text-[#181b1e]">Runway not found.</p>
+      <p className="text-[13px] text-[#181b1e]">Zone not found.</p>
       <Link href="/" className={cn("inline-flex items-center gap-1", LINK)}>
         <ChevronLeft size={14} strokeWidth={2} /> Back to overview
       </Link>

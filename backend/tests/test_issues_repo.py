@@ -3,14 +3,14 @@ import pytest
 from app import db
 from app.deps import Actor
 from app.errors import AppError
-from app.repo import runways
 from app.repo import issues as issues_repo
+from app.repo import zones
 
 
-async def seed_issue(conn, *, id="ic1", status="pending", zone_id=None, image_id=None,
+async def seed_issue(conn, *, id="ic1", status="pending", boundary_id=None, image_id=None,
                      draft="Repair the spall.", ai="Repair spall in pavement."):
     await conn.execute(
-        "INSERT INTO runways (id, airport_id, name, designation, length, created_at) "
+        "INSERT INTO zones (id, airport_id, name, designation, length, created_at) "
         "VALUES ('r1','ags','Runway 1','17 - 35','8,001 ft','2026-06-22T06:30:00.000Z') ON CONFLICT DO NOTHING"
     )
     await conn.execute(
@@ -20,11 +20,11 @@ async def seed_issue(conn, *, id="ic1", status="pending", zone_id=None, image_id
     )
     await conn.execute(
         "INSERT INTO issue_candidates "
-        "(id, inspection_id, runway_id, zone_id, image_id, issue_type, confidence, confidence_band, "
+        "(id, inspection_id, zone_id, boundary_id, image_id, issue_type, confidence, confidence_band, "
         " severity, severity_model, status, bbox_json, ai_draft_text, draft, inspector_notes, created_at) "
         "VALUES ($1,'insp1','r1',$2,$3,'pavement',0.9,'high','high','high',$4,"
         "'{\"x\":10,\"y\":20,\"w\":5,\"h\":5}',$5,$6,'',$7)",
-        id, zone_id, image_id, status, ai, draft, "2026-06-22T06:30:00.000Z",
+        id, boundary_id, image_id, status, ai, draft, "2026-06-22T06:30:00.000Z",
     )
 
 
@@ -37,14 +37,15 @@ async def test_get_issue_parity(seed):
         assert i is not None
         from app.serialize import dump
         d = dump(i)
-        # camelCase, bbox nested, null fields (zoneId/imageId/gps/...) omitted.
+        # camelCase, bbox nested, null fields (boundaryId/imageId/gps/...) omitted.
         assert d["id"] == "ic1"
         assert d["category"] == "pavement"
         assert d["confidenceBand"] == "high"
         assert d["bbox"] == {"x": 10.0, "y": 20.0, "w": 5.0, "h": 5.0}
         assert d["aiDraftText"] == "Repair spall in pavement."
         assert d["draft"] == "Repair the spall."
-        assert "zoneId" not in d and "gps" not in d and "ticketId" not in d
+        assert d["zoneId"] == "r1"
+        assert "boundaryId" not in d and "gps" not in d and "ticketId" not in d
         assert d["inspectorNotes"] == ""
     finally:
         await db.disconnect()
@@ -93,16 +94,16 @@ async def test_approve_missing_raises(seed):
 
 
 @pytest.mark.asyncio
-async def test_get_runway(seed):
+async def test_get_zone(seed):
     await seed.execute(
-        "INSERT INTO runways (id, airport_id, name, designation, length, created_at) "
+        "INSERT INTO zones (id, airport_id, name, designation, length, created_at) "
         "VALUES ('r1','ags','Runway 1','17 - 35','8,001 ft','2026-06-22T06:30:00.000Z')"
     )
     await db.connect()
     try:
-        rw = await runways.get_runway("r1")
-        assert rw is not None and rw.name == "Runway 1" and rw.designation == "17 - 35"
-        assert rw.length == "8,001 ft"
+        z = await zones.get_zone("r1")
+        assert z is not None and z.name == "Runway 1" and z.designation == "17 - 35"
+        assert z.length == "8,001 ft"
     finally:
         await db.disconnect()
 

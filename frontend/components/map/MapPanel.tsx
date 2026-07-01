@@ -34,15 +34,19 @@ export function MapPanel({
         "overflow-hidden rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg",
         fill && "flex min-h-0 flex-col",
         className,
+        collapsed && "w-auto max-h-none",
       )}
     >
       <button
         onClick={onToggle}
-        className="flex w-full shrink-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[#eef1f4]"
+        className={cn(
+          "flex w-full shrink-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[#eef1f4]",
+          collapsed && "w-auto gap-1.5 px-2.5",
+        )}
         aria-expanded={!collapsed}
       >
         <Icon size={13} strokeWidth={2} className="text-[#181b1e]" />
-        <span className="label flex-1 text-[9px] text-[#3f4448]">{title}</span>
+        <span className={cn("label text-[9px] text-[#3f4448]", !collapsed && "flex-1")}>{title}</span>
         <ChevronDown
           size={13}
           strokeWidth={2}

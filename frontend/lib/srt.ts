@@ -8,7 +8,7 @@
 // by the block's start time (seconds into the video).
 //
 // NOTE: the original Mavic Mini generally does NOT emit GPS here — callers must
-// handle an empty result by falling back to a manual runway selection.
+// handle an empty result by falling back to a manual zone selection.
 
 export interface GpsSample {
   /** Seconds from the start of the video. */

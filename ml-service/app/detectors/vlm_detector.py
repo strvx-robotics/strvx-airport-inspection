@@ -28,8 +28,8 @@ _VALID = {"marking", "lighting"}
 _SEV = {"low", "medium", "high", "critical"}
 
 _PROMPT = (
-    "You are an FAA-savvy airfield inspector reviewing one frame from a runway "
-    "drone pass. Inspect ONLY for two issue types:\n"
+    "You are an FAA-savvy airfield inspector reviewing one frame from a zone "
+    "inspection drone pass. Inspect ONLY for two issue types:\n"
     "  - marking: faded, worn, obscured, or missing runway paint/markings "
     "(centerline, threshold bars, runway numbers, edge lines).\n"
     "  - lighting: damaged, missing, unlit, misaligned, or obstructed runway "
@@ -145,7 +145,7 @@ class VlmDetector:
         h = num(b.get("h"), 1, 100 - y, 50)
         sev = it.get("severity") if it.get("severity") in _SEV else "medium"
         note = str(it.get("note") or "").strip()
-        phrase = "Runway marking degradation" if it["category"] == "marking" else "Lighting / signage anomaly"
+        phrase = "Zone marking degradation" if it["category"] == "marking" else "Lighting / signage anomaly"
         return Detection(
             category=it["category"],
             confidence=round(conf, 2),

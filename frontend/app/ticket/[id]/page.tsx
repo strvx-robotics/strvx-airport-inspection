@@ -11,7 +11,7 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import Badge from "@/components/Badge";
-import RunwayImage from "@/components/RunwayImage";
+import ZoneImage from "@/components/ZoneImage";
 import { useStore, useTicketDetail } from "@/lib/store";
 import { buildWorkOrder } from "@/lib/workOrder";
 import { CATEGORY, SEVERITY, TICKET_STATUS } from "@/lib/ui";
@@ -20,18 +20,15 @@ import { CARD, BAR, INPUT, BTN, BTN_PRIMARY, EYEBROW, H2, MUTED, LINK, DOT } fro
 
 export default function TicketPage() {
   const { id } = useParams<{ id: string }>();
-  const { ticket, issue, runway, loading } = useTicketDetail(id);
-  const { role, repairTicket, closeTicket, startTicket, reinspectTicket, assignTicket } =
-    useStore();
+  const { ticket, issue, zone, loading } = useTicketDetail(id);
+  const { role, repairTicket, closeTicket, startTicket, reinspectTicket } = useStore();
   const [notes, setNotesLocal] = useState("");
-  const [assignTo, setAssignTo] = useState("");
   const [synced, setSynced] = useState(false);
 
-  // Seed the repair-notes + assignment boxes from the ticket once it loads.
+  // Seed the repair notes from the ticket once it loads.
   useEffect(() => {
     if (ticket && !synced) {
       setNotesLocal(ticket.maintenanceNotes ?? "");
-      setAssignTo(ticket.assignedTo ?? "");
       setSynced(true);
     }
   }, [ticket, synced]);
@@ -58,12 +55,12 @@ export default function TicketPage() {
   const canMaintain = role === "maintenance" || role === "admin";
   const canInspect = role === "inspector" || role === "admin";
   const isOpen = ticket.status !== "closed";
-  const workOrder = buildWorkOrder(ticket, issue, runway);
+  const workOrder = buildWorkOrder(ticket, issue, zone);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
-      <Link href={`/runway/${ticket.runwayId}`} className={cn("h-8 w-fit px-2.5 text-[12px]", BTN)}>
-        <ChevronLeft size={14} strokeWidth={2} /> {runway?.name ?? "Runway"}
+      <Link href={`/zone/${ticket.zoneId}`} className={cn("h-8 w-fit px-2.5 text-[12px]", BTN)}>
+        <ChevronLeft size={14} strokeWidth={2} /> {zone?.name ?? "Zone"}
       </Link>
 
       {/* header box — matches the issue review / dashboard command strip */}
@@ -75,7 +72,7 @@ export default function TicketPage() {
               <Wrench size={17} strokeWidth={2} /> <span className="font-mono">{ticket.id}</span>
             </h2>
             <p className={cn("mt-1 flex flex-wrap items-center gap-2 text-[13px]", MUTED)}>
-              <span>{[CATEGORY[ticket.category], runway?.name, ticket.zone].filter(Boolean).join(" · ")}</span>
+              <span>{[CATEGORY[ticket.category], zone?.name, ticket.boundary].filter(Boolean).join(" · ")}</span>
               <span className="inline-flex items-center gap-1.5">
                 <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[ticket.severity])} />
                 <Badge tone={severity.tone}>{severity.label}</Badge>
@@ -115,7 +112,7 @@ export default function TicketPage() {
               </h3>
             </div>
             <div className="p-3">
-              <RunwayImage bbox={issue.bbox} label={CATEGORY[ticket.category]} src={issue.imageUrl} />
+              <ZoneImage bbox={issue.bbox} label={CATEGORY[ticket.category]} src={issue.imageUrl} />
             </div>
           </section>
         )}
@@ -136,33 +133,11 @@ export default function TicketPage() {
               value={notes}
               disabled={!isOpen || !canMaintain}
               onChange={(e) => setNotesLocal(e.target.value)}
-              rows={3}
+              rows={6}
               placeholder="Maintenance notes…"
-              className={cn("w-full resize-none px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50", INPUT)}
+              className={cn("min-h-[7.25rem] w-full resize-none px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50", INPUT)}
             />
           </div>
-
-          {/* assignment — maintenance owner */}
-          {isOpen && canMaintain && (
-            <div className="space-y-1.5">
-              <label className={EYEBROW}>Assigned to</label>
-              <div className="flex gap-2">
-                <input
-                  value={assignTo}
-                  onChange={(e) => setAssignTo(e.target.value)}
-                  placeholder="Maintenance owner…"
-                  className={cn("h-9 flex-1 px-3 text-[13px]", INPUT)}
-                />
-                <button
-                  onClick={() => void assignTicket(ticket.id, assignTo).catch(() => undefined)}
-                  disabled={!assignTo.trim() || assignTo.trim() === (ticket.assignedTo ?? "")}
-                  className={cn("h-9 px-3 text-[12px] disabled:cursor-not-allowed disabled:opacity-50", BTN)}
-                >
-                  Assign
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* action — pinned to the bottom so it lines up with the Evidence box.
               Lifecycle: sent → in_progress → repaired → reinspected → closed.

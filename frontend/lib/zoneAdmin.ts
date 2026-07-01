@@ -1,20 +1,27 @@
-import type { LngLat, RunwayMapStatus } from "./types";
+import type { LngLat, ZoneMapStatus } from "./types";
 
-export const MAP_STATUS_LABEL: Record<RunwayMapStatus, string> = {
+export const MAP_STATUS_LABEL: Record<ZoneMapStatus, string> = {
   draft: "Draft map",
   active: "Active map",
   retired: "Retired map",
   needs_review: "Needs review",
 };
 
-export function mapStatusTone(status: RunwayMapStatus | undefined, mapped: boolean): "green" | "amber" | "gray" {
+export function mapStatusTone(status: ZoneMapStatus | undefined, mapped: boolean): "green" | "amber" | "gray" {
   if (!mapped) return "gray";
   if (status === "active") return "green";
   if (status === "needs_review") return "amber";
   return "gray";
 }
 
-export function parseRunwayPolygon(raw: string): LngLat[] | undefined {
+/** Strip to digits, then render as a comma-grouped length in feet (e.g. "8,001 ft"). */
+export function formatLengthFt(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  return `${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} ft`;
+}
+
+export function parseZonePolygon(raw: string): LngLat[] | undefined {
   const text = raw.trim();
   if (!text) return undefined;
   try {

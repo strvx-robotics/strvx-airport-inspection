@@ -45,7 +45,7 @@ npm run dev
 - `/ticket/[id]` - maintenance work order, repair, and closeout.
 - `/upload` - manual image upload and zone tag.
 - `/live` - HLS drone feed plus live detection overlay.
-- `/map` - satellite map with issue review panels, keep-out zones, and inspection zone drawing.
+- `/map` - satellite map with issue markers + review panels, no-drone zones, and inspection zone drawing.
 - `/admin` - airport, runway, zone, schedule, user, and setting setup.
 - `/logs` - inspection and ticket logs.
 
@@ -99,18 +99,24 @@ are drawn on the satellite map — not entered as coordinates in admin. See § M
 
 ## Map Policy
 
-**Do not draw arbitrary markings on the map.** Issue pins, runway boxes, inferred
-geometry, user-dropped markers, and ad-hoc GeoJSON overlays remain forbidden.
+**Approved map overlays only.** The `/map` view shows **satellite imagery** plus
+three approved overlays: issue markers, no-drone zones, and inspection zones.
+Runway boxes, inferred geometry, user-dropped markers, and ad-hoc GeoJSON overlays
+remain forbidden.
 
-The `/map` view shows **satellite imagery** plus two approved polygon types only.
-Issue review still happens primarily in list/table/detail screens.
+Runway threshold anchors may be used **only** to center the camera. Stored
+`runwayPolygon` data remains a backend operational field and is **not** rendered.
 
-Runway threshold anchors may be used **only** to center or recenter the camera.
-Stored `runwayPolygon` data remains a backend operational field and is **not**
-rendered on the map.
+**Issue markers** (severity-colored dots): read-only pins at each issue's best
+position — real GPS when present, otherwise projected from its runway station
+(`issuePosition`). Click a marker to open the issue detail panel. Visible to all
+roles (inspectors review, maintenance locates the work). Markers respect the
+active severity / status / category / review-queue filters; full review still
+happens in the list and detail screens.
 
-**Keep-out zones** (red): inspectors plot them on the map. Station ranges along
-the runway are derived from the plotted shape — never typed manually.
+**No-drone zones** (red): inspectors plot them on the map; areas where the drone
+must not fly. Station ranges along the runway are derived from the plotted shape —
+never typed manually. (Persisted as `keep_out_zones` in the backend.)
 
 **Inspection zones** (blue): admins plot them on the map from the runway admin
 page or the map draw tool. Each zone is associated with a runway; boundaries are

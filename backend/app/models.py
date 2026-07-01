@@ -35,7 +35,7 @@ class LngLat(_Camel):
     lng: float
 
 
-class Runway(_Camel):
+class Zone(_Camel):
     id: str
     airport_id: str
     name: str
@@ -46,7 +46,7 @@ class Runway(_Camel):
     threshold_heading_deg: float | None = None
     threshold_lat: float | None = None
     threshold_lng: float | None = None
-    runway_polygon: list[LngLat] | None = None
+    zone_polygon: list[LngLat] | None = None
     map_status: str = "draft"
     active_status: str | None = None
     created_at: str
@@ -55,9 +55,9 @@ class Runway(_Camel):
 class Ticket(_Camel):
     id: str
     issue_id: str
-    runway_id: str
-    zone_id: str | None = None
-    zone: str
+    zone_id: str
+    boundary_id: str | None = None
+    boundary: str
     category: str
     severity: str
     description: str
@@ -80,12 +80,12 @@ class BBox(_Camel):
 class IssueCandidate(_Camel):
     id: str
     inspection_id: str
-    runway_id: str
-    zone_id: str | None = None
+    zone_id: str
+    boundary_id: str | None = None
     image_id: str | None = None
     image_url: str | None = None
     category: str            # DB column issue_type
-    zone: str | None = None
+    boundary: str | None = None
     confidence: float
     confidence_band: str
     severity: str
@@ -141,21 +141,21 @@ class Inspection(_Camel):
 class InspectionJob(_Camel):
     id: str
     inspection_id: str
-    runway_id: str
+    zone_id: str
     status: str
     started_at: str | None = None
     completed_at: str | None = None
     image_count: int
     issue_count: int
     created_at: str
-    runway: Runway | None = None
+    zone: Zone | None = None
 
 
 class Image(_Camel):
     id: str
     job_id: str | None = None
-    runway_id: str
-    zone_id: str | None = None
+    zone_id: str
+    boundary_id: str | None = None
     file_url: str
     gps: LngLat | None = None
     station_m: float | None = None
@@ -180,9 +180,9 @@ class ChecklistResponse(_Camel):
     created_at: str
 
 
-class Zone(_Camel):
+class Boundary(_Camel):
     id: str
-    runway_id: str
+    zone_id: str
     name: str
     station_start_m: float | None = None
     station_end_m: float | None = None
@@ -194,7 +194,7 @@ class Zone(_Camel):
 class KeepOutZone(_Camel):
     id: str
     airport_id: str
-    runway_id: str
+    zone_id: str
     name: str
     reason: str | None = None
     polygon: list[LngLat] | None = None
@@ -218,20 +218,20 @@ class InspectionSchedule(_Camel):
     created_at: str
 
 
-class RunwayStatus(_Camel):
+class ZoneStatus(_Camel):
     label: str
     tone: str
 
 
-class RunwayOverview(_Camel):
-    runway: Runway
+class ZoneOverview(_Camel):
+    zone: Zone
     issue_count: int
     pending_count: int
     tickets_open: int
     tickets_completed: int
     by_severity: dict[str, int]
     image_count: int
-    status: RunwayStatus
+    status: ZoneStatus
 
 
 class IssueBreakdown(_Camel):
@@ -261,7 +261,7 @@ class InspectionCounts(_Camel):
 class Overview(_Camel):
     inspection: Inspection | None = None
     airport: Airport
-    runways: list[RunwayOverview]
+    zones: list[ZoneOverview]
     totals: OverviewTotals
     issue_breakdown: IssueBreakdown
     recent_tickets: list[Ticket]
@@ -274,6 +274,6 @@ class InspectionWithJobs(_Camel):
     jobs: list[InspectionJob]
 
 
-class RunwayWithIssues(_Camel):
-    runway: Runway
+class ZoneWithIssues(_Camel):
+    zone: Zone
     issues: list[IssueCandidate]

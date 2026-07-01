@@ -81,7 +81,7 @@ def _severity(conf: float, area_frac: float) -> str:
 _CATEGORY_PHRASE = {
     "fod": "Foreign object / debris on the runway surface",
     "pavement": "Pavement damage (crack / pothole) on the runway surface",
-    "marking": "Runway marking degradation",
+    "marking": "Zone marking degradation",
     "lighting": "Lighting / signage anomaly",
 }
 _GENERIC_CLASS = re.compile(r"^(class[ _-]?\d+|\d+)$", re.IGNORECASE)

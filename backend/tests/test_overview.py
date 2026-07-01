@@ -6,21 +6,21 @@ from app.serialize import dump
 
 
 async def _seed_full(conn):
-    await conn.execute("INSERT INTO runways (id, airport_id, name, designation, length, created_at) VALUES "
+    await conn.execute("INSERT INTO zones (id, airport_id, name, designation, length, created_at) VALUES "
                        "('r1','ags','Runway 1','17 - 35','8,001 ft','2026-01-01'),"
                        "('r2','ags','Runway 2','08 - 26','6,000 ft','2026-01-02')")
     await conn.execute("INSERT INTO inspections (id, airport_id, scheduled_time, \"window\", status, created_at) "
                        "VALUES ('i1','ags','2026-06-22T06:00:00.000Z','daylight','needs_review','t')")
-    await conn.execute("INSERT INTO inspection_jobs (id, inspection_id, runway_id, status, image_count, issue_count, created_at) VALUES "
+    await conn.execute("INSERT INTO inspection_jobs (id, inspection_id, zone_id, status, image_count, issue_count, created_at) VALUES "
                        "('j1','i1','r1','completed',5,2,'t'),('j2','i1','r2','completed',3,0,'t')")
     # two issues on r1: one pending, one approved
     for iid, st, sev in [("ic1", "pending", "high"), ("ic2", "approved", "low")]:
-        await conn.execute("INSERT INTO issue_candidates (id, inspection_id, runway_id, issue_type, confidence, "
+        await conn.execute("INSERT INTO issue_candidates (id, inspection_id, zone_id, issue_type, confidence, "
                            "confidence_band, severity, status, bbox_json, ai_draft_text, draft, inspector_notes, created_at) "
                            "VALUES ($1,'i1','r1','pavement',0.9,'high',$2,$3,'{\"x\":1,\"y\":2,\"w\":3,\"h\":4}','a','d','','t')",
                            iid, sev, st)
     # one open ticket on r1 (from the approved issue)
-    await conn.execute("INSERT INTO tickets (id, issue_id, runway_id, category, status, description, severity, "
+    await conn.execute("INSERT INTO tickets (id, issue_id, zone_id, category, status, description, severity, "
                        "maintenance_notes, created_at) VALUES ('WO-1','ic2','r1','pavement','sent','d','low','','2026-06-22T07:00:00.000Z')")
 
 
@@ -32,9 +32,9 @@ async def test_overview_aggregation(seed):
         ov = dump(await get_overview())
         assert ov["airport"]["code"] == "AGS"
         assert ov["inspection"]["id"] == "i1"
-        # runway rows: r1 has 2 issues / 1 pending / 1 open ticket / 5 images; r2 has 0/0/0/3
-        r1 = next(r for r in ov["runways"] if r["runway"]["id"] == "r1")
-        r2 = next(r for r in ov["runways"] if r["runway"]["id"] == "r2")
+        # zone rows: r1 has 2 issues / 1 pending / 1 open ticket / 5 images; r2 has 0/0/0/3
+        r1 = next(r for r in ov["zones"] if r["zone"]["id"] == "r1")
+        r2 = next(r for r in ov["zones"] if r["zone"]["id"] == "r2")
         assert r1["issueCount"] == 2 and r1["pendingCount"] == 1
         assert r1["ticketsOpen"] == 1 and r1["ticketsCompleted"] == 0
         assert r1["imageCount"] == 5 and r1["status"]["label"] == "Issues need review"
@@ -57,14 +57,14 @@ async def test_overview_aggregation(seed):
 
 @pytest.mark.asyncio
 async def test_overview_no_inspection_path(seed):
-    # airport + runways but no inspection → empty issue/ticket/job aggregates, inspection omitted
-    await seed.execute("INSERT INTO runways (id, airport_id, name, designation, length, created_at) "
+    # airport + zones but no inspection → empty issue/ticket/job aggregates, inspection omitted
+    await seed.execute("INSERT INTO zones (id, airport_id, name, designation, length, created_at) "
                        "VALUES ('r1','ags','Runway 1','17 - 35','8,001 ft','t')")
     await db.connect()
     try:
         ov = dump(await get_overview())
         assert "inspection" not in ov  # omitted when None
         assert ov["totals"]["issues"] == 0 and ov["totals"]["images"] == 0
-        assert ov["runways"][0]["status"]["label"] == "No issues found"
+        assert ov["zones"][0]["status"]["label"] == "No issues found"
     finally:
         await db.disconnect()

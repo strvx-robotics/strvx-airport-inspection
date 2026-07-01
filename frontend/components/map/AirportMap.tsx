@@ -2,40 +2,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Layers } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { IssueCandidate, IssueCategory, IssueStatus, KeepOutZone, LngLat, Runway, Severity, Ticket, Zone } from "@/lib/types";
-import type { RunwayOverview } from "@/lib/api";
-import { isMappable, runwayAnchor } from "@/lib/runwayGeom";
+import type { Boundary, IssueCandidate, IssueCategory, IssueStatus, KeepOutZone, LngLat, Severity, Ticket, Zone } from "@/lib/types";
+import { isMappable, issuePosition, zoneAnchor } from "@/lib/zoneGeom";
 import { stationsFromPolygon } from "@/lib/keepOutGeom";
 import * as api from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useStore } from "@/lib/store";
 import { basemapStyle } from "./mapStyle";
-import { IssueDetailPanel, IssueListPanel, MapLegend, MapToolbar } from "./MapToolbar";
-import { KeepOutMapTrigger, KeepOutZonesModal, type KeepOutStep } from "./KeepOutZonesModal";
-import { InspectionZonesModal, type ZoneDrawStep } from "./InspectionZonesModal";
+import { IssueDetailPanel, MapLegend, MapToolbar } from "./MapToolbar";
+import { KeepOutZonesModal, type KeepOutStep } from "./KeepOutZonesModal";
+import { BoundariesModal, type BoundaryDrawStep } from "./BoundariesModal";
+import { IssuePreviewCard } from "./IssuePreviewCard";
 import {
-  clearInspectionZoneDraftLayer,
-  ensureInspectionZoneLayers,
-  INSPECTION_ZONE_FILL_LAYER,
-  updateInspectionZoneDraftLayer,
-  updateInspectionZoneLayers,
-} from "./inspectionZoneMapLayers";
+  clearBoundaryDraftLayer,
+  ensureBoundaryLayers,
+  BOUNDARY_FILL_LAYER,
+  updateBoundaryDraftLayer,
+  updateBoundaryLayers,
+} from "./boundaryMapLayers";
 import {
   clearKeepOutDraftLayer,
   ensureKeepOutLayers,
   updateKeepOutDraftLayer,
   updateKeepOutZoneLayers,
 } from "./keepOutMapLayers";
+import { ensureIssueLayers, ISSUE_CIRCLE_LAYER, issueMarkers, updateIssueLayers } from "./issueMapLayers";
 import { searchIssues, sortIssues, ticketForIssue, type IssueSortKey } from "./mapUtils";
 import { BTN, BTN_DANGER } from "@/lib/vstyle";
 
-export interface RunwayLayer {
-  runway: Runway;
+export interface ZoneLayer {
+  zone: Zone;
   issues: IssueCandidate[];
-  zones: unknown[];
 }
 
 const pos = (p: LngLat): [number, number] => [p.lng, p.lat];
@@ -44,35 +43,35 @@ const ALL_STATUSES: IssueStatus[] = ["pending", "manual_review", "approved", "re
 const ALL_CATEGORIES: IssueCategory[] = ["fod", "pavement", "marking", "lighting"];
 const REVIEW_QUEUE_STATUSES: IssueStatus[] = ["pending", "manual_review"];
 
-// The map opens on a zoomed-out overview (airfield + surrounding context) rather
-// than tight on the runways. OVERVIEW_MAX_ZOOM caps how close the initial fit can
-// get so small/stacked airports don't slam to street level.
+// Start automatic overview fits at an airfield scale without limiting manual zoom.
 const OVERVIEW_MAX_ZOOM = 12;
 const OVERVIEW_PADDING = 80;
+const OVERVIEW_ZOOM_OUT_BUFFER = 3.5;
+const MAP_BOUNDS_TIGHT_PADDING_DEG = 0.04;
 
-function buildBounds(layers: RunwayLayer[], airportCenter?: LngLat) {
+function buildBounds(layers: ZoneLayer[], airportCenter?: LngLat) {
   const bounds = new maplibregl.LngLatBounds();
   if (airportCenter) bounds.extend(pos(airportCenter));
-  for (const { runway } of layers) {
-    if (!isMappable(runway)) continue;
-    const anchor = runwayAnchor(runway);
+  for (const { zone } of layers) {
+    if (!isMappable(zone)) continue;
+    const anchor = zoneAnchor(zone);
     if (anchor) bounds.extend(pos(anchor));
   }
   return bounds;
 }
 
-function paddedBounds(bounds: maplibregl.LngLatBounds, paddingDeg = 0.15) {
+function paddedBounds(bounds: maplibregl.LngLatBounds) {
   if (bounds.isEmpty()) return bounds;
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
   return new maplibregl.LngLatBounds(
-    [sw.lng - paddingDeg, sw.lat - paddingDeg],
-    [ne.lng + paddingDeg, ne.lat + paddingDeg],
+    [sw.lng - MAP_BOUNDS_TIGHT_PADDING_DEG, sw.lat - MAP_BOUNDS_TIGHT_PADDING_DEG],
+    [ne.lng + MAP_BOUNDS_TIGHT_PADDING_DEG, ne.lat + MAP_BOUNDS_TIGHT_PADDING_DEG],
   );
 }
 
-function zonePopupPoint(map: maplibregl.Map, zone: Zone): { x: number; y: number } {
-  const poly = zone.polygon;
+function boundaryPopupPoint(map: maplibregl.Map, boundary: Boundary): { x: number; y: number } {
+  const poly = boundary.polygon;
   if (poly && poly.length >= 3) {
     const lat = poly.reduce((s, p) => s + p.lat, 0) / poly.length;
     const lng = poly.reduce((s, p) => s + p.lng, 0) / poly.length;
@@ -87,14 +86,13 @@ function minZoomForBounds(map: maplibregl.Map, bounds: maplibregl.LngLatBounds) 
   const camera = map.cameraForBounds(bounds, { padding: 64 });
   const fitZoom = camera?.zoom;
   if (typeof fitZoom !== "number" || !Number.isFinite(fitZoom)) return 0;
-  return Math.max(0, fitZoom - 4.5);
+  return Math.max(0, fitZoom - OVERVIEW_ZOOM_OUT_BUFFER);
 }
 
-/** Satellite map with keep-out zone plotting; no issue/runway overlays. */
+/** Satellite map: severity-colored issue markers, no-drone zones, and inspection zones. */
 export default function AirportMap({
   layers,
   tickets,
-  runwayOverviews,
   inspections,
   airportId,
   airportCenter,
@@ -107,9 +105,8 @@ export default function AirportMap({
   heightClass = "h-full",
   autoDrawZone,
 }: {
-  layers: RunwayLayer[];
+  layers: ZoneLayer[];
   tickets: Ticket[];
-  runwayOverviews: RunwayOverview[];
   inspections: { id: string; label: string }[];
   airportId: string;
   airportCenter?: LngLat;
@@ -120,7 +117,7 @@ export default function AirportMap({
   refreshing?: boolean;
   onIssueUpdated: (issue: IssueCandidate, ticket?: Ticket) => void;
   heightClass?: string;
-  autoDrawZone?: { runwayId?: string };
+  autoDrawZone?: { zoneId?: string };
 }) {
   const router = useRouter();
   const { role } = useStore();
@@ -134,16 +131,15 @@ export default function AirportMap({
   const [failed, setFailed] = useState(false);
 
   const [collapsed, setCollapsed] = useState(false);
-  const [issueListOpen, setIssueListOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<IssueSortKey>("severity");
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   const [statusFilter, setStatusFilter] = useState<Set<IssueStatus>>(() => new Set(ALL_STATUSES));
   const [categoryFilter, setCategoryFilter] = useState<Set<IssueCategory>>(() => new Set(ALL_CATEGORIES));
   const [reviewQueueOnly, setReviewQueueOnly] = useState(false);
-  const [focusedRunwayId, setFocusedRunwayId] = useState<string>("all");
+  const [focusedZoneId, setFocusedZoneId] = useState<string>("all");
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
-  const [legendCollapsed, setLegendCollapsed] = useState(false);
+  const [selectedIssuePoint, setSelectedIssuePoint] = useState<{ x: number; y: number } | null>(null);
 
   const [keepOutOpen, setKeepOutOpen] = useState(false);
   const [keepOutStep, setKeepOutStep] = useState<KeepOutStep>("list");
@@ -152,29 +148,29 @@ export default function AirportMap({
   const [keepOutErr, setKeepOutErr] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftReason, setDraftReason] = useState("");
-  const [draftRunwayId, setDraftRunwayId] = useState("");
+  const [draftZoneId, setDraftZoneId] = useState("");
   const [plotPoints, setPlotPoints] = useState<LngLat[]>([]);
 
   const [zoneDrawOpen, setZoneDrawOpen] = useState(false);
-  const [zoneDrawStep, setZoneDrawStep] = useState<ZoneDrawStep>("details");
-  const [inspectionZones, setInspectionZones] = useState<Zone[]>([]);
+  const [zoneDrawStep, setBoundaryDrawStep] = useState<BoundaryDrawStep>("details");
+  const [boundaries, setBoundaries] = useState<Boundary[]>([]);
   const [zonesReady, setZonesReady] = useState(false);
   const [zoneDrawBusy, setZoneDrawBusy] = useState(false);
   const [zoneDrawErr, setZoneDrawErr] = useState<string | null>(null);
   const [zoneDraftName, setZoneDraftName] = useState("");
-  const [zoneDraftRunwayId, setZoneDraftRunwayId] = useState("");
+  const [zoneDraftZoneId, setZoneDraftZoneId] = useState("");
   const [zonePlotPoints, setZonePlotPoints] = useState<LngLat[]>([]);
-  const [zoneHover, setZoneHover] = useState<{ zone: Zone; x: number; y: number } | null>(null);
-  const [zoneDrawLockRunwayId, setZoneDrawLockRunwayId] = useState<string | undefined>();
+  const [boundaryPopup, setBoundaryPopup] = useState<{ boundary: Boundary; x: number; y: number } | null>(null);
+  const [zoneDeleteConfirm, setZoneDeleteConfirm] = useState(false);
+  const [zoneDrawLockZoneId, setZoneDrawLockZoneId] = useState<string | undefined>();
   const autoDrawStarted = useRef(false);
-  const zoneHoverClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const zoneHoverPinned = useRef(false);
+  const zoneSaveInFlight = useRef(false);
 
   const plotMode = keepOutOpen && keepOutStep === "plot";
   const zonePlotMode = zoneDrawOpen && zoneDrawStep === "plot";
 
   const allIssues = layers.flatMap(({ issues }) => issues);
-  const runwayById = Object.fromEntries(layers.map((layer) => [layer.runway.id, layer.runway] as const));
+  const zoneById = Object.fromEntries(layers.map((layer) => [layer.zone.id, layer.zone] as const));
 
   const filteredIssues = useMemo(() => {
     const filtered = allIssues.filter(
@@ -183,14 +179,18 @@ export default function AirportMap({
         statusFilter.has(issue.status) &&
         categoryFilter.has(issue.category),
     );
-    const searched = searchIssues(filtered, searchQuery, runwayById);
+    const searched = searchIssues(filtered, searchQuery, zoneById);
     return sortIssues(searched, sortKey);
-  }, [allIssues, severityFilter, statusFilter, categoryFilter, searchQuery, sortKey, runwayById]);
+  }, [allIssues, severityFilter, statusFilter, categoryFilter, searchQuery, sortKey, zoneById]);
 
   const selectedIssue = selectedIssueId
     ? allIssues.find((issue) => issue.id === selectedIssueId)
     : undefined;
   const selectedTicket = selectedIssue ? ticketForIssue(selectedIssue, tickets) : undefined;
+  const selectedIssueZone = selectedIssue ? zoneById[selectedIssue.zoneId] : undefined;
+  const selectedIssueMapPosition = selectedIssue && selectedIssueZone
+    ? issuePosition(selectedIssueZone, selectedIssue)
+    : undefined;
 
   const toggleSeverity = (severity: Severity) => {
     setSeverityFilter((current) => {
@@ -240,29 +240,29 @@ export default function AirportMap({
     });
   };
 
-  const focusRunway = (runwayId: string) => {
-    setFocusedRunwayId(runwayId);
+  const focusZone = (zoneId: string) => {
+    setFocusedZoneId(zoneId);
     const map = mapRef.current;
     if (!map) return;
-    if (runwayId === "all") {
+    if (zoneId === "all") {
       const bounds = boundsRef.current;
       if (bounds && !bounds.isEmpty()) map.fitBounds(bounds, { padding: OVERVIEW_PADDING, maxZoom: OVERVIEW_MAX_ZOOM, duration: 450 });
       return;
     }
-    const runway = runwayById[runwayId];
-    const anchor = runway ? runwayAnchor(runway) : undefined;
+    const zone = zoneById[zoneId];
+    const anchor = zone ? zoneAnchor(zone) : undefined;
     if (anchor) map.easeTo({ center: pos(anchor), zoom: 15, duration: 450 });
   };
 
-  const mappable = layers.filter((l) => isMappable(l.runway));
+  const mappable = layers.filter((l) => isMappable(l.zone));
   const mapSig = [
     airportCenter ? `${airportCenter.lat},${airportCenter.lng}` : "",
     ...mappable.map((l) => {
-      const anchor = runwayAnchor(l.runway);
-      return anchor ? `${l.runway.id}:${anchor.lat},${anchor.lng}` : l.runway.id;
+      const anchor = zoneAnchor(l.zone);
+      return anchor ? `${l.zone.id}:${anchor.lat},${anchor.lng}` : l.zone.id;
     }),
   ].join("|");
-  const runways = layers.map((l) => l.runway);
+  const zones = layers.map((l) => l.zone);
 
   const loadKeepOutZones = useCallback(() => {
     if (!airportId) return;
@@ -272,7 +272,7 @@ export default function AirportMap({
   const resetKeepOutDraft = () => {
     setDraftName("");
     setDraftReason("");
-    setDraftRunwayId("");
+    setDraftZoneId("");
     setPlotPoints([]);
     setKeepOutErr(null);
     setKeepOutStep("list");
@@ -289,24 +289,24 @@ export default function AirportMap({
     setKeepOutErr(null);
     setDraftName("");
     setDraftReason("");
-    setDraftRunwayId(focusedRunwayId !== "all" ? focusedRunwayId : runways[0]?.id ?? "");
+    setDraftZoneId(focusedZoneId !== "all" ? focusedZoneId : zones[0]?.id ?? "");
     setPlotPoints([]);
     setKeepOutStep("details");
   };
 
   const saveKeepOutZone = async () => {
-    const runway = runwayById[draftRunwayId];
-    if (!runway || plotPoints.length < 3 || !draftName.trim()) {
+    const zone = zoneById[draftZoneId];
+    if (!zone || plotPoints.length < 3 || !draftName.trim()) {
       setKeepOutErr("Complete the form and plot at least 3 corners.");
       return;
     }
-    const stations = stationsFromPolygon(runway, plotPoints);
+    const stations = stationsFromPolygon(zone, plotPoints);
     setKeepOutBusy(true);
     setKeepOutErr(null);
     try {
       await api.createKeepOutZone({
         airportId,
-        runwayId: draftRunwayId,
+        zoneId: draftZoneId,
         name: draftName.trim(),
         reason: draftReason.trim() || undefined,
         polygon: plotPoints,
@@ -336,103 +336,101 @@ export default function AirportMap({
     }
   };
 
-  const loadInspectionZones = useCallback(() => {
-    const ids = runways.map((r) => r.id);
+  const loadBoundaries = useCallback(() => {
+    const ids = zones.map((r) => r.id);
     if (ids.length === 0) {
-      setInspectionZones([]);
+      setBoundaries([]);
       return;
     }
-    Promise.all(ids.map((id) => api.listZones(id).catch(() => [] as Zone[])))
+    Promise.all(ids.map((id) => api.listBoundaries(id).catch(() => [] as Boundary[])))
       .then((lists) => {
-        setInspectionZones(lists.flat());
+        setBoundaries(lists.flat());
         setZonesReady(true);
       })
       .catch(() => {
-        setInspectionZones([]);
+        setBoundaries([]);
         setZonesReady(true);
       });
-  }, [runways]);
+  }, [zones]);
 
   const resetZoneDraw = () => {
     setZoneDraftName("");
-    setZoneDraftRunwayId("");
+    setZoneDraftZoneId("");
     setZonePlotPoints([]);
     setZoneDrawErr(null);
-    setZoneDrawStep("details");
+    setBoundaryDrawStep("details");
   };
 
   const closeZoneDraw = () => {
     setZoneDrawOpen(false);
-    setZoneDrawLockRunwayId(undefined);
+    setZoneDrawLockZoneId(undefined);
     resetZoneDraw();
     const map = mapRef.current;
-    if (map && loadedRef.current) clearInspectionZoneDraftLayer(map);
+    if (map && loadedRef.current) clearBoundaryDraftLayer(map);
   };
 
-  const cancelZoneHoverClear = () => {
-    if (zoneHoverClearTimer.current) {
-      clearTimeout(zoneHoverClearTimer.current);
-      zoneHoverClearTimer.current = null;
-    }
-  };
+  const closeBoundaryPopup = useCallback(() => {
+    setBoundaryPopup(null);
+    setZoneDeleteConfirm(false);
+  }, []);
 
-  const scheduleZoneHoverClear = () => {
-    cancelZoneHoverClear();
-    zoneHoverClearTimer.current = setTimeout(() => {
-      if (!zoneHoverPinned.current) setZoneHover(null);
-    }, 150);
-  };
-
-  const startZoneDraw = (runwayId?: string) => {
-    const rid = runwayId ?? (focusedRunwayId !== "all" ? focusedRunwayId : runways[0]?.id ?? "");
-    if (inspectionZones.some((z) => z.runwayId === rid)) {
-      setZoneDrawErr("This runway already has a zone. Delete it before drawing a new one.");
-      setZoneDraftRunwayId(rid);
+  const startZoneDraw = (zoneId?: string) => {
+    const rid = zoneId ?? (focusedZoneId !== "all" ? focusedZoneId : zones[0]?.id ?? "");
+    if (boundaries.some((b) => b.zoneId === rid)) {
+      setZoneDrawErr("This zone already has a boundary. Delete it before drawing a new one.");
+      setZoneDraftZoneId(rid);
       setZoneDrawOpen(true);
-      setZoneDrawStep("details");
+      setBoundaryDrawStep("details");
       return;
     }
     setZoneDrawErr(null);
     setZoneDraftName("");
-    setZoneDraftRunwayId(rid);
+    setZoneDraftZoneId(rid);
     setZonePlotPoints([]);
-    setZoneDrawStep("details");
+    setBoundaryDrawStep("details");
     setZoneDrawOpen(true);
   };
 
   const saveInspectionZone = async () => {
-    const runway = runwayById[zoneDraftRunwayId];
-    if (!runway || zonePlotPoints.length < 3 || !zoneDraftName.trim()) {
+    const zone = zoneById[zoneDraftZoneId];
+    if (!zone || zonePlotPoints.length < 3 || !zoneDraftName.trim()) {
       setZoneDrawErr("Complete the form and plot at least 3 corners.");
       return;
     }
-    const stations = stationsFromPolygon(runway, zonePlotPoints);
+    // Guard against a double-clicked "Save zone" firing two creates: the disabled
+    // state lands a render later, so without this ref both clicks slip through and
+    // race the one-zone-per-zone check (the backend serializes too, but this keeps
+    // the user from a spurious "already has a boundary" on their own second click).
+    if (zoneSaveInFlight.current) return;
+    zoneSaveInFlight.current = true;
+    const stations = stationsFromPolygon(zone, zonePlotPoints);
     setZoneDrawBusy(true);
     setZoneDrawErr(null);
     try {
-      await api.createZone({
-        runwayId: zoneDraftRunwayId,
+      await api.createBoundary({
+        zoneId: zoneDraftZoneId,
         name: zoneDraftName.trim(),
         polygon: zonePlotPoints,
         stationStartM: stations?.stationStartM,
         stationEndM: stations?.stationEndM,
       });
-      loadInspectionZones();
+      loadBoundaries();
       closeZoneDraw();
     } catch (e) {
       setZoneDrawErr(e instanceof Error ? e.message : "Save failed");
     } finally {
       setZoneDrawBusy(false);
+      zoneSaveInFlight.current = false;
     }
   };
 
-  const deleteInspectionZone = async (zoneId: string) => {
+  const deleteBoundaryOnMap = async (boundaryId: string) => {
     setZoneDrawBusy(true);
     setZoneDrawErr(null);
     try {
-      await api.deleteZone(zoneId);
-      setZoneHover(null);
-      loadInspectionZones();
+      await api.deleteBoundary(boundaryId);
+      closeBoundaryPopup();
+      loadBoundaries();
     } catch (e) {
       setZoneDrawErr(e instanceof Error ? e.message : "Delete failed");
     } finally {
@@ -441,38 +439,32 @@ export default function AirportMap({
   };
 
   useEffect(() => {
-    if (zonePlotMode) setIssueListOpen(false);
-  }, [zonePlotMode]);
-
-  useEffect(() => {
-    loadInspectionZones();
-  }, [loadInspectionZones]);
+    loadBoundaries();
+  }, [loadBoundaries]);
 
   useEffect(() => {
     if (!autoDrawZone || autoDrawStarted.current || !canEditZones || !zonesReady) return;
     autoDrawStarted.current = true;
-    const rid = autoDrawZone.runwayId;
-    if (rid && inspectionZones.some((z) => z.runwayId === rid)) return;
-    if (autoDrawZone.runwayId) setZoneDrawLockRunwayId(autoDrawZone.runwayId);
-    startZoneDraw(autoDrawZone.runwayId);
-    if (autoDrawZone.runwayId) focusRunway(autoDrawZone.runwayId);
-    setZoneDrawStep("plot");
+    const rid = autoDrawZone.zoneId;
+    if (rid && boundaries.some((z) => z.zoneId === rid)) return;
+    if (autoDrawZone.zoneId) setZoneDrawLockZoneId(autoDrawZone.zoneId);
+    startZoneDraw(autoDrawZone.zoneId);
+    if (autoDrawZone.zoneId) focusZone(autoDrawZone.zoneId);
+    setBoundaryDrawStep("plot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoDrawZone, canEditZones, zonesReady, inspectionZones]);
-
-  useEffect(() => () => cancelZoneHoverClear(), []);
+  }, [autoDrawZone, canEditZones, zonesReady, boundaries]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
-    ensureInspectionZoneLayers(map);
-    updateInspectionZoneLayers(map, inspectionZones);
-  }, [inspectionZones, mapLoaded]);
+    ensureBoundaryLayers(map);
+    updateBoundaryLayers(map, boundaries);
+  }, [boundaries, mapLoaded]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
-    updateInspectionZoneDraftLayer(map, zonePlotPoints);
+    updateBoundaryDraftLayer(map, zonePlotPoints);
   }, [zonePlotPoints, mapLoaded]);
 
   useEffect(() => {
@@ -495,32 +487,47 @@ export default function AirportMap({
     };
   }, [zonePlotMode, mapLoaded]);
 
+  // Click a zone (admin only) to open its actions popup; pointer cursor on hover.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || zonePlotMode) return;
+    if (!map || !mapLoaded || zonePlotMode || plotMode || !canEditZones) return;
 
-    const onEnter = (e: maplibregl.MapLayerMouseEvent) => {
+    const onClick = (e: maplibregl.MapLayerMouseEvent) => {
       const id = e.features?.[0]?.properties?.id as string | undefined;
-      const zone = id ? inspectionZones.find((z) => z.id === id) : undefined;
-      if (zone) {
-        cancelZoneHoverClear();
-        const anchor = zonePopupPoint(map, zone);
-        setZoneHover({ zone, x: anchor.x, y: anchor.y });
-        map.getCanvas().style.cursor = "pointer";
-      }
+      const boundary = id ? boundaries.find((b) => b.id === id) : undefined;
+      if (!boundary) return;
+      const anchor = boundaryPopupPoint(map, boundary);
+      setBoundaryPopup({ boundary, x: anchor.x, y: anchor.y });
+      setZoneDeleteConfirm(false);
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
     };
     const onLeave = () => {
-      scheduleZoneHoverClear();
       map.getCanvas().style.cursor = "";
     };
 
-    map.on("mouseenter", INSPECTION_ZONE_FILL_LAYER, onEnter);
-    map.on("mouseleave", INSPECTION_ZONE_FILL_LAYER, onLeave);
+    map.on("click", BOUNDARY_FILL_LAYER, onClick);
+    map.on("mouseenter", BOUNDARY_FILL_LAYER, onEnter);
+    map.on("mouseleave", BOUNDARY_FILL_LAYER, onLeave);
     return () => {
-      map.off("mouseenter", INSPECTION_ZONE_FILL_LAYER, onEnter);
-      map.off("mouseleave", INSPECTION_ZONE_FILL_LAYER, onLeave);
+      map.off("click", BOUNDARY_FILL_LAYER, onClick);
+      map.off("mouseenter", BOUNDARY_FILL_LAYER, onEnter);
+      map.off("mouseleave", BOUNDARY_FILL_LAYER, onLeave);
     };
-  }, [inspectionZones, zonePlotMode, mapLoaded]);
+  }, [boundaries, zonePlotMode, plotMode, canEditZones, mapLoaded]);
+
+  // The popup is anchored to a fixed screen position, so dismiss it the moment the
+  // camera moves (zoom or pan) instead of letting it drift away from its zone.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !boundaryPopup) return;
+    const onMoveStart = () => closeBoundaryPopup();
+    map.on("movestart", onMoveStart);
+    return () => {
+      map.off("movestart", onMoveStart);
+    };
+  }, [boundaryPopup, mapLoaded, closeBoundaryPopup]);
 
   useEffect(() => {
     loadKeepOutZones();
@@ -553,10 +560,71 @@ export default function AirportMap({
     };
   }, [plotMode, zonePlotMode, mapLoaded]);
 
+  // Plot issue markers (read-only) at each issue's best map position. Respects the
+  // active filters via `filteredIssues`; the selected marker reads emphasized.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    ensureIssueLayers(map);
+    updateIssueLayers(map, issueMarkers(filteredIssues, zoneById), selectedIssueId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredIssues, selectedIssueId, mapLoaded]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !selectedIssueMapPosition) {
+      setSelectedIssuePoint(null);
+      return;
+    }
+
+    const updatePoint = () => {
+      const point = map.project(pos(selectedIssueMapPosition));
+      setSelectedIssuePoint({ x: point.x, y: point.y });
+    };
+
+    updatePoint();
+    map.easeTo({
+      center: pos(selectedIssueMapPosition),
+      zoom: Math.max(map.getZoom(), 16),
+      duration: 500,
+    });
+    map.on("move", updatePoint);
+    return () => {
+      map.off("move", updatePoint);
+    };
+  }, [mapLoaded, selectedIssueId, selectedIssueMapPosition?.lat, selectedIssueMapPosition?.lng]);
+
+  // Click an issue marker to open its detail panel; pointer cursor on hover.
+  // Disabled while plotting a zone so map clicks add corners instead.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || plotMode || zonePlotMode) return;
+
+    const onClick = (e: maplibregl.MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) setSelectedIssueId(id);
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    map.on("click", ISSUE_CIRCLE_LAYER, onClick);
+    map.on("mouseenter", ISSUE_CIRCLE_LAYER, onEnter);
+    map.on("mouseleave", ISSUE_CIRCLE_LAYER, onLeave);
+    return () => {
+      map.off("click", ISSUE_CIRCLE_LAYER, onClick);
+      map.off("mouseenter", ISSUE_CIRCLE_LAYER, onEnter);
+      map.off("mouseleave", ISSUE_CIRCLE_LAYER, onLeave);
+    };
+  }, [mapLoaded, plotMode, zonePlotMode]);
+
   useEffect(() => {
     if (!containerRef.current || (mappable.length === 0 && !airportCenter)) return;
 
-    const initialCenter = airportCenter ?? runwayAnchor(mappable[0]?.runway);
+    const initialCenter = airportCenter ?? zoneAnchor(mappable[0]?.zone);
 
     let map: maplibregl.Map;
     try {
@@ -579,7 +647,7 @@ export default function AirportMap({
     map.on("load", () => {
       const bounds = buildBounds(layers, airportCenter);
       const airportBounds = paddedBounds(bounds);
-      const airportMinZoom = minZoomForBounds(map, airportBounds);
+      const airportMinZoom = minZoomForBounds(map, bounds);
 
       map.setMinZoom(airportMinZoom);
       if (!airportBounds.isEmpty()) map.setMaxBounds(airportBounds);
@@ -592,8 +660,9 @@ export default function AirportMap({
       setMapLoaded(true);
       ensureKeepOutLayers(map);
       updateKeepOutZoneLayers(map, keepOutZones);
-      ensureInspectionZoneLayers(map);
-      updateInspectionZoneLayers(map, inspectionZones);
+      ensureBoundaryLayers(map);
+      updateBoundaryLayers(map, boundaries);
+      ensureIssueLayers(map); // added last → issue markers render on top
     });
 
     map.on("error", () => {/* tile/network errors are non-fatal */});
@@ -613,7 +682,7 @@ export default function AirportMap({
     const bounds = buildBounds(layers, airportCenter);
     boundsRef.current = bounds;
     const airportBounds = paddedBounds(bounds);
-    map.setMinZoom(minZoomForBounds(map, airportBounds));
+    map.setMinZoom(minZoomForBounds(map, bounds));
     map.setMaxBounds(airportBounds.isEmpty() ? undefined : airportBounds);
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, { padding: OVERVIEW_PADDING, maxZoom: OVERVIEW_MAX_ZOOM, duration: 450 });
@@ -634,6 +703,10 @@ export default function AirportMap({
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
       if (e.key === "Escape") {
+        if (boundaryPopup) {
+          closeBoundaryPopup();
+          return;
+        }
         if (zoneDrawOpen) {
           closeZoneDraw();
           return;
@@ -646,7 +719,7 @@ export default function AirportMap({
         return;
       }
 
-      if (!issueListOpen || filteredIssues.length === 0) return;
+      if (filteredIssues.length === 0) return;
 
       const idx = selectedIssueId ? filteredIssues.findIndex((i) => i.id === selectedIssueId) : -1;
 
@@ -664,17 +737,17 @@ export default function AirportMap({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filteredIssues, issueListOpen, keepOutOpen, zoneDrawOpen, router, selectedIssueId]);
+  }, [filteredIssues, keepOutOpen, zoneDrawOpen, boundaryPopup, closeBoundaryPopup, router, selectedIssueId]);
 
   const activeKeepOutCount = keepOutZones.filter((z) => z.active).length;
   const focusedHasZone =
-    focusedRunwayId !== "all" && inspectionZones.some((z) => z.runwayId === focusedRunwayId);
+    focusedZoneId !== "all" && boundaries.some((z) => z.zoneId === focusedZoneId);
 
   if (mappable.length === 0 && !airportCenter) {
     return (
       <div className={`flex ${heightClass} items-center justify-center rounded-md border border-[#dbdfe3] bg-[#f3f5f7] text-center`}>
         <p className="px-6 text-[12px] text-[#6b7176]">
-          No runway anchors configured yet — pick an airport in Admin or add threshold coordinates.
+          No zone anchors configured yet — pick an airport in Admin or add threshold coordinates.
         </p>
       </div>
     );
@@ -690,25 +763,24 @@ export default function AirportMap({
   return (
     <div className={`relative ${heightClass} w-full`}>
       <div ref={containerRef} className="h-full w-full overflow-hidden rounded-md border border-[#dbdfe3]" />
-      <KeepOutMapTrigger activeCount={activeKeepOutCount} onClick={() => setKeepOutOpen(true)} />
       <KeepOutZonesModal
         open={keepOutOpen}
         step={keepOutStep}
-        zones={keepOutZones}
-        runways={runways}
-        focusedRunwayId={focusedRunwayId}
+        keepOutZones={keepOutZones}
+        operationalZones={zones}
+        focusedZoneId={focusedZoneId}
         canEdit={canEditKeepOut}
         busy={keepOutBusy}
         err={keepOutErr}
         name={draftName}
         reason={draftReason}
-        runwayId={draftRunwayId}
+        zoneId={draftZoneId}
         plotPoints={plotPoints}
         onClose={closeKeepOut}
         onStep={setKeepOutStep}
         onName={setDraftName}
         onReason={setDraftReason}
-        onRunwayId={setDraftRunwayId}
+        onZoneId={setDraftZoneId}
         onStartCreate={startKeepOutCreate}
         onUndoPlot={() => setPlotPoints((prev) => prev.slice(0, -1))}
         onFinishPlot={() => setKeepOutStep("confirm")}
@@ -723,133 +795,111 @@ export default function AirportMap({
       )}
       {zonePlotMode && (
         <div className="pointer-events-none absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[#2f5b85]/40 bg-[#fbfcfd]/95 px-3 py-2 shadow-md backdrop-blur-sm">
-          <p className="font-mono text-[11px] text-[#181b1e]">Click to draw zone corners · Use Undo in the panel · Esc cancels</p>
+          <p className="font-mono text-[11px] text-[#181b1e]">Click to draw boundary corners · Use Undo in the panel · Esc cancels</p>
         </div>
       )}
-      {canEditZones && !zoneDrawOpen && !focusedHasZone && (
-        <button
-          type="button"
-          onClick={() => startZoneDraw(focusedRunwayId !== "all" ? focusedRunwayId : undefined)}
-          className="absolute left-3 top-[4.5rem] z-10 inline-flex items-center gap-1.5 rounded-md border border-[#c7cdd2] bg-[#fbfcfd]/95 px-3 py-2 text-[12px] font-medium text-[#181b1e] shadow-md backdrop-blur-sm transition-colors hover:bg-[#eef1f4]"
-        >
-          <Layers size={14} strokeWidth={2} className="text-[#2f5b85]" />
-          Draw zone
-        </button>
-      )}
-      <InspectionZonesModal
+      <BoundariesModal
         open={zoneDrawOpen}
         step={zoneDrawStep}
-        runways={runways.filter(
-          (r) => zoneDrawLockRunwayId === r.id || !inspectionZones.some((z) => z.runwayId === r.id),
+        zones={zones.filter(
+          (r) => zoneDrawLockZoneId === r.id || !boundaries.some((b) => b.zoneId === r.id),
         )}
-        lockRunwayId={zoneDrawLockRunwayId}
+        lockZoneId={zoneDrawLockZoneId}
         busy={zoneDrawBusy}
         err={zoneDrawErr}
         name={zoneDraftName}
-        runwayId={zoneDraftRunwayId}
+        zoneId={zoneDraftZoneId}
         plotPoints={zonePlotPoints}
         onClose={closeZoneDraw}
-        onStep={setZoneDrawStep}
+        onStep={setBoundaryDrawStep}
         onName={setZoneDraftName}
-        onRunwayId={setZoneDraftRunwayId}
+        onZoneId={setZoneDraftZoneId}
         onUndoPlot={() => setZonePlotPoints((prev) => prev.slice(0, -1))}
-        onFinishPlot={() => setZoneDrawStep("confirm")}
+        onFinishPlot={() => setBoundaryDrawStep("confirm")}
         onSave={() => void saveInspectionZone()}
       />
-      {zoneHover && canEditZones && (
+      {boundaryPopup && canEditZones && (
         <div
-          className="pointer-events-auto absolute z-30 min-w-[10rem] rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-2.5 shadow-lg"
+          className="pointer-events-auto absolute z-30 min-w-[11rem] rounded-md border border-[#dbdfe3] bg-[#fbfcfd] p-2.5 shadow-lg"
           style={{
-            left: zoneHover.x,
-            top: zoneHover.y,
+            left: boundaryPopup.x,
+            top: boundaryPopup.y,
             transform: "translate(-50%, calc(-100% - 8px))",
           }}
-          onMouseEnter={() => {
-            zoneHoverPinned.current = true;
-            cancelZoneHoverClear();
-          }}
-          onMouseLeave={() => {
-            zoneHoverPinned.current = false;
-            scheduleZoneHoverClear();
-          }}
         >
-          <p className="text-[12px] font-semibold text-[#181b1e]">{zoneHover.zone.name}</p>
+          <p className="text-[12px] font-semibold text-[#181b1e]">{boundaryPopup.boundary.name}</p>
           <p className={cn("mt-0.5 text-[11px]", "text-[#6b7176]")}>
-            {runwayById[zoneHover.zone.runwayId]?.name ?? zoneHover.zone.runwayId}
+            {zoneById[boundaryPopup.boundary.zoneId]?.name ?? boundaryPopup.boundary.zoneId}
           </p>
-          <div className="mt-2 flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => router.push(`/admin/runway/${zoneHover.zone.runwayId}`)}
-              className={cn("h-7 flex-1 px-2 text-[11px]", BTN)}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              disabled={zoneDrawBusy}
-              onClick={() => void deleteInspectionZone(zoneHover.zone.id)}
-              className={cn("h-7 flex-1 px-2 text-[11px]", BTN_DANGER)}
-            >
-              Delete
-            </button>
-          </div>
+          {zoneDeleteConfirm ? (
+            <div className="mt-2">
+              <p className="text-[11px] leading-snug text-[#b23b32]">Delete this boundary? This cannot be undone.</p>
+              <div className="mt-2 flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={zoneDrawBusy}
+                  onClick={() => setZoneDeleteConfirm(false)}
+                  className={cn("h-7 flex-1 px-2 text-[11px]", BTN)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={zoneDrawBusy}
+                  onClick={() => void deleteBoundaryOnMap(boundaryPopup.boundary.id)}
+                  className={cn("h-7 flex-1 px-2 text-[11px]", BTN_DANGER)}
+                >
+                  {zoneDrawBusy ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/zone/${boundaryPopup.boundary.zoneId}`)}
+                className={cn("h-7 flex-1 px-2 text-[11px]", BTN)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoneDeleteConfirm(true)}
+                className={cn("h-7 flex-1 px-2 text-[11px]", BTN_DANGER)}
+              >
+                Delete
+              </button>
+            </div>
+          )}
         </div>
       )}
       <MapToolbar
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((v) => !v)}
-        onRecenter={() => focusRunway(focusedRunwayId)}
-        issueListOpen={issueListOpen}
-        onToggleIssueList={() => setIssueListOpen((v) => !v)}
         issueCount={filteredIssues.length}
         totalIssueCount={allIssues.length}
         reviewQueueOnly={reviewQueueOnly}
         onToggleReviewQueue={toggleReviewQueue}
-        runways={layers.map((l) => l.runway)}
-        runwayOverviews={runwayOverviews}
-        focusedRunwayId={focusedRunwayId}
-        onFocusRunway={focusRunway}
         inspectionScope={inspectionScope}
         onInspectionScopeChange={onInspectionScopeChange}
         inspections={inspections}
         currentInspectionId={currentInspectionId}
+        onOpenKeepOut={() => setKeepOutOpen(true)}
+        keepOutActiveCount={activeKeepOutCount}
+        canDrawZone={canEditZones && !zoneDrawOpen && !focusedHasZone}
+        onDrawZone={() => startZoneDraw(focusedZoneId !== "all" ? focusedZoneId : undefined)}
         onRefresh={onRefresh}
         refreshing={refreshing}
+        issues={filteredIssues}
+        zonesById={zoneById}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        sortKey={sortKey}
+        onSortChange={setSortKey}
+        onSelectIssue={(issue) => setSelectedIssueId(issue.id)}
+        selectedIssueId={selectedIssueId}
       />
-      <div
-        className={cn(
-          "pointer-events-none absolute left-3 right-3 top-16 z-10 flex min-h-0 flex-col gap-2 md:left-auto md:right-3 md:w-[21rem] md:max-w-[calc(100vw-1.5rem)]",
-          legendCollapsed ? "bottom-14" : "bottom-[12.5rem]",
-        )}
-      >
-        <IssueListPanel
-          open={issueListOpen}
-          issues={filteredIssues}
-          runways={runwayById}
-          tickets={tickets}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          sortKey={sortKey}
-          onSortChange={setSortKey}
-          onToggle={() => setIssueListOpen((v) => !v)}
-          onSelect={(issue) => setSelectedIssueId(issue.id)}
-          selectedIssueId={selectedIssueId}
-        />
-        {selectedIssue && (
-          <IssueDetailPanel
-            issue={selectedIssue}
-            runway={runwayById[selectedIssue.runwayId]}
-            ticket={selectedTicket}
-            onClose={() => setSelectedIssueId(null)}
-            onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
-            onIssueUpdated={onIssueUpdated}
-          />
-        )}
-      </div>
       <MapLegend
-        collapsed={legendCollapsed}
-        onToggleCollapsed={() => setLegendCollapsed((v) => !v)}
         severityFilter={severityFilter}
         statusFilter={statusFilter}
         categoryFilter={categoryFilter}
@@ -857,6 +907,26 @@ export default function AirportMap({
         onToggleStatus={toggleStatus}
         onToggleCategory={toggleCategory}
       />
+      {selectedIssue && selectedIssuePoint && (
+        <IssuePreviewCard
+          issue={selectedIssue}
+          ticket={selectedTicket}
+          zoneName={selectedIssueZone?.name ?? "Zone"}
+          point={selectedIssuePoint}
+          onClose={() => setSelectedIssueId(null)}
+          onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
+        />
+      )}
+      {selectedIssue && (
+        <IssueDetailPanel
+          issue={selectedIssue}
+          zone={zoneById[selectedIssue.zoneId]}
+          ticket={selectedTicket}
+          onClose={() => setSelectedIssueId(null)}
+          onOpen={() => router.push(`/issue/${selectedIssue.id}`)}
+          onIssueUpdated={onIssueUpdated}
+        />
+      )}
     </div>
   );
 }

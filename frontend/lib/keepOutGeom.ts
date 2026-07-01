@@ -1,14 +1,14 @@
-import type { KeepOutZone, LngLat, Runway } from "./types";
-import { projectOntoRunway } from "./runwayGeom";
+import type { KeepOutZone, LngLat, Zone } from "./types";
+import { projectOntoZone } from "./zoneGeom";
 
-/** Derive runway station range from a user-plotted polygon (meters from threshold). */
+/** Derive zone station range from a user-plotted polygon (meters from threshold). */
 export function stationsFromPolygon(
-  runway: Runway,
+  zone: Zone,
   polygon: LngLat[],
 ): { stationStartM: number; stationEndM: number } | undefined {
   if (polygon.length < 3) return undefined;
   const stations = polygon
-    .map((p) => projectOntoRunway(runway, p)?.stationM)
+    .map((p) => projectOntoZone(zone, p)?.stationM)
     .filter((s): s is number => s != null);
   if (stations.length === 0) return undefined;
   const start = Math.min(...stations);
@@ -17,11 +17,13 @@ export function stationsFromPolygon(
   return { stationStartM: Math.max(0, start), stationEndM: end };
 }
 
-export function keepOutZoneLabel(zone: KeepOutZone, runway?: Runway) {
+export function keepOutZoneLabel(zone: KeepOutZone, operationalZone?: Zone) {
   const pts = zone.polygon?.length ?? 0;
   const station =
     zone.stationStartM != null && zone.stationEndM != null
       ? `${Math.round(zone.stationStartM)}–${Math.round(zone.stationEndM)} m`
       : undefined;
-  return [runway?.designation, pts ? `${pts} points` : undefined, station].filter(Boolean).join(" · ");
+  return [operationalZone?.designation, pts ? `${pts} points` : undefined, station]
+    .filter(Boolean)
+    .join(" · ");
 }

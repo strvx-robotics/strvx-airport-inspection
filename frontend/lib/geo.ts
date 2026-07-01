@@ -1,6 +1,6 @@
-// Minimal geodesy for the runway map — no turf/proj dependency.
+// Minimal geodesy for the zone map — no turf/proj dependency.
 // Ported and trimmed from the robotics tactical map (sim/geo.ts) to just what
-// runway geometry needs: project a point along a bearing, bearing between two
+// zone geometry needs: project a point along a bearing, bearing between two
 // points, and great-circle distance. Pure — safe to import anywhere.
 
 import type { LngLat } from "./types";
@@ -37,7 +37,7 @@ export function bearingBetween(a: LngLat, b: LngLat): number {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-/** Great-circle (haversine) distance in metres — ample accuracy at runway scale. */
+/** Great-circle (haversine) distance in metres — ample accuracy at zone scale. */
 export function distanceM(a: LngLat, b: LngLat): number {
   const df = toRad(b.lat - a.lat);
   const dl = toRad(b.lng - a.lng);

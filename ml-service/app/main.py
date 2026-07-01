@@ -42,7 +42,7 @@ from app.rl.serve import register as register_rl  # noqa: E402  (after app is de
 
 register_rl(app)
 
-# Live detection relay: WS /live/ws/{runway} (browsers) + POST /live/detections (worker)
+# Live detection relay: WS /live/ws/{zone} (browsers) + POST /live/detections (worker)
 from app.live.relay import register_relay  # noqa: E402
 
 register_relay(app)

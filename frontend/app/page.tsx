@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
 import Badge from "@/components/Badge";
-import RunwayTable from "@/components/dashboard/RunwayTable";
+import ZoneTable from "@/components/dashboard/ZoneTable";
 import type { Overview } from "@/lib/api";
 import { useOverview, useStore } from "@/lib/store";
 import MaintenanceTracker from "@/components/MaintenanceTracker";
@@ -28,11 +28,11 @@ function Dashboard() {
   const bd = overview.issueBreakdown;
   const needsReview = t.pending + t.manualReview;
   const highCrit = bd.bySeverity.high + bd.bySeverity.critical;
-  // Derive from semantic counts (not display tone) so every runway lands in
+  // Derive from semantic counts (not display tone) so every zone lands in
   // exactly one bucket: needs-review → in-progress → clear.
-  const needRw = overview.runways.filter((r) => r.pendingCount > 0).length;
-  const activeRw = overview.runways.filter((r) => r.pendingCount === 0 && r.ticketsOpen > 0).length;
-  const clear = overview.runways.length - needRw - activeRw;
+  const needRw = overview.zones.filter((r) => r.pendingCount > 0).length;
+  const activeRw = overview.zones.filter((r) => r.pendingCount === 0 && r.ticketsOpen > 0).length;
+  const clear = overview.zones.length - needRw - activeRw;
   const clearParts = [
     needRw ? `${needRw} need review` : null,
     activeRw ? `${activeRw} in progress` : null,
@@ -51,13 +51,13 @@ function Dashboard() {
         <Stat label="Issues found" value={t.issues} secondary={`${highCrit} high + critical`} />
         <Stat label="Tickets open" value={t.ticketsOpen} secondary={`of ${t.ticketsTotal} total`} />
         <Stat
-          label="Runways clear"
-          value={`${clear}/${overview.runways.length}`}
+          label="Zones clear"
+          value={`${clear}/${overview.zones.length}`}
           secondary={clearParts.length ? clearParts.join(" · ") : "all clear"}
         />
       </div>
 
-      <RunwayTable rows={overview.runways} />
+      <ZoneTable rows={overview.zones} />
     </div>
   );
 }
@@ -131,14 +131,14 @@ function Stat({
 
 function Skeleton() {
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
+    <div className="mx-auto flex h-full max-w-6xl flex-col gap-4 px-6 py-6">
       <div className={cn("h-[72px] animate-pulse rounded-md", CARD)} />
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#dbdfe3] lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-[68px] animate-pulse bg-[#fbfcfd]" />
         ))}
       </div>
-      <div className={cn("h-64 animate-pulse rounded-md", CARD)} />
+      <div className={cn("min-h-0 flex-1 animate-pulse rounded-md", CARD)} />
     </div>
   );
 }

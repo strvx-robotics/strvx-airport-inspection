@@ -3,17 +3,17 @@ import pytest
 
 async def _seed_ticket(conn, *, status="sent"):
     await conn.execute(
-        "INSERT INTO runways (id, airport_id, name, designation, created_at) "
+        "INSERT INTO zones (id, airport_id, name, designation, created_at) "
         "VALUES ('r1','ags','Runway 1','17 - 35','2026-06-22T06:30:00.000Z')"
     )
     await conn.execute(
         "INSERT INTO issue_candidates "
-        "(id, runway_id, issue_type, confidence, confidence_band, severity, status, "
+        "(id, zone_id, issue_type, confidence, confidence_band, severity, status, "
         " bbox_json, ai_draft_text, draft, created_at) "
         "VALUES ('ic1','r1','pavement',0.9,'high','high','approved','{}','d','d','2026-06-22T06:30:00.000Z')"
     )
     await conn.execute(
-        "INSERT INTO tickets (id, issue_id, runway_id, zone, category, status, description, "
+        "INSERT INTO tickets (id, issue_id, zone_id, boundary, category, status, description, "
         " severity, maintenance_notes, created_at) "
         f"VALUES ('WO-1042','ic1','r1','Zone B','pavement','{status}','desc','high','','2026-06-22T06:30:00.000Z')"
     )
@@ -27,12 +27,12 @@ async def test_get_tickets_shape(seed, client):
     body = res.json()
     assert list(body.keys()) == ["tickets"]
     t = body["tickets"][0]
-    # Exact camelCase contract; zoneId/repairedAt/closedAt OMITTED (NULL).
+    # Exact camelCase contract; boundaryId/repairedAt/closedAt OMITTED (NULL).
     assert t == {
         "id": "WO-1042",
         "issueId": "ic1",
-        "runwayId": "r1",
-        "zone": "Zone B",
+        "zoneId": "r1",
+        "boundary": "Zone B",
         "category": "pavement",
         "severity": "high",
         "description": "desc",

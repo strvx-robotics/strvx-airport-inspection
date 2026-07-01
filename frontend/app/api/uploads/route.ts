@@ -10,13 +10,10 @@ import { randomUUID } from "node:crypto";
 import { detectImage } from "@/lib/mlDetector";
 import { draftTicket } from "@/lib/llm";
 import { putImage } from "@/lib/storage";
-import {
-  getRunway,
-  getZone,
-  ingestUpload,
-  type UploadDetection,
-} from "@/lib/repo";
-import { actorFrom, json, route } from "@/lib/http";
+import { backendFetch } from "@/lib/backend";
+import { getBoundary, getZone, type UploadDetection } from "@/lib/repo";
+import { actorFrom, route } from "@/lib/http";
+import type { GeomConfidence } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +24,12 @@ const IMAGE_EXT: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
 };
+
+function formNumber(value: FormDataEntryValue | null): number | undefined {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 /** Cheap magic-byte sniff so a spoofed Content-Type can't smuggle non-image bytes. */
 function magicBytesMatch(buf: Buffer, type: string): boolean {
@@ -40,17 +43,29 @@ export const POST = route(async (req) => {
   const form = await req.formData();
   // The client (lib/api.ts) sends the file under "file"; accept "image" too.
   const file = form.get("file") ?? form.get("image");
-  const runwayId = form.get("runwayId");
   const zoneIdRaw = form.get("zoneId");
+  const boundaryIdRaw = form.get("boundaryId");
 
-  if (typeof runwayId !== "string" || !runwayId) {
-    throw new Error("runwayId is required");
+  if (typeof zoneIdRaw !== "string" || !zoneIdRaw) {
+    throw new Error("zoneId is required");
   }
-  const runway = await getRunway(runwayId);
-  if (!runway) throw new Error(`Runway not found: ${runwayId}`);
+  const zone = await getZone(zoneIdRaw);
+  if (!zone) throw new Error(`Zone not found: ${zoneIdRaw}`);
 
-  const zoneId = typeof zoneIdRaw === "string" && zoneIdRaw ? zoneIdRaw : undefined;
-  const zone = zoneId ? await getZone(zoneId) : undefined;
+  const boundaryId = typeof boundaryIdRaw === "string" && boundaryIdRaw ? boundaryIdRaw : undefined;
+  const boundary = boundaryId ? await getBoundary(boundaryId) : undefined;
+  const gpsLat = formNumber(form.get("gpsLat"));
+  const gpsLng = formNumber(form.get("gpsLng"));
+  const gps = gpsLat != null && gpsLng != null ? { lat: gpsLat, lng: gpsLng } : undefined;
+  const stationM = formNumber(form.get("stationM"));
+  const lateralOffsetM = formNumber(form.get("lateralOffsetM"));
+  const geomConfidenceRaw = form.get("geomConfidence");
+  const geomConfidence =
+    geomConfidenceRaw === "gps" || geomConfidenceRaw === "pose" || geomConfidenceRaw === "manual"
+      ? (geomConfidenceRaw as GeomConfidence)
+      : gps
+        ? "gps"
+        : undefined;
 
   if (!(file instanceof File)) {
     throw new Error("An image file is required");
@@ -76,7 +91,7 @@ export const POST = route(async (req) => {
   const fileUrl = await putImage(key, buffer, file.type);
 
   // CV model (ml-service) with deterministic stub fallback → LLM draft per detection.
-  const detections = await detectImage(buffer, file.type, { fileName: file.name, runwayId, zoneId });
+  const detections = await detectImage(buffer, file.type, { fileName: file.name, zoneId: zoneIdRaw, boundaryId });
   const drafted: UploadDetection[] = await Promise.all(
     detections.map(async (d) => ({
       category: d.category,
@@ -89,22 +104,38 @@ export const POST = route(async (req) => {
         category: d.category,
         confidence: d.confidence,
         severity: d.severity,
-        runwayDesignation: runway.designation,
-        zoneName: zone?.name,
+        zoneDesignation: zone.designation,
+        boundaryName: boundary?.name,
+        stationM,
         sizeM: d.sizeM,
         modelNotes: d.modelNotes,
       }),
     })),
   );
 
-  const result = await ingestUpload({
-    runwayId,
-    zoneId,
-    fileUrl,
-    sourceFile: file.name,
-    detections: drafted,
-    actor: actorFrom(req),
+  const backendRes = await backendFetch("/drone-captures", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      zoneId: zoneIdRaw,
+      boundaryId,
+      fileUrl,
+      sourceFile: file.name,
+      gps,
+      stationM,
+      lateralOffsetM,
+      geomConfidence,
+      detections: drafted.map((d) => ({
+        ...d,
+        stationM: d.stationM ?? stationM,
+        lateralOffsetM: d.lateralOffsetM ?? lateralOffsetM,
+      })),
+      actor: actorFrom(req),
+    }),
   });
 
-  return json(result, { status: 201 });
+  return new Response(await backendRes.text(), {
+    status: backendRes.status,
+    headers: { "content-type": "application/json" },
+  });
 });

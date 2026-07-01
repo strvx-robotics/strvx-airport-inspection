@@ -14,7 +14,7 @@ import {
 
 /** Map every reported discrepancy to its work order (if approved into one). */
 function ticketByIssueId(report: InspectionReport): Map<string, Ticket> {
-  return new Map(report.runways.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
+  return new Map(report.zones.flatMap((r) => r.tickets).map((t) => [t.issueId, t]));
 }
 
 /** Whether the report is a complete, final compliance record. */
@@ -40,7 +40,7 @@ const RED = "#b5423a";
 const REPORT_CATEGORY: Record<string, string> = {
   fod: "Debris / FOD",
   pavement: "Pavement damage",
-  marking: "Runway marking",
+  marking: "Zone marking",
   lighting: "Lighting / signage",
 };
 // Special-inspection trigger labels (§139.327(b)) — kept local so this Node PDF
@@ -169,7 +169,7 @@ function sectionTitle(doc: PDFKit.PDFDocument, title: string, subtitle?: string)
   }
 }
 
-function summarizeRunway(entry: InspectionReport["runways"][number]) {
+function summarizeZone(entry: InspectionReport["zones"][number]) {
   const reviewCount = entry.issues.filter((issue) => REPORT_REVIEW_STATUSES.has(issue.status)).length;
   const approvedCount = entry.issues.filter((issue) => issue.status === "approved").length;
   const openTickets = entry.tickets.filter((ticket) => REPORT_ACTIVE_TICKET_STATUSES.has(ticket.status)).length;
@@ -185,13 +185,13 @@ function summarizeRunway(entry: InspectionReport["runways"][number]) {
   return { ...entry, ...state, reviewCount, approvedCount, openTickets, closedTickets };
 }
 
-function inspectionObjective(report: InspectionReport, runwaySummaries: ReturnType<typeof summarizeRunway>[]) {
+function inspectionObjective(report: InspectionReport, zoneSummaries: ReturnType<typeof summarizeZone>[]) {
   const checklistComplete = report.checklist.filter((item) => item.result).length;
   const remainingChecklist = Math.max(0, report.checklist.length - checklistComplete);
   const allChecklistComplete = report.checklist.length > 0 && checklistComplete === report.checklist.length;
-  const reviewQueue = runwaySummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
-  const activeTickets = runwaySummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
-  const attentionRunways = runwaySummaries.filter((entry) => entry.reviewCount > 0 || entry.openTickets > 0).length;
+  const reviewQueue = zoneSummaries.reduce((sum, entry) => sum + entry.reviewCount, 0);
+  const activeTickets = zoneSummaries.reduce((sum, entry) => sum + entry.openTickets, 0);
+  const attentionZones = zoneSummaries.filter((entry) => entry.reviewCount > 0 || entry.openTickets > 0).length;
 
   const objective = !allChecklistComplete
     ? {
@@ -208,7 +208,7 @@ function inspectionObjective(report: InspectionReport, runwaySummaries: ReturnTy
       : reviewQueue > 0
         ? {
             title: "Work the findings queue",
-            detail: `${pluralize(reviewQueue, "candidate")} still require review across ${pluralize(attentionRunways, "runway")}.`,
+            detail: `${pluralize(reviewQueue, "candidate")} still require review across ${pluralize(attentionZones, "zone")}.`,
             color: AMBER,
           }
         : activeTickets > 0
@@ -220,12 +220,12 @@ function inspectionObjective(report: InspectionReport, runwaySummaries: ReturnTy
           : report.totals.issues === 0
             ? {
                 title: "Inspection is clear",
-                detail: `All ${pluralize(report.runways.length, "runway")} were inspected with no findings recorded.`,
+                detail: `All ${pluralize(report.zones.length, "zone")} were inspected with no findings recorded.`,
                 color: GREEN,
               }
             : {
                 title: "Inspection record is in good shape",
-                detail: "Checklist, sign-off, and runway findings are all documented.",
+                detail: "Checklist, sign-off, and zone findings are all documented.",
                 color: GREEN,
               };
 
@@ -298,11 +298,11 @@ function drawMetricCards(doc: PDFKit.PDFDocument, metrics: Array<[string, string
 function drawObjectivePanel(
   doc: PDFKit.PDFDocument,
   report: InspectionReport,
-  runwaySummaries: ReturnType<typeof summarizeRunway>[],
+  zoneSummaries: ReturnType<typeof summarizeZone>[],
 ): void {
   const b = pageBounds(doc);
   const { checklistComplete, remainingChecklist, allChecklistComplete, reviewQueue, activeTickets, objective } =
-    inspectionObjective(report, runwaySummaries);
+    inspectionObjective(report, zoneSummaries);
   ensureSpace(doc, 106);
   const y = doc.y;
 
@@ -346,24 +346,24 @@ function drawCover(doc: PDFKit.PDFDocument, report: InspectionReport): void {
   const assets = getAirportReportAssets(report.airport.code);
   const b = pageBounds(doc);
   const top = b.top;
-  const runwaySummaries = report.runways
-    .map(summarizeRunway)
+  const zoneSummaries = report.zones
+    .map(summarizeZone)
     .sort(
       (a, b) =>
         a.priority - b.priority ||
         b.reviewCount - a.reviewCount ||
         b.openTickets - a.openTickets ||
         b.issues.length - a.issues.length ||
-        a.runway.name.localeCompare(b.runway.name),
+        a.zone.name.localeCompare(b.zone.name),
     );
-  const findingRunways = runwaySummaries.filter((entry) => entry.issues.length > 0).length;
-  const { reviewQueue } = inspectionObjective(report, runwaySummaries);
+  const findingZones = zoneSummaries.filter((entry) => entry.issues.length > 0).length;
+  const { reviewQueue } = inspectionObjective(report, zoneSummaries);
   const summaryText =
     report.totals.issues === 0
-      ? "This pass is clear. No runway findings or work orders were generated."
+      ? "This pass is clear. No zone findings or work orders were generated."
       : `${pluralize(report.totals.issues, "finding")} were recorded across ${pluralize(
-          findingRunways,
-          "runway",
+          findingZones,
+          "zone",
         )}. ${reviewQueue > 0 ? `${pluralize(reviewQueue, "candidate")} still need review.` : "All findings have already been dispositioned."}`;
 
   doc.rect(0, 0, doc.page.width, 96).fillColor("#eef6fa").fill();
@@ -414,16 +414,16 @@ function drawCover(doc: PDFKit.PDFDocument, report: InspectionReport): void {
         : `${report.checklist.filter((item) => item.result).length}/${report.checklist.length}`,
       report.checklist.length === 0 ? "No self-check items" : "Required before sign-off",
     ],
-    ["Runways", String(report.runways.length), findingRunways > 0 ? `${findingRunways} with findings` : "No findings recorded"],
+    ["Zones", String(report.zones.length), findingZones > 0 ? `${findingZones} with findings` : "No findings recorded"],
     ["Awaiting review", String(reviewQueue), reviewQueue > 0 ? "Immediate review queue" : "No unresolved candidates"],
     ["Tickets open", String(report.totals.ticketsOpen), report.totals.ticketsCompleted > 0 ? `${report.totals.ticketsCompleted} completed` : "No maintenance queue yet"],
   ]);
-  drawObjectivePanel(doc, report, runwaySummaries);
+  drawObjectivePanel(doc, report, zoneSummaries);
 }
 
 function drawInspectionRecord(doc: PDFKit.PDFDocument, report: InspectionReport): void {
-  const runwaySummaries = report.runways.map(summarizeRunway);
-  const { reviewQueue } = inspectionObjective(report, runwaySummaries);
+  const zoneSummaries = report.zones.map(summarizeZone);
+  const { reviewQueue } = inspectionObjective(report, zoneSummaries);
   const deficiency = deficiencyStatus(report, reviewQueue);
   const failedChecklist = report.checklist.filter((item) => item.result === "fail").length;
   const passChecklist = report.checklist.filter((item) => item.result === "pass").length;
@@ -460,7 +460,7 @@ function drawInspectionRecord(doc: PDFKit.PDFDocument, report: InspectionReport)
     ["Generated", fmt(report, report.generatedAt)],
     ["Record basis", "14 CFR §139.327(c): self-inspection record showing conditions found and corrective actions taken"],
     ["Retention", "Retain for 12 consecutive calendar months per 14 CFR §139.301(b)(5)"],
-    ["Coverage", `${pluralize(report.runways.length, "runway")} / ${pluralize(report.images.length, "inspection image")} / ${pluralize(report.totals.issues, "recorded finding")}`],
+    ["Coverage", `${pluralize(report.zones.length, "zone")} / ${pluralize(report.images.length, "inspection image")} / ${pluralize(report.totals.issues, "recorded finding")}`],
     ["Checklist results", `${passChecklist} pass / ${failedChecklist} fail / ${naChecklist} N/A / ${blankChecklist} blank`],
   ]);
 
@@ -567,7 +567,7 @@ function drawIssuesTable(
   };
   const rowHeightFor = (issue: IssueCandidate): number => {
     const location = [
-      issue.zone ?? "Unzoned",
+      issue.boundary ?? "Unzoned",
       issue.stationM != null ? `${Math.round(issue.stationM)} m` : "",
       issue.lateralOffsetM != null ? `${issue.lateralOffsetM.toFixed(1)} m lateral` : "",
     ].filter(Boolean).join("\n");
@@ -596,7 +596,7 @@ function drawIssuesTable(
   for (const issue of issues) {
     const evidence = issue.imageId ? issueImageBytes(imageById.get(issue.imageId)) : undefined;
     const location = [
-      issue.zone ?? "Unzoned",
+      issue.boundary ?? "Unzoned",
       issue.stationM != null ? `${Math.round(issue.stationM)} m` : "",
       issue.lateralOffsetM != null ? `${issue.lateralOffsetM.toFixed(1)} m lateral` : "",
     ].filter(Boolean).join("\n");
@@ -647,33 +647,33 @@ function drawIssuesTable(
   }
 }
 
-function drawRunwaySections(doc: PDFKit.PDFDocument, report: InspectionReport): void {
+function drawZoneSections(doc: PDFKit.PDFDocument, report: InspectionReport): void {
   const imageById = new Map(report.images.map((image) => [image.id, image]));
   const ticketByIssue = ticketByIssueId(report);
-  const runwaySummaries = report.runways
-    .map(summarizeRunway)
+  const zoneSummaries = report.zones
+    .map(summarizeZone)
     .sort(
       (a, b) =>
         a.priority - b.priority ||
         b.reviewCount - a.reviewCount ||
         b.openTickets - a.openTickets ||
         b.issues.length - a.issues.length ||
-        a.runway.name.localeCompare(b.runway.name),
+        a.zone.name.localeCompare(b.zone.name),
     );
-  const findingRunways = runwaySummaries.filter((entry) => entry.issues.length > 0);
-  const clearRunways = runwaySummaries.filter((entry) => entry.issues.length === 0);
+  const findingZones = zoneSummaries.filter((entry) => entry.issues.length > 0);
+  const clearZones = zoneSummaries.filter((entry) => entry.issues.length === 0);
 
   sectionTitle(
     doc,
-    "Runway / Movement-Area Discrepancies",
-    "Runways with discrepancies appear first. Clear runways are retained at the end for documented coverage.",
+    "Zone / Movement-Area Discrepancies",
+    "Zones with discrepancies appear first. Clear zones are retained at the end for documented coverage.",
   );
 
-  for (const { runway, issues, reviewCount, approvedCount, openTickets, closedTickets } of findingRunways) {
+  for (const { zone, issues, reviewCount, approvedCount, openTickets, closedTickets } of findingZones) {
     const high = issues.filter((issue) => issue.severity === "high").length;
     sectionTitle(
       doc,
-      `${runway.name} ${runway.designation}`,
+      `${zone.name} ${zone.designation}`,
       `${pluralize(issues.length, "discrepancy")} - ${high} high severity - ${reviewCount} awaiting review`,
     );
 
@@ -688,18 +688,18 @@ function drawRunwaySections(doc: PDFKit.PDFDocument, report: InspectionReport): 
     setY(doc, doc.y + 8);
   }
 
-  if (clearRunways.length) {
+  if (clearZones.length) {
     sectionTitle(
       doc,
-      "Clear Runways",
-      `${clearRunways.length} runway(s) completed this pass with no recorded findings.`,
+      "Clear Zones",
+      `${clearZones.length} zone(s) completed this pass with no recorded findings.`,
     );
     const b = pageBounds(doc);
-    for (const { runway } of clearRunways) {
+    for (const { zone } of clearZones) {
       ensureSpace(doc, 32);
       const y = doc.y;
       doc.roundedRect(b.left, y, b.width, 26, 5).fillColor(SOFT).fill();
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(INK).text(`${runway.name} ${runway.designation}`, b.left + 12, y + 8, {
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(INK).text(`${zone.name} ${zone.designation}`, b.left + 12, y + 8, {
         width: b.width * 0.45,
       });
       doc.font("Helvetica").fontSize(8).fillColor(MUTED).text("Inspected - no discrepancies recorded during this pass.", b.left + b.width * 0.45, y + 8, {
@@ -712,10 +712,10 @@ function drawRunwaySections(doc: PDFKit.PDFDocument, report: InspectionReport): 
 }
 
 function drawCorrectiveActions(doc: PDFKit.PDFDocument, report: InspectionReport): void {
-  const tickets = report.runways.flatMap((entry) =>
+  const tickets = report.zones.flatMap((entry) =>
     entry.tickets.map((ticket) => ({
       ...ticket,
-      runwayLabel: `${entry.runway.name} ${entry.runway.designation}`,
+      zoneLabel: `${entry.zone.name} ${entry.zone.designation}`,
     })),
   );
   if (!tickets.length) return;
@@ -731,7 +731,7 @@ function drawCorrectiveActions(doc: PDFKit.PDFDocument, report: InspectionReport
   const drawHeader = () => {
     const y = doc.y;
     doc.rect(b.left, y, b.width, headerHeight).fillColor("#eaf1f5").fill();
-    ["Work order", "Runway", "Severity", "Status", "Corrective action / notes"].forEach((label, i) => {
+    ["Work order", "Zone", "Severity", "Status", "Corrective action / notes"].forEach((label, i) => {
       const x = b.left + widths.slice(0, i).reduce((sum, w) => sum + w, 0);
       doc.font("Helvetica-Bold").fontSize(7).fillColor(MUTED).text(label.toUpperCase(), x + 7, y + 6, {
         width: widths[i] - 14,
@@ -761,7 +761,7 @@ function drawCorrectiveActions(doc: PDFKit.PDFDocument, report: InspectionReport
     const y = doc.y;
     const values = [
       ticket.id,
-      ticket.runwayLabel,
+      ticket.zoneLabel,
       titleCase(ticket.severity),
       statusLabel,
       notes || "-",
@@ -846,8 +846,8 @@ export async function renderReportPdf(report: InspectionReport): Promise<Buffer>
     bufferPages: true,
     info: {
       Title: `Inspection report - ${report.airport.code}`,
-      Author: "STRVX Runway Inspection",
-      Subject: `${report.airport.name} runway inspection`,
+      Author: "STRVX Zone Inspection",
+      Subject: `${report.airport.name} zone inspection`,
     },
   });
   const chunks: Buffer[] = [];
@@ -863,7 +863,7 @@ export async function renderReportPdf(report: InspectionReport): Promise<Buffer>
   doc.addPage();
   drawInspectionRecord(doc, report);
   drawChecklist(doc, report);
-  drawRunwaySections(doc, report);
+  drawZoneSections(doc, report);
   drawCorrectiveActions(doc, report);
   drawAssetSources(doc, assets);
   drawFooters(doc, report);

@@ -2,9 +2,8 @@
 
 import { forwardRef } from "react";
 import { ArrowUpRight, ImageOff, X } from "lucide-react";
-import Badge from "@/components/Badge";
 import type { IssueCandidate, Ticket } from "@/lib/types";
-import { CATEGORY, SEVERITY, DECISION, TICKET_STATUS, confidenceBand, pct } from "@/lib/ui";
+import { CATEGORY, SEVERITY, DECISION, TICKET_STATUS, pct } from "@/lib/ui";
 import { BTN_PRIMARY, EYEBROW } from "@/lib/vstyle";
 import { cn } from "@/lib/cn";
 
@@ -20,16 +19,17 @@ export const IssuePreviewCard = forwardRef<
   {
     issue: IssueCandidate;
     ticket?: Ticket;
-    runwayName: string;
+    zoneName: string;
+    point: { x: number; y: number };
     onOpen: () => void;
     onClose: () => void;
   }
->(function IssuePreviewCard({ issue, ticket, runwayName, onOpen, onClose }, ref) {
-  const band = confidenceBand(issue.confidence);
+>(function IssuePreviewCard({ issue, ticket, zoneName, point, onOpen, onClose }, ref) {
   return (
     <div
       ref={ref}
-      className="issue-preview-card pointer-events-auto absolute z-20 w-60 overflow-visible rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg"
+      className="issue-preview-card pointer-events-auto absolute z-30 w-60 overflow-visible rounded-md border border-[#c7cdd2] bg-[#fbfcfd] shadow-lg"
+      style={{ left: point.x, top: point.y, transform: "translate(-50%, calc(-100% - 12px))" }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* captured frame — the single most useful triage signal */}
@@ -38,7 +38,7 @@ export const IssuePreviewCard = forwardRef<
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={issue.imageUrl}
-            alt={`${CATEGORY[issue.category]} on ${runwayName}`}
+            alt={`${CATEGORY[issue.category]} on ${zoneName}`}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -58,14 +58,19 @@ export const IssuePreviewCard = forwardRef<
       <div className="space-y-2 p-2.5">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-[13px] font-semibold text-[#181b1e]">{CATEGORY[issue.category]}</p>
-          <span className={cn(EYEBROW, "shrink-0")}>{runwayName}</span>
+          <span className={cn(EYEBROW, "shrink-0")}>{zoneName}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={SEVERITY[issue.severity].tone}>{SEVERITY[issue.severity].label}</Badge>
-          <Badge tone={DECISION[issue.status].tone}>{DECISION[issue.status].label}</Badge>
-          {ticket && <Badge tone={TICKET_STATUS[ticket.status].tone}>{TICKET_STATUS[ticket.status].label}</Badge>}
-          <Badge tone={band.tone}>{`${band.label} · ${pct(issue.confidence)}`}</Badge>
-        </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] leading-snug">
+          <IssueFact label="Severity" value={SEVERITY[issue.severity].label} />
+          <IssueFact label="Status" value={DECISION[issue.status].label} />
+          <IssueFact label="Confidence" value={pct(issue.confidence)} />
+          <IssueFact label="Work order" value={ticket ? TICKET_STATUS[ticket.status].label : "None"} />
+        </dl>
+        {(issue.modelNotes || issue.draft) && (
+          <p className="line-clamp-2 text-[11px] leading-snug text-[#5b6166]">
+            {issue.modelNotes || issue.draft}
+          </p>
+        )}
         <button onClick={onOpen} className={cn(BTN_PRIMARY, "w-full px-3 py-1.5 text-[12px]")}>
           Open issue <ArrowUpRight size={14} strokeWidth={2.2} />
         </button>
@@ -76,3 +81,12 @@ export const IssuePreviewCard = forwardRef<
     </div>
   );
 });
+
+function IssueFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="uppercase tracking-[0.12em] text-[#9aa1a6]">{label}</dt>
+      <dd className="mt-0.5 truncate font-semibold text-[#3f4448]">{value}</dd>
+    </div>
+  );
+}

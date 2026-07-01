@@ -13,7 +13,7 @@
 import type {
   IssueCandidate,
   IssueCategory,
-  Runway,
+  Zone,
   Severity,
   Ticket,
 } from "./types";
@@ -30,14 +30,14 @@ const ASSET: Record<IssueCategory, string> = {
 const DEFECT: Record<IssueCategory, string> = {
   fod: "Foreign object debris (FOD)",
   pavement: "Pavement distress / surface damage",
-  marking: "Faded or damaged runway marking",
+  marking: "Faded or damaged zone marking",
   lighting: "Lighting / signage fault",
 };
 
 const HAZARD: Record<IssueCategory, string> = {
   fod: "FOD — debris ingestion · tire and engine damage",
   pavement: "FOD generation · tire and gear damage",
-  marking: "Reduced pilot guidance · runway-incursion risk",
+  marking: "Reduced pilot guidance · zone-incursion risk",
   lighting: "Reduced conspicuity for night / low-visibility ops",
 };
 
@@ -73,7 +73,7 @@ const OP_STATUS: Record<Severity, string> = {
   low: "Runway open · routine repair",
   medium: "Runway open · monitor and schedule repair",
   high: "Runway open with caution · immediate action required",
-  critical: "Close affected runway / section until repaired",
+  critical: "Close affected zone / section until repaired",
 };
 
 const PRIORITY: Record<Severity, string> = {
@@ -100,11 +100,11 @@ function defectOf(category: IssueCategory, issue?: IssueCandidate): string {
 function locationOf(
   ticket: Ticket,
   issue?: IssueCandidate,
-  runway?: Runway,
+  zone?: Zone,
 ): string {
   const parts: string[] = [];
-  if (runway?.designation) parts.push(`RWY ${runway.designation}`);
-  if (ticket.zone) parts.push(ticket.zone);
+  if (zone?.designation) parts.push(`ZON ${zone.designation}`);
+  if (ticket.boundary) parts.push(ticket.boundary);
   if (issue?.stationM != null)
     parts.push(`~${Math.round(issue.stationM)} m from threshold`);
   if (issue?.lateralOffsetM != null) {
@@ -145,7 +145,7 @@ export interface WorkOrderField {
 export function buildWorkOrder(
   ticket: Ticket,
   issue?: IssueCandidate,
-  runway?: Runway,
+  zone?: Zone,
 ): WorkOrderField[] {
   const cat = ticket.category;
   const sev = ticket.severity;
@@ -153,7 +153,7 @@ export function buildWorkOrder(
   const fields: WorkOrderField[] = [
     { label: "Defect type", value: defectOf(cat, issue) },
     { label: "Asset", value: ASSET[cat] },
-    { label: "Location", value: locationOf(ticket, issue, runway) },
+    { label: "Location", value: locationOf(ticket, issue, zone) },
     { label: "Hazard", value: HAZARD[cat] },
     { label: "Operational status", value: OP_STATUS[sev] },
     { label: "Priority", value: PRIORITY[sev] },
@@ -187,7 +187,7 @@ function selfCheck(): void {
   const cats: IssueCategory[] = ["fod", "pavement", "marking", "lighting"];
   const sevs: Severity[] = ["low", "medium", "high", "critical"];
   const base: Ticket = {
-    id: "WO-1042", issueId: "i1", runwayId: "r2", zone: "Zone A · threshold",
+    id: "WO-1042", issueId: "i1", zoneId: "r2", boundary: "Zone A · threshold",
     category: "fod", severity: "high", description: "x", status: "sent",
     createdBy: "Inspector", assignedTo: "Field Maintenance", maintenanceNotes: "",
     createdAt: "2026-06-22T06:30:00.000Z",
@@ -211,9 +211,9 @@ function selfCheck(): void {
     {
       stationM: 1850, lateralOffsetM: -3, gps: { lat: 33.37, lng: -81.96 },
     } as IssueCandidate,
-    { designation: "08 – 26" } as Runway,
+    { designation: "08 – 26" } as Zone,
   ).find((f) => f.label === "Location")!.value;
-  console.assert(loc.includes("RWY 08 – 26"), "loc runway");
+  console.assert(loc.includes("ZON 08 – 26"), "loc zone");
   console.assert(loc.includes("1850 m from threshold"), "loc station");
   console.assert(loc.includes("3.0 m left of centerline"), "loc lateral");
 

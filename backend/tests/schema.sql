@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS airports (
   created_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS runways (
+CREATE TABLE IF NOT EXISTS zones (
   id                    TEXT PRIMARY KEY,
   airport_id            TEXT NOT NULL REFERENCES airports(id),
   name                  TEXT NOT NULL,
@@ -21,15 +21,15 @@ CREATE TABLE IF NOT EXISTS runways (
   threshold_heading_deg DOUBLE PRECISION,
   threshold_lat         DOUBLE PRECISION,
   threshold_lng         DOUBLE PRECISION,
-  runway_polygon_json   TEXT,
+  zone_polygon_json     TEXT,
   map_status            TEXT NOT NULL DEFAULT 'draft',
   active_status         TEXT,
   created_at            TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS zones (
+CREATE TABLE IF NOT EXISTS boundaries (
   id              TEXT PRIMARY KEY,
-  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  zone_id         TEXT NOT NULL REFERENCES zones(id),
   name            TEXT NOT NULL,
   station_start_m DOUBLE PRECISION,
   station_end_m   DOUBLE PRECISION,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS zones (
 CREATE TABLE IF NOT EXISTS keep_out_zones (
   id              TEXT PRIMARY KEY,
   airport_id      TEXT NOT NULL REFERENCES airports(id),
-  runway_id       TEXT NOT NULL REFERENCES runways(id),
+  zone_id         TEXT NOT NULL REFERENCES zones(id),
   name            TEXT NOT NULL,
   reason          TEXT,
   polygon_json    TEXT NOT NULL,
@@ -88,21 +88,21 @@ CREATE TABLE IF NOT EXISTS inspections (
 CREATE TABLE IF NOT EXISTS inspection_jobs (
   id            TEXT PRIMARY KEY,
   inspection_id TEXT NOT NULL REFERENCES inspections(id),
-  runway_id     TEXT NOT NULL REFERENCES runways(id),
+  zone_id       TEXT NOT NULL REFERENCES zones(id),
   status        TEXT NOT NULL,
   started_at    TEXT,
   completed_at  TEXT,
   image_count   INTEGER NOT NULL DEFAULT 0,
   issue_count   INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
-  UNIQUE (inspection_id, runway_id)
+  UNIQUE (inspection_id, zone_id)
 );
 
 CREATE TABLE IF NOT EXISTS images (
   id               TEXT PRIMARY KEY,
   job_id           TEXT REFERENCES inspection_jobs(id),
-  runway_id        TEXT NOT NULL REFERENCES runways(id),
-  zone_id          TEXT REFERENCES zones(id),
+  zone_id          TEXT NOT NULL REFERENCES zones(id),
+  boundary_id      TEXT REFERENCES boundaries(id),
   file_url         TEXT NOT NULL,
   gps_lat          DOUBLE PRECISION,
   gps_lng          DOUBLE PRECISION,
@@ -133,8 +133,8 @@ CREATE TABLE IF NOT EXISTS checklist_responses (
 CREATE TABLE IF NOT EXISTS issue_candidates (
   id                  TEXT PRIMARY KEY,
   inspection_id       TEXT REFERENCES inspections(id),
-  runway_id           TEXT NOT NULL REFERENCES runways(id),
-  zone_id             TEXT REFERENCES zones(id),
+  zone_id             TEXT NOT NULL REFERENCES zones(id),
+  boundary_id         TEXT REFERENCES boundaries(id),
   image_id            TEXT REFERENCES images(id),
   issue_type          TEXT NOT NULL,
   confidence          DOUBLE PRECISION NOT NULL,
@@ -165,9 +165,9 @@ CREATE TABLE IF NOT EXISTS issue_candidates (
 CREATE TABLE IF NOT EXISTS tickets (
   id                TEXT PRIMARY KEY,
   issue_id          TEXT NOT NULL UNIQUE REFERENCES issue_candidates(id),
-  runway_id         TEXT NOT NULL REFERENCES runways(id),
-  zone_id           TEXT REFERENCES zones(id),
-  zone              TEXT,
+  zone_id           TEXT NOT NULL REFERENCES zones(id),
+  boundary_id       TEXT REFERENCES boundaries(id),
+  boundary          TEXT,
   category          TEXT NOT NULL,
   status            TEXT NOT NULL,
   description       TEXT NOT NULL,
@@ -233,16 +233,16 @@ CREATE TABLE IF NOT EXISTS drones (
   created_at  TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_issues_runway      ON issue_candidates(runway_id);
+CREATE INDEX IF NOT EXISTS idx_issues_zone        ON issue_candidates(zone_id);
 CREATE INDEX IF NOT EXISTS idx_issues_inspection  ON issue_candidates(inspection_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_inspection    ON inspection_jobs(inspection_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_runway     ON tickets(runway_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_zone       ON tickets(zone_id);
 CREATE INDEX IF NOT EXISTS idx_ish_issue          ON issue_status_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_tsh_ticket         ON ticket_status_history(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_checklist_inspection ON checklist_responses(inspection_id);
-CREATE INDEX IF NOT EXISTS idx_keep_out_runway ON keep_out_zones(runway_id);
+CREATE INDEX IF NOT EXISTS idx_keep_out_zone ON keep_out_zones(zone_id);
 
--- Allow runway/zone config deletes while keeping inspection history rows.
-ALTER TABLE images ALTER COLUMN runway_id DROP NOT NULL;
-ALTER TABLE issue_candidates ALTER COLUMN runway_id DROP NOT NULL;
-ALTER TABLE tickets ALTER COLUMN runway_id DROP NOT NULL;
+-- Allow zone/boundary config deletes while keeping inspection history rows.
+ALTER TABLE images ALTER COLUMN zone_id DROP NOT NULL;
+ALTER TABLE issue_candidates ALTER COLUMN zone_id DROP NOT NULL;
+ALTER TABLE tickets ALTER COLUMN zone_id DROP NOT NULL;

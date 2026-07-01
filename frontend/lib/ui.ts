@@ -20,7 +20,7 @@ import type {
 export const CATEGORY: Record<IssueCategory, string> = {
   fod: "Debris / FOD",
   pavement: "Pavement Damage",
-  marking: "Runway Marking",
+  marking: "Zone Marking",
   lighting: "Lighting / Signage",
 };
 
@@ -153,17 +153,17 @@ export function confidenceBand(c: number): { label: string; tone: Tone } {
 
 export const pct = (c: number) => `${Math.round(c * 100)}%`;
 
-/** Derived per-runway status shown on the dashboard. */
-export function runwayStatus(
-  runwayId: string,
+/** Derived per-zone status shown on the dashboard. */
+export function zoneStatus(
+  zoneId: string,
   issues: Issue[],
   tickets: Ticket[],
 ): { label: string; tone: Tone } {
-  const mine = issues.filter((i) => i.runwayId === runwayId);
+  const mine = issues.filter((i) => i.zoneId === zoneId);
   if (mine.length === 0) return { label: "No issues found", tone: "green" };
   if (mine.some((i) => i.decision === "pending" || i.decision === "manual_review"))
     return { label: "Issues need review", tone: "amber" };
-  const myTickets = tickets.filter((t) => t.runwayId === runwayId);
+  const myTickets = tickets.filter((t) => t.zoneId === zoneId);
   if (myTickets.length === 0)
     return { label: "Reviewed · no tickets", tone: "green" };
   if (myTickets.every((t) => t.status === "closed"))

@@ -26,7 +26,7 @@ function BoxOverlay({ bbox, label }: { bbox: BBox; label?: string }) {
 //  fit="contain" — letterbox the whole photo inside a fixed `heightClass` frame,
 //    centered, never cropped. The box still tracks the image because the wrapper
 //    shrink-wraps (w-fit) to the displayed picture.
-export default function RunwayImage({
+export default function ZoneImage({
   bbox,
   label,
   src,
