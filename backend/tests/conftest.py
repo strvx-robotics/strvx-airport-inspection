@@ -10,7 +10,7 @@ os.environ["DATABASE_URL"] = TEST_DB  # must be set before app.config import
 
 TABLES = [
     "checklist_responses", "ticket_status_history", "issue_status_history", "tickets",
-    "issue_candidates", "images", "inspection_jobs", "inspections", "inspection_schedules",
+    "issue_candidates", "images", "flights", "inspection_jobs", "inspections", "inspection_schedules",
     "boundaries", "keep_out_zones", "zones", "drones", "users", "airports",
 ]
 
